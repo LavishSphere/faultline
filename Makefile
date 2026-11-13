@@ -1,5 +1,5 @@
 # FAULTLINE developer targets. Run `make help` for a list.
-.PHONY: help pull agent-start setup api web dev test test-api check guard-test
+.PHONY: help pull agent-start setup api web dev demo demo-api demo-web deploy-api test test-api check guard-test
 
 API_DIR  := services/api
 VENV     := $(API_DIR)/.venv
@@ -32,6 +32,27 @@ web:                    ## run the Next.js dev server (once apps/web exists)
 
 dev:                    ## run api + web together (Ctrl-C stops both)
 	@$(MAKE) -j2 api web
+
+# Local demo mode (docs/DEPLOY.md): everything on 127.0.0.1, live replay against this laptop's Ollama,
+# no admin token, no rate limit. Works with the internet off once `make setup` has run.
+demo:                   ## local demo: API (FAULTLINE_MODE=local, live replay) + web on 127.0.0.1 (Ctrl-C stops both)
+	@echo "FAULTLINE local demo  web: http://127.0.0.1:3000  api: http://127.0.0.1:$(API_PORT)"
+	@$(MAKE) -j2 demo-api demo-web
+
+demo-api:
+	@$(LOAD_ENV) export FAULTLINE_MODE=local; \
+	  ollama="$${OLLAMA_BASE_URL:-http://localhost:11434}"; \
+	  curl -fsS --max-time 2 "$$ollama/api/tags" >/dev/null 2>&1 \
+	    || echo "WARNING: Ollama not reachable at OLLAMA_BASE_URL: live replay will show MODEL_UNAVAILABLE (start it: ollama serve)"; \
+	  cd $(API_DIR) && $(API_PY) -m uvicorn main:app --host 127.0.0.1 --port $(API_PORT)
+
+demo-web:
+	@if [ -f apps/web/package.json ]; then \
+	  cd apps/web && NEXT_PUBLIC_API_BASE=http://127.0.0.1:$(API_PORT) NEXT_TELEMETRY_DISABLED=1 npm run dev -- --hostname 127.0.0.1 --port 3000; \
+	else echo "no web app yet (apps/web)"; fi
+
+deploy-api:             ## LEAD ONLY: deploy origin/main API to the server (SSH=<ssh-target> or env FAULTLINE_DEPLOY_SSH)
+	@bash scripts/deploy-api.sh "$(SSH)"
 
 test: guard-test test-api ## guardrail self-test + backend pytest
 

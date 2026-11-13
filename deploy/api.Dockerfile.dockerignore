@@ -1,0 +1,12 @@
+# BuildKit reads this file for deploy/api.Dockerfile (build context: services/api).
+.venv
+var
+tests
+**/__pycache__
+**/*.pyc
+*.egg-info
+build
+.pytest_cache
+.ruff_cache
+.env
+.env.*
