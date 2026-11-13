@@ -5,8 +5,8 @@
 `markets/normalize.py` implement *exactly* what is written here. A PR that changes a formula must update
 this document in the same PR, and a finance-owner or lead review is required.
 
-All business data is **SYNTHETIC** (a fictional company). Parameter values below are placeholders marked
-`[assumed]` until Yaseen sets them.
+All business data is **SYNTHETIC** (a fictional company). Parameter values in §10 are `[assumed]`, set in
+issue #6 with a one-line justification each. They are modelling choices, not figures from a real company.
 
 ---
 
@@ -145,7 +145,9 @@ For outcome $y \in \{0,1\}$ and forecast $p \in [0,1]$:
 ## 8. From forecast to decision (ACT / WAIT / HEDGE)
 
 Each policy $a$ is a pre-declared set of actions (§4) with all fees and carrying costs. For each outcome
-$y \in \{0,1\}$ the simulator gives a payoff $V(a,y)$, defined ex ante as $\min_t C_t$ (or ending cash: pick one and freeze it).
+$y \in \{0,1\}$ the simulator gives a payoff $V(a,y) = \min_t C_t$, the lowest cash balance over the horizon.
+*Frozen in issue #6:* the lowest balance measures how close the business comes to running out of cash, the same quantity
+the liquidity floor $C_{min}$ and runway track. Ending cash would favour plans that dip dangerously low mid-horizon and recover.
 
 $$
 \mathbb{E}[V \mid a] = p\,V(a,1) + (1-p)\,V(a,0)
@@ -158,6 +160,8 @@ regret $= \max_{a'} V(a', y) - V(a, y)$. These are **SIMULATED** synthetic-busin
 
 Common: $C_0 = 100{,}000$; $S^{base} = 50{,}000$/wk (all stores); $S_0 = 50{,}000$; $g = 0.35$; $a = 0.8$; $L_p = 1$,
 $P_0 = 32{,}500$; $W = 12{,}000$; $O = 6{,}000$; $D = 600{,}000$; $A = 0$; no revolver, capex, expansion, outage.
+These cases use their own inputs (note $L_p = 1$ here, versus 2 weeks in §10).
+*Hand-checked 2026-11-12 (issue #6): every value in cases A–C and every scoring fixture below matches.*
 
 **Case A, no shock, $r = 8\%$:** $R_t = 50{,}000$; outflow $= 32{,}500 + 12{,}000 + 6{,}000 + 923.077 = 51{,}423.077$
 → $C_1 = 98{,}576.923$, $C_2 = 97{,}153.846$, $C_3 = 95{,}730.769$.
@@ -173,20 +177,55 @@ $C_1 = 98{,}576.923$, $C_2 = 96{,}923.077$, $C_3 = 95{,}269.231$.
 **Scoring fixtures:** $p=0.7, y=1$ → Brier $0.09$, log loss $0.356675$; $p=0.7, y=0$ → Brier $0.49$, log loss $1.203973$;
 $p=0.5$ → Brier $0.25$, log loss $0.693147$; $p=0, y=1$ → log loss $= -\ln(10^{-6}) = 13.815511$.
 
-## 10. Parameters to be set by Yaseen `[assumed]`
+## 10. Parameters `[assumed]` (set in issue #6)
 
-| Parameter | Placeholder | Notes |
+The company is a SYNTHETIC 3-store regional food retailer with a fresh/deli-heavy format. Each justification is a
+modelling rationale, not a citation.
+
+| Parameter | Value | Justification |
 |---|---|---|
-| Store weekly sales $S^{base}_\ell$ | 18k / 17k / 15k | regional food/retail, 3 locations |
-| Gross margin $g$ | 0.35 | |
-| Same-week collection $a$ | 0.80 | card settlement / B2B AR |
-| Supplier lag $L_p$ | 2 weeks | net-14 |
-| Payroll $W$ | 12,000/wk | |
-| Fixed opex $O$ | 6,000/wk | |
-| Term loan $D_0$, base rate | 600k, 8.0% | floating; rate shock applies |
-| Revolver limit $\bar B$, spread $s_R$ | 150k, +2.0% | approved facility |
-| $C_{min}$, $I_{min}$ | 25k, 40k | |
-| Outage share $\phi$, backup premium $\pi$, fee $F_b$ | 0.4, 0.12, 2k | |
-| Disruption costs $c_b, c_c, c_e, c_v, c_y, c_z$ | TBD | relative harm weights |
+| Horizon $T$ | 26 weeks | Half a year: long enough for a shock and a recovery, short enough for weekly cash planning. |
+| Store weekly sales $S^{base}_\ell$ | 18k / 17k / 15k (50k total) | Small regional stores of unequal size, so the cascade shows store-level differences. The total matches §9. |
+| Gross margin $g$ | 0.35 | Upper end for food retail, consistent with a fresh/deli mix rather than a discount grocer. |
+| Same-week collection $a$ | 0.80 | Card sales settle in 1–2 days, so most cash lands the same week. The 20% lag covers weekend sales settling the next week and a few B2B accounts. |
+| Supplier lag $L_p$ | 2 weeks | Net-14 terms with the main distributor. |
+| Payroll $W$ | 12,000/wk | 24% of sales. That is high for a grocer but fits a service-heavy fresh/deli format. |
+| Fixed opex $O$ | 6,000/wk | Rent, utilities and insurance for 3 small sites, about 2,000 per store per week. |
+| Term loan $D_0$, rate $r$ | 600k at 8.0% all-in, floating, interest-only ($A_t = 0$) | All-in means base plus spread. The loan floats, so the rate shock passes straight through. Interest-only keeps §9 simple. |
+| Revolver limit $\bar B$, spread $s_R$, opening balance $B_0$ | 150k, +2.0%, 0 | About 3 weeks of sales of headroom. Revolvers price above term debt. The facility is undrawn at the start. |
+| Starting cash $C_0$ | 100,000 | About 2 weeks of sales. Matches §9. |
+| Liquidity floor $C_{min}$ | 25,000 | About 2 weeks of payroll: the cash a CFO would not plan to go below. |
+| Starting inventory $I_0$ | 65,000 | 2 weeks of cost of goods ($2 \times 0.65 \times 50{,}000$), typical for a fresh-heavy grocer. |
+| Inventory floor $I_{min}$ | 40,000 | About 1.2 weeks of cost of goods: below this, shelves look empty. Together with $I_0$ this caps total purchase cuts at $\sum_t v_t \le 25{,}000$. |
+| Pre-horizon values $S_0$; $P_{-1}$, $P_0$ | 50,000; 32,500 each | Steady state before week 1: purchases $= (1-g) \times 50{,}000$. |
+| Purchase-cut cap $\bar v$ | 10,000/wk | About 30% of a normal week's purchases. Deeper one-week cuts are not realistic for perishables. |
+| Payroll-cut cap $\bar z$ | 0.10 | Up to 10% through reduced hours and no overtime, without layoffs. Forced to 0 in protect-payroll mode (§4). |
+| Outage share $\phi$ | 0.40 | 40% of sales rely on product lines from the primary distributor. |
+| Backup premium $\pi$, switching fee $F_b$ | 0.12, 2,000 | Spot buying from a secondary supplier costs about 12% more. The fee covers set-up, a credit application and delivery changes. |
+| Capex $K_t$, expansion $E_t$, expansion sales $X_t$ | set per demo case (placeholder) | Timing and size belong to each scenario, so they are set in the case definition, not here. |
+| Tie-break $\varepsilon$ | $10^{-4}$ per \$ of minimum cash | 100× smaller than the cheapest lever ($c_y$ below), so the optimizer never draws or cuts just to raise minimum cash. |
+
+**Baseline economics (kept on purpose).** Weekly gross profit is $0.35 \times 50{,}000 = 17{,}500$. Weekly fixed costs are
+$12{,}000 + 6{,}000 + 923.08 = 18{,}923.08$, so the business loses $1{,}423.08$ a week before any shock: about 74k a year,
+or −2.85% of sales. It is a thin-margin retailer already under pressure, so shocks bite quickly. With no shock, cash falls
+from 100,000 to $100{,}000 - 26 \times 1{,}423.077 = 63{,}000$ by week 26 and stays above $C_{min}$. The figure is exact,
+because 26 weeks of interest is $600{,}000 \times 8\% / 2 = 24{,}000$ and 26 weeks of operating shortfall is $26 \times 500 = 13{,}000$.
+
+### Disruption costs (non-cash harm, on top of the cash effects in §3)
+
+Units differ by action type. The three yes/no actions carry a dollar-equivalent harm per decision. The three amount actions
+carry harm per dollar of action. To compare them, the "10k yardstick" column shows the harm of using each lever to raise or
+save about 10,000. For a yes/no action, that is simply its fixed weight.
+
+| Weight | Action | Value | Harm at 10k | Why it ranks here |
+|---|---|---|---|---|
+| $c_y$ | Revolver draw | 0.01 per \$ drawn | 100 | Covering a cash gap is what the facility is for, and its interest is already in the cash path. This is a small charge for using up headroom. |
+| $c_v$ | Purchase cut | 0.05 per \$ cut | 500 | Thinner shelves and stock-out risk that the model does not capture. |
+| $c_c$ | Defer non-critical capex | 1,000 per decision | 1,000 | Non-critical by definition, but maintenance risk builds up while it is deferred. |
+| $c_b$ | Use backup supplier | 2,500 per decision | 2,500 | Quality, consistency and supplier-relationship risk beyond the fee and premium. |
+| $c_e$ | Delay expansion | 5,000 per decision | 5,000 | Strategic cost: lost momentum and lease or landlord risk. |
+| $c_z$ | Payroll cut | 5.00 per \$ of payroll cut | 50,000 | Worst lever: morale, turnover and service quality, and it hurts people. A 1,000 payroll cut counts as much harm as delaying the expansion, so cutting payroll beats delaying the expansion only for shortfalls under 1,000. |
+
+Ranking, least to most harmful: revolver draw < purchase cut < defer capex < backup supplier < delay expansion < payroll cut.
 
 **Sign-off:** ☐ Yaseen has reviewed §1–§4 and §8 assumptions · ☐ Lead has reviewed §6–§7.
