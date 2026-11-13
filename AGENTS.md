@@ -26,6 +26,8 @@ delegated tasks / PRs to review. Obey its output. If it reports a failed fetch, 
 - **Only leads merge. Only leads deploy to production** (production = what is built from `main`).
 - Never bypass hooks: no `--no-verify`, no changing `core.hooksPath`, never set `FAULTLINE_LEAD_OVERRIDE`.
 - Branches: `<owner>/<issue#>-<slug>`, e.g. `yaseen/14-cash-recurrence`. One issue → one branch → one PR, inside one workstream's directories.
+- **Max 3 commits per PR** (guard blocks a 4th; CI fails >3). Use `git commit --amend` for follow-up fixes.
+- **No `Co-Authored-By: Claude` (or any AI co-author) trailers** in commits. The `.githooks/commit-msg` hook strips them and CI rejects them.
 - Don't modify `.agents/`, `.claude/`, `.github/`, `.githooks/`, `scripts/guardrails/`, `AGENTS.md`, `CLAUDE.md`, `CODEOWNERS`, or
   `docs/SPEC.md` unless a lead explicitly asked in this session.
 - Never commit secrets. `.env` is git-ignored; document variables in `.env.example`.

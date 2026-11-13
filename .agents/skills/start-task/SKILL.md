@@ -32,7 +32,9 @@ Read `.agents/team.json` for `leads`, `partners`, and `delegation_label`.
 
 ## 4. Build
 - Tests first where the task is computational (golden numbers from MATH_MODEL.md §9 style).
-- Commit early and often on the branch with clear messages (`finance: add receipts timing to cash recurrence (#N)`).
+- **A PR may have at most 3 commits.** Commit at meaningful checkpoints with clear messages
+  (`finance: add receipts timing to cash recurrence (#N)`); fold small fixes in with `git commit --amend`.
+- **No AI co-author trailers.** Never add `Co-Authored-By: Claude …` (a commit-msg hook strips it; CI rejects it).
 - Anything you notice that is out of scope → note it for the PR description under "Follow-ups". Do not do it.
 
 When the acceptance criteria are met, run `/ship-pr`.

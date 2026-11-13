@@ -72,27 +72,52 @@ WRITE_CASES = [
 
 def main() -> int:
     failures = 0
+    # Fake git so these tests never touch the network or depend on the real branch:
+    # (fetch exit code, commits behind origin/main, commits ahead of origin/main)
+    import tempfile
+    real_run, real_cache = guard.run, guard.CACHE_DIR
+    guard.CACHE_DIR = Path(tempfile.mkdtemp())
+
+    def fake_git(fetch_code: int, behind: int, ahead: int = 0):
+        def _run(cmd, timeout=10.0, cwd=None):
+            if "fetch" in cmd:
+                return fetch_code, ""
+            if "rev-list" in cmd:
+                return 0, str(ahead if cmd[-1].endswith("..HEAD") else behind)
+            return real_run(cmd, timeout, cwd)
+        return _run
+
+    guard.run = fake_git(0, 0)
     for role, branch, cmd, want in CASES:
         guard.current_branch = lambda cwd=None, b=branch: b
         got = outcome(guard.check_bash, cmd, role)
         if got != want:
             failures += 1
             print(f"FAIL [{role}@{branch}] {cmd!r}: expected {want}, got {got}")
-    # Fake git so these tests never touch the network: (fetch exit code, commits behind origin/main)
-    import tempfile
-    real_run, real_cache = guard.run, guard.CACHE_DIR
-    guard.CACHE_DIR = Path(tempfile.mkdtemp())
 
-    def fake_git(fetch_code: int, behind: int):
-        def _run(cmd, timeout=10.0, cwd=None):
-            if "fetch" in cmd:
-                return fetch_code, ""
-            if "rev-list" in cmd:
-                return 0, str(behind)
-            return real_run(cmd, timeout, cwd)
-        return _run
-
+    # Max 3 commits per PR (amend is always allowed)
+    LIMIT_CASES = [
+        (2, "git commit -m third", "allow"),
+        (3, "git commit -m fourth", "block"),
+        (3, "git commit --amend --no-edit", "allow"),
+    ]
+    guard.current_branch = lambda cwd=None: "ash/9-x"
+    for ahead, cmd, want in LIMIT_CASES:
+        guard.run = fake_git(0, 0, ahead)
+        got = outcome(guard.check_bash, cmd, "lead")
+        if got != want:
+            failures += 1
+            print(f"FAIL commit-limit ahead={ahead} {cmd!r}: expected {want}, got {got}")
     guard.run = fake_git(0, 0)
+
+    # commit-msg hook strips AI co-author trailers
+    import githook
+    msg = Path(tempfile.mkdtemp()) / "MSG"
+    msg.write_text("finance: x (#2)\n\nbody\n\nCo-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>\n")
+    githook.strip_claude_trailer(str(msg))
+    if "Co-Authored-By" in msg.read_text() or not msg.read_text().startswith("finance: x (#2)\n\nbody"):
+        failures += 1
+        print(f"FAIL commit-msg strip: {msg.read_text()!r}")
     for role, rel, want in WRITE_CASES:
         got = outcome(guard.check_write, str(guard.PROJECT_DIR / rel), role)
         if got != want:
@@ -116,7 +141,7 @@ def main() -> int:
             print(f"FAIL fresh-gate [{role}] fetch={fetch_code} behind={behind}: expected {want}, got {got}")
     guard.run, guard.CACHE_DIR = real_run, real_cache
 
-    total = len(CASES) + len(WRITE_CASES) + len(FRESH_CASES)
+    total = len(CASES) + len(WRITE_CASES) + len(FRESH_CASES) + len(LIMIT_CASES) + 1
     print(f"guardrails: {total - failures}/{total} passed")
     return 1 if failures else 0
 

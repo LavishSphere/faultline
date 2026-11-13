@@ -121,6 +121,13 @@ def check_bash(cmd: str, role: str, cwd: str | None = None) -> None:
                 block("`git commit --no-verify` skips the repo's git hooks.")
             elif sub == "commit" and branch in protected:
                 block(f"committing directly on `{branch}`. Create a branch first: `git switch -c <prefix>/<issue>-<slug>`.")
+            elif sub == "commit" and "--amend" not in low:
+                limit = int(team.get("max_pr_commits", 3))
+                _, ahead = run(["git", "rev-list", "--count", f"origin/{team.get('default_branch', 'main')}..HEAD"], cwd=seg_dir)
+                if ahead.isdigit() and int(ahead) >= limit:
+                    block(f"this branch already has {ahead} commit(s); a PR may have at most {limit}. "
+                          "Fold the change in with `git commit --amend`, or squash: "
+                          "`git reset --soft origin/main` then make 1-3 meaningful commits.")
             elif sub == "merge" and branch in protected and "--ff-only" not in low:
                 block(f"merging into `{branch}` locally. Merges to main happen on GitHub after lead review.")
             elif sub in ("rebase",) and branch in protected:
