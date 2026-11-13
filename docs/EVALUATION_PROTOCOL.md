@@ -1,8 +1,9 @@
 # FAULTLINE Evaluation Protocol (Blind Replay)
 
-**Status:** Wave 1 (issue #24). The integrity core exists: temporal gate, provenance hashes, SQLite prediction
-store, sealed-outcome vault, scoring. **Not built yet:** the model provider and the replay run/reveal routes
-(Wave 2). **Real cases:** none on `main` yet (issue #20), so any benchmark today must report `INSUFFICIENT DATA`.
+**Status:** Wave 2. The integrity core (issue #24: temporal gate, provenance hashes, SQLite prediction store,
+sealed-outcome vault, scoring), the local model provider (#36) and the HTTP routes `GET /api/cases`,
+`GET /api/cases/{case_id}/evidence`, `POST /api/replay/run` and `POST /api/replay/{prediction_id}/reveal`
+(#44 part A, §9) exist. **Not built yet:** the benchmark compute/read routes and committed recorded runs (#44 part B). **Real cases:** none on `main` yet (issue #20), so any benchmark today must report `INSUFFICIENT DATA`.
 
 Sources of truth: SPEC §3.1, §5, §6, §10 and MATH_MODEL §6, §7, §9. If this document and MATH_MODEL disagree,
 MATH_MODEL wins and this document is the bug.
@@ -65,7 +66,7 @@ data/sealed_outcomes/<event_id>.json ─────────────► 
 | **Market baseline rule (fixed, pre-reveal):** if the case's `market_quote_id` is `"<venue>:<market_id>"`, the baseline is that market's selected quote (absent or stale → NOT AVAILABLE, no fallback); otherwise the only selected quote when exactly one market has one; otherwise NOT AVAILABLE. Contamination and synthetic flags come from the case definition | `GatedSnapshot.market_baseline` | `test_market_baseline_follows_the_fixed_rule`, `test_single_market_is_the_baseline_and_context_comes_from_the_case` |
 | **OFFICIAL requires the committed cases and a clean run.** The label `OFFICIAL: Computed from N historical cases` is given only if ALL hold, otherwise the label is `ILLUSTRATIVE: Historical cases, not an official run` and `official_blockers` lists every failed condition: (1) `cases` is `EvidenceStore.from_dir()` of the configured case directory; (2) the vault uses the configured sealed folder (hence the configured store); (3) no exclusion for an operator-controllable reason (`no_persisted_prediction`, `multiple_predictions`, `persisted_after_outcome_revealed`, `context_mismatch`) on any real or uncommitted case, so every committed real case at its cutoff has exactly one forecast and skipping, re-running or peeking at a loser cannot drop it; (4) no ignored post-reveal forecast on a real case; (5) every scored forecast was persisted before the FIRST reveal anywhere in the store (no cross-event leakage) | `build_scorecard` | `test_real_cases_without_committed_cases_are_not_official`, `test_in_memory_case_store_is_not_official`, `test_saving_only_winners_is_not_official`, `test_dropping_a_loser_by_rerun_or_peek_is_not_official`, `test_forecast_saved_after_another_events_reveal_is_not_official`, `test_synthetic_committed_cases_without_forecasts_do_not_block_official` |
 | **Frozen case data:** every `ModelInput` carries `case_sha256` (canonical JSON of the validated case record: case, evidence, quotes). With `cases`, each remaining forecast is re-derived via `cases.get_as_of(event_id, as_of).model_input(variant)`; its prompt and snapshot hashes and every frozen context field (market baseline and ref, contamination, synthetic, `case_sha256`) must match, else the key is excluded `context_mismatch` (not revealed). Any edit to a committed case file after the run, even to an item the model never saw, or a forecast made from script-built case data, is caught | `build_scorecard`, `case_sha256` | `test_forecast_made_from_other_case_data_is_context_mismatch`, `test_editing_a_committed_case_after_the_run_is_context_mismatch`, `test_any_change_to_a_committed_case_file_after_the_run_is_context_mismatch`, `test_case_content_hash_is_frozen_into_the_model_input` |
-| `save(prediction, model_input)` takes the gate's `ModelInput` and requires `event_id`, `as_of`, `variant`, `prompt_sha256` and `snapshot_sha256` to match it (both are recomputed from its text). It accepts only `agent_only` / `agent_plus_market`; the snapshot's quotes must agree with the variant; cited `evidence_ids` must be in the snapshot | `PredictionStore.save` | `test_save_rejects_*`, `test_save_requires_the_gate_model_input` |
+| `save(prediction, model_input, final_prompt=...)` takes the gate's `ModelInput` and requires `event_id`, `as_of`, `variant`, the gated prompt hash (`gated_prompt_sha256`, or `prompt_sha256` on records without run-audit fields) and `snapshot_sha256` to match it (both are recomputed from its text); `prompt_sha256` and `transcript_sha256` must hash `final_prompt`, the exact message the model answered, which must be the gated prompt (`attempts == 1`) or the gated prompt, unchanged, followed by exactly the provider's repair instruction (`attempts == 2`: `agents.local_ollama.is_repair_instruction`, the fixed header and footer of `REPAIR_INSTRUCTION` with only `- ...` problem lines between them). `attempts` must be 1 or 2 (also a table CHECK constraint). It accepts only `agent_only` / `agent_plus_market`; the snapshot's quotes must agree with the variant; cited `evidence_ids` must be in the snapshot | `PredictionStore.save` | `test_save_rejects_*`, `test_save_requires_the_gate_model_input`, `test_save_refuses_a_model_prompt_that_does_not_match_its_hashes`, `test_attempts_other_than_1_or_2_are_refused`, `test_forged_repair_suffix_with_recomputed_hashes_is_caught_by_verify_and_reveal`, `test_repair_attempt_recomputes_every_hash` |
 | Rows are append-only and edits are **evident**. Triggers abort UPDATE and DELETE on `predictions` and `audit_log`; an INSERT that reuses a prediction id (this blocks `INSERT OR REPLACE`); any `audit_log` row whose `seq` is chosen by the caller or is not greater than every existing `seq` (no backdating a persist, no early fake reveal); a reveal entry naming a prediction that does not exist; and a prediction whose `persist_seq` is not the newest `audit_log` entry and its own persist entry (so a low `seq` reserved before a reveal cannot be used for a forecast saved after it). `record_sha256` covers the whole forecast, its scoring context, `persisted_at` and `persist_seq`, so an edit made after dropping the triggers is caught by `verify` and refused by `reveal` | `core/store.py` | `test_predictions_and_audit_log_are_append_only`, `test_reveal_refuses_when_stored_record_was_tampered`, `test_reserved_low_seq_cannot_backdate_a_later_prediction`, `test_replacing_a_prediction_with_a_fresh_persist_entry_is_refused` |
 | Scoring matches MATH_MODEL §9 fixtures exactly; bootstrap is deterministic for a seed; B and the seed cannot be overridden through `build_scorecard`; display rules of MATH_MODEL §6 (caveat at n = 29, none at n = 30) | `core/evaluator.py` | `test_scoring.py` |
 
@@ -136,7 +137,14 @@ tie rule, B and the bootstrap pairing.
 - **`snapshot_sha256`** = SHA-256 (hex) of the canonical JSON of exactly
   `{"evidence": [...], "market_quotes": [...]}`, the projected items given to the model for that variant.
   `market_quotes` is `[]` for `agent_only`.
-- **`prompt_sha256`** = SHA-256 (hex) of the final rendered prompt string, UTF-8.
+- **`prompt_sha256`** = SHA-256 (hex), UTF-8, of the exact message the model answered on the attempt that
+  validated (#44): the gated prompt itself when `attempts == 1`; the gated prompt, unchanged, followed by
+  exactly `agents.local_ollama.repair_instruction(problems)` when `attempts == 2` (the fixed header and footer of
+  `REPAIR_INSTRUCTION`, only `- <problem>` lines between them; any other suffix, and any other `attempts` value,
+  is refused by `save` and flagged by `verify`). **`gated_prompt_sha256`** = SHA-256 of the gate's
+  rendered prompt (`ModelInput.prompt_sha256`). **`transcript_sha256`** = SHA-256 of the canonical JSON of the
+  chat messages of that call (`[{"role": "user", "content": <that message>}]`). Records saved without a model
+  provider (core tests) have no run-audit fields and their model prompt is the gated prompt.
 - **`record_sha256`** = SHA-256 (hex) of the canonical JSON of
   `{"prediction": <Prediction as JSON, timestamps in UTC>, "context": {"market_baseline_p_yes",
   "market_baseline_ref", "contamination_flag", "synthetic", "case_sha256"}, "persisted_at": <ISO UTC>, "persist_seq": <int>}`.
@@ -144,7 +152,10 @@ tie rule, B and the bootstrap pairing.
   input hashes and the pre-reveal scoring context.
 - Stored with each prediction: model id, Ollama digest when available, variant, temperature, seed,
   `recorded_at` (caller), `persisted_at` (store clock), `persist_seq` (position in `audit_log`), the scoring
-  context from the `ModelInput` (never shown to the model), the exact prompt text and snapshot JSON. `PredictionStore.verify(prediction_id)` recomputes all three hashes and
+  context from the `ModelInput` (never shown to the model), the gated prompt text, the exact message the model
+  answered, the snapshot JSON, and the run's `attempts`, `num_ctx` and `num_predict`.
+  `PredictionStore.verify(prediction_id)` recomputes every hash (prompt, gated prompt, transcript, snapshot,
+  record), checks that a repair prompt is the gated prompt plus exactly the provider's repair instruction, and
   checks the `audit_log` persist entry.
 - Prompt template version: `replay-v1` (printed in every prompt). Changing the template changes every
   `prompt_sha256`, which is intended.
@@ -242,3 +253,28 @@ file, is refused at load. Case files must not be hard links.
   nothing; (3) call `build_scorecard(vault, cases=EvidenceStore.from_dir())` once, which reveals and scores;
   (4) publish the scorecard with its exclusions and `official_blockers`.
 - Recorded demo runs are labeled `RECORDED RUN` and carry model id, digest, temperature, seed and both hashes.
+
+---
+
+## 9. HTTP routes (#44 part A)
+
+| Route | Boundary | What it does |
+|---|---|---|
+| `GET /api/cases` | pre-reveal | `EvidenceStore.public_case` per case file: `evidence_ids` lists only items the gate admits at the cutoff |
+| `GET /api/cases/{case_id}/evidence?as_of=` | pre-reveal | `EvidenceStore.get_as_of`: the prompt projection of admitted evidence, the selected as-of quote per market, the market baseline at the cutoff (or NOT AVAILABLE), exclusion counts by reason (no ids). `as_of` defaults to, and may not be later than, the case cutoff (422) |
+| `POST /api/replay/run` `{case_id, variant}` | pre-reveal; admin-only in public mode | gate, provider, skeptic, then `PredictionStore.save(..., final_prompt=...)`; nothing is saved on any provider error or skeptic rejection. A run saved after a reveal is not refused but flagged from `audit_log`: `event_first_reveal_seq` / `persisted_after_event_reveal` (this event) and `store_first_reveal_seq` / `persisted_after_any_reveal` (anywhere), plus an `audit_note` |
+| `POST /api/replay/{prediction_id}/reveal` | post-reveal; admin-only in public mode | `OutcomeVault.reveal`, per-prediction Brier / log loss / accuracy at 0.5, naive and market baselines from the stored pre-reveal context |
+
+**Public mode:** run and reveal both change state, so with `FAULTLINE_MODE` anything but unset/`local` they need
+`Authorization: Bearer <FAULTLINE_ADMIN_TOKEN>` (at least 32 characters), checked by a route dependency so it holds
+with or without the edge middleware of #28. No bearer token: 401; wrong or unconfigured token: 403; body
+`{code: "ADMIN_TOKEN_REQUIRED", message}`. An early public reveal would otherwise mark the event revealed and
+disqualify every later admin run on it (`tests/test_routes_replay_admin.py`). The case routes stay public.
+
+Both pre-reveal case routes run a strict pre-scan before the gate loads anything: a case file with an
+outcome-like key anywhere (except `case.resolution_rule` and a quote's `outcome: "YES"`) is refused, not
+stripped; top-level keys are allow-listed; the file name must be `<event_id>.json`; files resolving outside
+`demo_cases/` are refused unread. `tests/test_routes_replay.py` requires every `/api/cases*` and `/api/replay*`
+route to be classified pre- or post-reveal, walks every pre-reveal response schema and body (before and after a
+reveal) for outcome keys, the canary and sealed values, and checks that no pre-reveal request opens a file under
+`sealed_outcomes/`.
