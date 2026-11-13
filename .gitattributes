@@ -1,0 +1,8 @@
+# Raw API snapshots are hashed byte-for-byte (manifest sha256): never convert line endings.
+services/api/data/raw/** -text
+services/api/markets/testdata/** -text
+
+# Scripts and git hooks must keep LF endings to run on every OS (incl. Git Bash on Windows).
+*.sh        text eol=lf
+.githooks/* text eol=lf
+*.py        text eol=lf

@@ -12,6 +12,10 @@ You work on tasks the leads give you, and every change goes to the leads as a "p
    gh auth login            # choose GitHub.com → HTTPS → login with browser
    gh auth setup-git
    ```
+   **On Windows:** install [Git for Windows](https://git-scm.com/download/win) (includes Git Bash), the GitHub CLI
+   (`winget install GitHub.cli`), and Python 3.12 from python.org (tick "Add to PATH"). Run the commands below in **Git Bash**.
+   If you cloned before 2026-11-13, after your next `make pull` restore the raw data files once (nobody edits these by
+   hand, so nothing is lost): `rm -rf services/api/data/raw services/api/markets/testdata && git checkout -- services/api/data/raw services/api/markets/testdata`.
 3. Install Claude Code: see https://docs.claude.com/en/docs/claude-code/setup (or the VS Code extension).
 4. Get the project:
    ```bash
