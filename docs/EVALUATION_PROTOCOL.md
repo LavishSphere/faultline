@@ -86,7 +86,9 @@ tie rule, B and the bootstrap pairing.
   contamination either.
 - **Correctness of curated dates.** The gate trusts `available_at` and `retrospective_unverified` as curated.
   If a page was revised after `as_of` and the curator did not flag it, revised text can pass. Archive
-  snapshots are the mitigation (issue #20 / `docs/DATA_PROVENANCE.md`).
+  snapshots are the mitigation (issue #20 / `docs/DATA_PROVENANCE.md`). Output of `scripts/tavily_curate.py`
+  and Live Explore is today's text, which may have been revised since `as_of`, and is never evidence until its
+  `available_at` is proven from an archive capture.
 - **`content_sha256` is not recomputed** by the gate (its exact input bytes are a curation choice); the
   snapshot hash covers the text actually given to the model.
 - **OS-level isolation.** The sealed directory is protected by code structure, path checks and tests, not

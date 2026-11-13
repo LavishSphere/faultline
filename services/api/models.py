@@ -86,6 +86,13 @@ class ErrorCode(StrEnum):
     MODEL_OUTPUT_INVALID = "MODEL_OUTPUT_INVALID"  # answer failed output validation on every attempt
     PROMPT_TOO_LONG = "PROMPT_TOO_LONG"  # prompt + answer budget exceeds the context window; refused, not truncated
     PROMPT_NOT_VERIFIED = "PROMPT_NOT_VERIFIED"  # cannot confirm the model saw the whole prompt; answer discarded
+    # Live Explore (routes/explore.py, #60). ADMIN_TOKEN_REQUIRED and RATE_LIMITED are the same strings as PR #28's
+    # edge-protection codes, so the web app handles both sources alike.
+    ADMIN_TOKEN_REQUIRED = "ADMIN_TOKEN_REQUIRED"  # public mode: route needs Authorization: Bearer <admin token> (403)
+    RATE_LIMITED = "RATE_LIMITED"  # too many requests from this address, or from us upstream (429, Retry-After)
+    LIVE_EXPLORE_UNAVAILABLE = "LIVE_EXPLORE_UNAVAILABLE"  # TAVILY_API_KEY unset, rejected, or over quota (503)
+    LIVE_EXPLORE_UPSTREAM_ERROR = "LIVE_EXPLORE_UPSTREAM_ERROR"  # Tavily unreachable or unexpected answer (502)
+    LIVE_EXPLORE_TIMEOUT = "LIVE_EXPLORE_TIMEOUT"  # Tavily did not answer within the timeout (504)
 
 
 class ApiError(BaseModel):

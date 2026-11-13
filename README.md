@@ -34,6 +34,10 @@ python3 -m venv .venv && .venv/bin/python -m pip install -e ".[dev]"
 
 Interactive API docs: http://localhost:8000/docs
 
+With `TAVILY_API_KEY` set, any website open in your browser can send requests to the local API (CORS stops it reading
+the answers, not sending them), so it could spend your Tavily credits on Live Explore searches. Leave the key unset
+when you are not using Live Explore.
+
 ## Working with Claude Code
 Rules for every agent: [AGENTS.md](AGENTS.md). First command of every session: `bash scripts/agent-start.sh`
 (installs git hooks, syncs with GitHub, shows your role and tasks). Skills live in `.agents/skills/`.
