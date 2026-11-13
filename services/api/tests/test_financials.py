@@ -173,6 +173,72 @@ def test_backup_supplier_removes_lost_sales():
     assert res.inventory == [approx(60_000.0)] * T
 
 
+# Outage + expansion (issue #32, MATH_MODEL §2-§3 as merged in #31): the outage hits base-store sales only.
+# Inputs: §9 common inputs (C_0 100,000; S^base 50,000; S_0 50,000; g 0.35; a 0.8; L_p 1; P_0 32,500;
+# W 12,000; O 6,000; D 600,000 at 8%, A 0; no revolver or capex) plus, stated explicitly for this case:
+# expansion sales X_t = 10,000 every week, expansion outflow E_t = 0 (kept at 0 to isolate the outage),
+# full primary-supplier outage kappa_1 = kappa_2 = 0 with phi = 0.4 (so lambda = 0.4), pi = 0.12, F_b = 2,000.
+# Weekly fixed outflow W + O + J = 12,000 + 6,000 + 923.077 = 18,923.077.
+
+
+def _outage_with_expansion() -> tuple[BusinessParams, ScenarioShock]:
+    kappa = [1.0] * T
+    kappa[0] = kappa[1] = 0.0  # primary supplier fully down in weeks 1-2
+    shock = ScenarioShock(name="outage w1-2 + X", supplier=SupplierOutage(availability=kappa, dependent_share=0.4))
+    return golden_params(expansion_sales=10_000.0, expansion_outflow=0.0), shock
+
+
+def test_outage_hits_base_store_sales_only_without_backup():
+    params, shock = _outage_with_expansion()
+    res = simulate(params, shock, NO_ACTION)
+    # S_core = m * S_base = 1 * 50,000 = 50,000 ; S_dem = 50,000 + 10,000 = 60,000
+    assert res.core_demand[:2] == [approx(50_000.0)] * 2
+    assert res.demand[:2] == [approx(60_000.0)] * 2
+    # S = 50,000 (1 - 0.4) + 10,000 = 40,000 ; lost = 50,000 * 0.4 = 20,000 (not 60,000 * 0.4 = 24,000)
+    assert res.sales[:2] == [approx(40_000.0)] * 2
+    assert res.lost_sales[:2] == [approx(20_000.0)] * 2
+    assert res.backup_premium[:2] == [approx(0.0)] * 2
+    # week 1: R_1 = 0.8 * 40,000 + 0.2 * S_0 50,000 = 42,000 ; pays P_0 = 32,500
+    #         C_1 = 100,000 + 42,000 - 32,500 - 18,923.077 = 90,576.923
+    assert res.receipts[0] == approx(42_000.0)
+    assert res.payables_paid[0] == approx(32_500.0)
+    assert res.cash[0] == approx(90_576.923)
+    # week 2: P_1 = 0.65 * 40,000 = 26,000 ; R_2 = 0.8 * 40,000 + 0.2 * 40,000 = 40,000
+    #         C_2 = 90,576.923 + 40,000 - 26,000 - 18,923.077 = 85,653.846
+    assert res.purchases[0] == approx(26_000.0)
+    assert res.receipts[1] == approx(40_000.0)
+    assert res.payables_paid[1] == approx(26_000.0)
+    assert res.cash[1] == approx(85_653.846)
+    # week 3: supplier back (kappa = 1), S_3 = 60,000, no lost sales
+    assert res.sales[2] == approx(60_000.0)
+    assert res.lost_sales[2] == approx(0.0)
+
+
+def test_outage_with_backup_premium_on_base_store_sales():
+    params, shock = _outage_with_expansion()
+    res = simulate(params, shock, ActionPlan(use_backup_supplier=True))
+    # backup covers the outage: S = 50,000 + 10,000 = 60,000, lost = 0
+    assert res.sales[:2] == [approx(60_000.0)] * 2
+    assert res.lost_sales[:2] == [approx(0.0)] * 2
+    # premium = pi (1-g) S_core lambda = 0.12 * 0.65 * 50,000 * 0.4 = 1,560 (not 0.12*0.65*60,000*0.4 = 1,872)
+    assert res.backup_premium[:2] == [approx(1_560.0)] * 2
+    assert res.backup_premium[2] == approx(0.0)
+    # P_1 = 0.65 * 60,000 + 1,560 = 39,000 + 1,560 = 40,560
+    assert res.purchases[0] == approx(40_560.0)
+    # week 1: R_1 = 0.8 * 60,000 + 0.2 * S_0 50,000 = 58,000 ; pays P_0 = 32,500 ; fee F_b = 2,000
+    #         C_1 = 100,000 + 58,000 - 32,500 - 18,923.077 - 2,000 = 104,576.923
+    assert res.receipts[0] == approx(58_000.0)
+    assert res.backup_fee[0] == approx(2_000.0)
+    assert res.cash[0] == approx(104_576.923)
+    # week 2: R_2 = 0.8 * 60,000 + 0.2 * 60,000 = 60,000 ; pays P_1 = 40,560
+    #         C_2 = 104,576.923 + 60,000 - 40,560 - 18,923.077 = 105,093.846
+    assert res.receipts[1] == approx(60_000.0)
+    assert res.payables_paid[1] == approx(40_560.0)
+    assert res.cash[1] == approx(105_093.846)
+    # the premium is a cost, not stock: I_t = I_{t-1} - v_t stays at I_0
+    assert res.inventory == [approx(60_000.0)] * T
+
+
 def test_purchase_cut_lowers_inventory_and_delays_cash_effect():
     v = [0.0] * T
     v[1] = 5_000.0  # cut week-2 purchases by 5k
@@ -342,6 +408,7 @@ def test_result_arrays_have_horizon_length():
     res = simulate(golden_params(), NO_SHOCK, NO_ACTION)
     for node in CASCADE_NODES.values():
         assert len(getattr(res, node)) == T
+    assert len(res.core_demand) == T
     assert res.weeks == list(range(1, T + 1))
     assert res.provenance == "SIMULATED"
 
