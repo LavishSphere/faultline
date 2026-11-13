@@ -228,4 +228,4 @@ save about 10,000. For a yes/no action, that is simply its fixed weight.
 
 Ranking, least to most harmful: revolver draw < purchase cut < defer capex < backup supplier < delay expansion < payroll cut.
 
-**Sign-off:** ☐ Yaseen has reviewed §1–§4 and §8 assumptions · ☐ Lead has reviewed §6–§7.
+**Sign-off:** ☑ Yaseen has reviewed §1–§4 and §8 assumptions (2026-11-12, issue #6) · ☐ Lead has reviewed §6–§7.
