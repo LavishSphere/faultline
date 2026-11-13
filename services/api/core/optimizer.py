@@ -21,10 +21,10 @@ Decisions (one variable vector, §4):
   S_0, P_{1-L_p}..P_0, C_0, B_0, I_0 the given pre-horizon constants.
 
 §4 hard constraints:
-    1. C_t >= C_min    2. 0 <= B_t <= B-bar    3. I_t >= I_min    4. debt service J_t + A_t is a fixed outflow
+    1. C_t >= C_min    2. 0 <= B_t <= B-bar    3. I_t >= max(I_min, 0)    4. debt service J_t + A_t is a fixed outflow
     5. protect payroll: z_t <= 0    6. mu <= C_t    7. B_T <= B_0
-plus the §3 physical rule that simulate() enforces (issue #39, finance-owner decision on PR #69):
-    purchases non-negative: P_t >= 0 for every t (a purchase cut v_t cannot exceed that week's purchases)
+    8. purchases non-negative: P_t >= 0, i.e. v_t <= (1 - g) S_t + pi (1 - g) S^core_t lambda_t x_b
+  (8 and the 0 in 3 are the §3 physical rules simulate() enforces: no negative purchases or stock.)
 
 Objective (minimize disruption, tie-break toward more cash):
     c_b x_b + c_c x_c + c_e x_e + c_v sum_t v_t + c_y sum_t y_t + c_z sum_t z_t W_t - epsilon mu
@@ -128,7 +128,7 @@ class ChosenAction(_Model):
 
     action: ActionKind
     week: int | None = None
-    amount: float  # dollars; for payroll_cut, the dollars of payroll not paid (z_t W_t)
+    amount: float | None = None  # dollars (None for the yes/no decisions); payroll_cut: dollars not paid (z_t W_t)
     share: float | None = None  # payroll_cut only: z_t
 
 
@@ -281,7 +281,7 @@ class _Problem:
             add_row(_var(ix("B", t)) - B_prev - _var(ix("y", t)) + _var(ix("q", t)), 0.0, 0.0)  # §3 revolver
             add_row(_var(ix("I", t)) - I_prev + _var(ix("v", t)), 0.0, 0.0)  # §3 inventory I_t = I_{t-1} - v_t
             add_row(_var(ix.mu) - _var(ix("C", t)), -np.inf, 0.0)  # §4.6 mu <= C_t
-            add_row(P[t], 0.0, np.inf)  # §3 physical rule (issue #39): P_t >= 0
+            add_row(P[t], 0.0, np.inf)  # §4.8 P_t >= 0: purchases cannot be negative (MATH_MODEL §3/§4)
             D -= A[i]  # D_{t+1} = D_t - A_t
 
         A_mat = np.zeros((len(rows), ix.n))
@@ -291,6 +291,8 @@ class _Problem:
         self.constraints = LinearConstraint(A_mat, np.array(lo), np.array(hi))
 
         # Bounds: §4 decision ranges and hard constraints 1, 2, 3, 5, 7.
+        # §4.3 with the §3 physical rule I_t >= 0: a negative I_min can never allow negative stock.
+        self.I_floor = max(params.min_inventory, 0.0)
         lb = np.zeros(ix.n)
         ub = np.full(ix.n, np.inf)
         ub[[ix.xb, ix.xc, ix.xe]] = 1.0
@@ -301,7 +303,7 @@ class _Problem:
             ub[ix("z", t)] = z_cap if W[t - 1] > 0.0 else 0.0  # no payroll due -> nothing to cut
             ub[ix("B", t)] = params.revolver_limit  # §4.2
             lb[ix("C", t)] = params.min_cash  # §4.1
-            lb[ix("I", t)] = params.min_inventory  # §4.3
+            lb[ix("I", t)] = self.I_floor  # §4.3
         ub[ix("B", T)] = min(params.revolver_limit, params.revolver_balance_0)  # §4.7 terminal revolver
         lb[ix.mu] = -np.inf
         self.lb, self.ub = lb, ub
@@ -346,7 +348,7 @@ def _binding(prob: _Problem, sol: np.ndarray) -> list[str]:
     checks = (
         ("liquidity floor", lambda t: sol[ix("C", t)] - p.min_cash),
         ("facility limit", lambda t: prob.B_cap - sol[ix("B", t)]),
-        ("inventory floor", lambda t: sol[ix("I", t)] - p.min_inventory),
+        ("inventory floor", lambda t: sol[ix("I", t)] - prob.I_floor),
         ("purchases non-negative", lambda t: _value(prob.P[t], sol)),
     )
     for label, slack in checks:
@@ -379,7 +381,7 @@ def _plan_and_actions(prob: _Problem, sol: np.ndarray) -> tuple[ActionPlan, list
     actions: list[ChosenAction] = []
     for flag, kind in ((xb, "use_backup_supplier"), (xc, "defer_capex"), (xe, "delay_expansion")):
         if flag:
-            actions.append(ChosenAction(action=kind, amount=0.0))
+            actions.append(ChosenAction(action=kind))  # yes/no decision: no dollar amount
     for name, kind in (("v", "purchase_cut"), ("y", "revolver_draw"), ("q", "revolver_repay")):
         actions += [
             ChosenAction(action=kind, week=t, amount=val) for t, val in enumerate(weekly[name], start=1) if val > 0.0
@@ -439,7 +441,7 @@ def optimize(
         check = simulate(params, shock, plan)
     except ValueError as exc:  # simulate() rejects physically impossible plans (§3); never report one as OPTIMAL
         return OptimizationResult(
-            status=SOLVER_ERROR, solver_message=f"simulate() rejected the solver's plan: {exc}", **common
+            status=SOLVER_ERROR, solver_message=f"simulate() rejected the solver's plan: {exc}; plan withheld", **common
         )
     gap = max(abs(s - c) for s, c in zip(check.cash, cash, strict=True))
     if gap > AGREEMENT_TOL:

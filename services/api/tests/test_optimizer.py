@@ -278,6 +278,23 @@ def test_three_week_purchases_cannot_go_negative():
     assert protected.max_feasible_cash_floor == approx(48_653.846154)
 
 
+def test_negative_inventory_minimum_never_allows_negative_stock():
+    # §4.3 bound is max(I_min, 0). Facility-limit inputs (B-bar = 500, gap after the revolver 346.154), but only
+    # I_0 = 100 of stock and I_min = -10,000. A cut can remove at most the 100 in stock (I_1 = 0), so the other
+    # 246.154 must come from payroll (weeks 1-2, harm 5/$); without the 0 bound the solver would cut 346.154 and leave
+    # I_1 = -246.154, which simulate() rejects.
+    params = three_week_params(revolver_limit=500.0, inventory_0=100.0, min_inventory=-10_000.0)
+    res = run(params, CASE_B, protect=False)
+    assert res.status == OPTIMAL
+    assert res.plan.purchase_cut == [approx(100.0), approx(0.0), approx(0.0)]
+    assert res.inventory == [approx(0.0)] * 3
+    assert sum(z * 12_000.0 for z in res.plan.payroll_cut[:2]) == approx(246.153846)
+    assert "inventory floor, week 1" in res.binding_constraints
+    sim = simulate(params, CASE_B, res.plan)  # accepted: no negative stock
+    assert min(sim.inventory) >= -TOL
+    assert res.cash == [approx(c) for c in sim.cash]
+
+
 def test_infeasible_without_any_floor_reports_not_available():
     # I_0 = 60,000 below I_min = 70,000: no plan exists even with the liquidity floor removed.
     res = run(three_week_params(min_inventory=70_000.0), CASE_B, protect=False)
@@ -352,6 +369,15 @@ def test_deep_slump_keeps_purchases_non_negative():
         assert res.plan.payroll_cut == [approx(0.0)] * 26
 
 
+def test_deep_slump_protect_off_cut_capped_by_week_purchases():
+    # Lead review on PR #69: 70% drop in weeks 5-8, protect payroll off. Week-5 purchases before a cut are
+    # 0.65 x 15,000 = 9,750, so v_5 <= 9,750 (it used to be 10,000, i.e. P_5 = -250).
+    res = run(DEMO, _deep_slump(), protect=False)
+    assert res.status == OPTIMAL
+    assert res.plan.purchase_cut[4] <= 9_750 + TOL  # week 5
+    assert res.min_cash == approx(25_000.0)
+
+
 def _long_outage() -> ScenarioShock:
     kappa = [1.0, 1.0] + [0.0] * 12 + [1.0] * 12  # primary supplier down weeks 3-14
     return ScenarioShock(name="outage weeks 3-14", supplier=SupplierOutage(availability=kappa, dependent_share=0.4))
@@ -367,6 +393,7 @@ def test_long_outage_chooses_backup_supplier():
         assert res.status == OPTIMAL
         assert res.plan.use_backup_supplier is True
         assert [a.action for a in res.actions] == ["use_backup_supplier"]
+        assert res.actions[0].amount is None and res.actions[0].week is None  # yes/no action: no "$0" amount
         assert res.disruption_cost == approx(2_500.0)
         assert res.min_cash == approx(42_280.0)
 
