@@ -73,7 +73,7 @@ WRITE_CASES = [
 def main() -> int:
     failures = 0
     for role, branch, cmd, want in CASES:
-        guard.current_branch = lambda b=branch: b
+        guard.current_branch = lambda cwd=None, b=branch: b
         got = outcome(guard.check_bash, cmd, role)
         if got != want:
             failures += 1
@@ -84,12 +84,12 @@ def main() -> int:
     guard.CACHE_DIR = Path(tempfile.mkdtemp())
 
     def fake_git(fetch_code: int, behind: int):
-        def _run(cmd, timeout=10.0):
+        def _run(cmd, timeout=10.0, cwd=None):
             if "fetch" in cmd:
                 return fetch_code, ""
             if "rev-list" in cmd:
                 return 0, str(behind)
-            return real_run(cmd, timeout)
+            return real_run(cmd, timeout, cwd)
         return _run
 
     guard.run = fake_git(0, 0)
