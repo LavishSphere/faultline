@@ -10,6 +10,9 @@ Two modes, distinguished by ``mode`` (a discriminator in the OpenAPI schema):
   limitations). Not filtered to any cutoff; never feed it to a replay.
 
 Both are labeled RESEARCH CONTEXT: public writing by the firms, not forecasts and not scored.
+In both modes a quote carries ``scorable`` (bool) only when the dataset states it
+(``core.research.quote_scorable``); the key is omitted when unknown. A missing dataset gives
+``status: "NOT AVAILABLE"`` and, in point-in-time mode, ``excluded_not_yet_public: null``.
 ``as_of`` must be an instant with an offset (``...Z`` or ``...+00:00``; URL-encode ``+`` as ``%2B``).
 Calendar dates, naive datetimes and unix timestamps are rejected with 422.
 """
@@ -18,19 +21,27 @@ from __future__ import annotations
 
 import re
 from datetime import UTC, datetime
-from typing import Annotated, Literal
+from typing import Annotated, Any, Literal
 
 from fastapi import APIRouter, Depends, Query, Request
-from pydantic import BaseModel, ConfigDict, Field, ValidationError
+from pydantic import (
+    BaseModel,
+    ConfigDict,
+    Field,
+    SerializerFunctionWrapHandler,
+    ValidationError,
+    model_serializer,
+)
+from pydantic.json_schema import SkipJsonSchema
 
 from config import Settings, get_settings
-from core.research import eligible_lenses, lens_for_prompt, load_lenses
+from core.research import eligible_lenses, lens_for_prompt, load_lenses, quote_scorable
+from models import ErrorCode
 from routes import (
     NOT_AVAILABLE,
     CodedRoute,
     FieldIssue,
     RouteError,
-    RouteErrorCode,
     error_responses,
     issues_from,
     read_json,
@@ -49,6 +60,22 @@ class LensQuote(BaseModel):
 
     text: str
     kind: QuoteKind
+    scorable: bool | SkipJsonSchema[None] = Field(
+        default=None,
+        description=(
+            "Whether the dataset marks this forecast as stated precisely enough to be checked "
+            "(core.research.quote_scorable). Omitted when the dataset does not say: NOT AVAILABLE, never guessed. "
+            "FAULTLINE never scores research lenses either way."
+        ),
+    )
+
+    # No return annotation on purpose: pydantic would use it as the serialization JSON schema and hide the fields.
+    @model_serializer(mode="wrap")
+    def _omit_unknown_scorable(self, handler: SerializerFunctionWrapHandler):  # noqa: ANN202
+        data: dict[str, Any] = handler(self)
+        if data.get("scorable") is None:
+            data.pop("scorable", None)
+        return data
 
 
 class LensPointInTime(BaseModel):
@@ -108,8 +135,12 @@ class VcLensesPointInTime(BaseModel):
     provenance: Literal["REAL_HISTORICAL"] = "REAL_HISTORICAL"
     as_of: datetime = Field(description="The replay cutoff, normalized to UTC.")
     items: list[LensPointInTime]
-    excluded_not_yet_public: int = Field(
-        ge=0, description="Curated lenses hidden because they were not provably public at as_of."
+    excluded_not_yet_public: int | None = Field(
+        ge=0,
+        description=(
+            "Curated lenses hidden because they were not provably public at as_of; "
+            "null when the lens dataset is missing (NOT AVAILABLE), never a made-up 0."
+        ),
     )
     notes: list[str]
 
@@ -159,7 +190,7 @@ def parse_as_of(raw: str) -> datetime:
                 except (OverflowError, ValueError):
                     problem = "as_of is outside the representable UTC range"
     raise RouteError(
-        RouteErrorCode.VALIDATION_ERROR,
+        ErrorCode.VALIDATION_ERROR,
         "as_of must be a timezone-aware ISO-8601 instant, e.g. 2026-07-01T00:00:00Z.",
         errors=[FieldIssue(loc=["query", "as_of"], msg=problem, type="as_of_instant")],
     )
@@ -176,7 +207,7 @@ def _load(settings: Settings) -> list[dict] | None:
     except (ValueError, TypeError, AttributeError):
         # load_lenses lists every schema problem; summarize rather than echo fixture contents.
         raise RouteError(
-            RouteErrorCode.DATA_INVALID,
+            ErrorCode.DATA_INVALID,
             f"{LENSES_FILE} failed research-lens validation (run tests/test_research_lenses.py for details).",
             status_code=500,
         ) from None
@@ -185,11 +216,13 @@ def _load(settings: Settings) -> list[dict] | None:
 def _live_items(items: list[dict]) -> list[LensLiveExplore]:
     out = []
     for i, item in enumerate(items):
+        # Resolve item-level `scorable` onto each quote exactly as the prompt projection does.
+        with_scorable = {**item, "quotes": [{**q, "scorable": quote_scorable(item, q)} for q in item["quotes"]]}
         try:
-            out.append(LensLiveExplore.model_validate(item))
+            out.append(LensLiveExplore.model_validate(with_scorable))
         except ValidationError as exc:
             raise RouteError(
-                RouteErrorCode.DATA_INVALID,
+                ErrorCode.DATA_INVALID,
                 f"{LENSES_FILE} item #{i} does not match the Live Explore lens schema.",
                 status_code=500,
                 errors=issues_from(exc.errors(), prefix=(LENSES_FILE, "items", i)),
@@ -218,7 +251,7 @@ def vc_lenses(
 ) -> VcLensesPointInTime | VcLensesLiveExplore:
     if len(request.query_params.getlist("as_of")) > 1:
         raise RouteError(
-            RouteErrorCode.VALIDATION_ERROR,
+            ErrorCode.VALIDATION_ERROR,
             "as_of must be given at most once.",
             errors=[FieldIssue(loc=["query", "as_of"], msg="as_of was repeated", type="as_of_repeated")],
         )
@@ -235,7 +268,7 @@ def vc_lenses(
 
     if items is None:
         return VcLensesPointInTime(status=NOT_AVAILABLE, mode_label=POINT_IN_TIME_LABEL, as_of=instant, items=[],
-                                   excluded_not_yet_public=0, notes=[missing_note])
+                                   excluded_not_yet_public=None, notes=[missing_note])
     eligible = eligible_lenses(instant, items)
     projected = [LensPointInTime.model_validate(lens_for_prompt(item, instant)) for item in eligible]
     excluded = len(items) - len(eligible)

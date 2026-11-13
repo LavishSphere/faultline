@@ -128,7 +128,7 @@ def full() -> None:
                             if ref not in state_cache:
                                 _, st = run(["gh", "issue", "view", ref, "--json", "state", "--jq", ".state"], timeout=8)
                                 state_cache[ref] = st or "UNKNOWN"
-                            if state_cache[ref] != "CLOSED":
+                            if state_cache[ref] not in ("CLOSED", "MERGED"):  # merged PRs report MERGED
                                 pending.append(f"#{ref}")
                         return pending
 
@@ -145,7 +145,7 @@ def full() -> None:
         else:
             lines.append("- Could not determine the GitHub login (`gh auth login` not done?). Help the human run `gh auth login` before doing anything else.")
 
-    lines.append("- Source of truth: docs/SPEC.md (product), docs/MATH_MODEL.md (math), docs/WORKFLOW.md (process).")
+    lines.append("- Source of truth: docs/SPEC.md (product), docs/MATH_MODEL.md (math), docs/WORKFLOW.md (process), docs/HACKATHON.md (deadlines: practice demos Sat Nov 14 1pm, code freeze Sun Nov 15 11am; judging incl. +2 AI-alignment bonus).")
     print("\n".join(lines))
 
 

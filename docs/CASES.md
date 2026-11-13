@@ -111,8 +111,9 @@ true probability**. The July quotes were produced by the #12 parsers and normali
 `services/api/data/raw/kalshi/KXFEDDECISION-26JUL-H0/20261113T034149253625Z.json` (sha256 `4d0096f8…5461`) and
 `services/api/data/raw/polymarket/1654958/20261113T034149701466Z.json` (sha256 `3c53fe2a…e7e7`). The case file holds
 every saved quote with `as_of − 24h ≤ ts ≤ as_of` (25 Kalshi, 24 Polymarket). The gate selects the last one per
-market. Nothing was typed by hand. Kalshi is the pre-registered benchmark (rule 6), so scoring code must pass
-`venue="kalshi"` when it needs one market price.
+market. Nothing was typed by hand. Kalshi is the pre-registered benchmark (rule 6). The scored market baseline
+comes from the case's `market_quote_id` (`kalshi:KXFEDDECISION-26JUL-H0`, format `venue:market_id`,
+EVALUATION_PROTOCOL §7); it is fixed in the case file and never chosen by the caller.
 
 The exact settlement wording is in each case file (`case.resolution_rule`). It is the same for all four cases
 apart from the meeting date. It does not name the range in effect before the meeting (see "Cross-case
@@ -199,7 +200,8 @@ which cases or evidence were picked. It does not make the curator blind.
   the September statement). The temporal gate isolates each case, so a model replaying September never sees it.
   But anyone reading the October case file, or replaying cases in one model session, learns the September
   result. Run each case in a fresh model call, and do not show later cases' evidence in the UI before earlier
-  cases are revealed.
+  cases are revealed. Because later cases' evidence includes earlier meetings' statements, OFFICIAL runs forecast
+  every case before any reveal.
 - **The curator read some of this while applying the rule.** Building a later case's evidence meant reading the
   previous meeting's statement and minutes, so the curator saw earlier cases' results before writing the sealed
   files. Selection was already fixed by then (Part 1).
