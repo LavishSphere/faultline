@@ -1,0 +1,30 @@
+{
+  "_provenance": "SYNTHETIC: hand-written from the documented live MarketCandlestick schema (docs.kalshi.com/api-reference/market/get-market-candlesticks), which uses *_dollars / *_fp names. NOT an API response.",
+  "ticker": "SYNTHETIC-MKT-YES",
+  "candlesticks": [
+    {
+      "end_period_ts": 1767225600,
+      "yes_bid": {"open_dollars": "0.6100", "low_dollars": "0.6000", "high_dollars": "0.6200", "close_dollars": "0.6200"},
+      "yes_ask": {"open_dollars": "0.6400", "low_dollars": "0.6300", "high_dollars": "0.6500", "close_dollars": "0.6400"},
+      "price": {"open_dollars": "0.6300", "low_dollars": "0.6300", "high_dollars": "0.6300", "close_dollars": "0.6300", "mean_dollars": "0.6300", "previous_dollars": null},
+      "volume_fp": "5.00",
+      "open_interest_fp": "12.00"
+    },
+    {
+      "end_period_ts": 1767229200,
+      "yes_bid": {"open_dollars": "0.0000", "low_dollars": "0.0000", "high_dollars": "0.0000", "close_dollars": "0.0000"},
+      "yes_ask": {"open_dollars": "1.0000", "low_dollars": "1.0000", "high_dollars": "1.0000", "close_dollars": "1.0000"},
+      "price": {"open_dollars": "0.6300", "low_dollars": "0.6300", "high_dollars": "0.6300", "close_dollars": "0.6300", "mean_dollars": "0.6300", "previous_dollars": "0.6300"},
+      "volume_fp": "1.00",
+      "open_interest_fp": "12.00"
+    },
+    {
+      "end_period_ts": 1767232800,
+      "yes_bid": {"open_dollars": "0.0000", "low_dollars": "0.0000", "high_dollars": "0.0000", "close_dollars": "0.0000"},
+      "yes_ask": {"open_dollars": "1.0000", "low_dollars": "1.0000", "high_dollars": "1.0000", "close_dollars": "1.0000"},
+      "price": {"open_dollars": null, "low_dollars": null, "high_dollars": null, "close_dollars": null, "mean_dollars": null, "previous_dollars": "0.6300"},
+      "volume_fp": "0.00",
+      "open_interest_fp": "12.00"
+    }
+  ]
+}

@@ -1,0 +1,24 @@
+{
+  "_provenance": "SYNTHETIC: hand-written from the documented Market schema (docs.kalshi.com/api-reference/historical/get-historical-market). NOT an API response. Ticker and values are invented; outcome keys are present only to test that parsers drop them.",
+  "market": {
+    "ticker": "SYNTHETIC-MKT-YES",
+    "event_ticker": "SYNTHETIC-EVT",
+    "market_type": "binary",
+    "title": "Synthetic test market",
+    "yes_sub_title": "Synthetic yes side",
+    "no_sub_title": "Synthetic no side",
+    "open_time": "2026-01-01T00:00:00Z",
+    "close_time": "2026-02-01T00:00:00Z",
+    "status": "finalized",
+    "rules_primary": "Synthetic primary rules.",
+    "rules_secondary": "Synthetic secondary rules.",
+    "yes_bid_dollars": "0.0000",
+    "yes_ask_dollars": "1.0000",
+    "last_price_dollars": "0.9900",
+    "volume_fp": "10.00",
+    "result": "yes",
+    "expiration_value": "synthetic",
+    "settlement_value_dollars": "1.0000",
+    "settlement_ts": "2026-02-01T00:05:00Z"
+  }
+}

@@ -142,7 +142,11 @@ For outcome $y \in \{0,1\}$ and forecast $p \in [0,1]$:
 
 ## 7. Market-quote normalization (`markets/normalize.py`)
 
-- Kalshi prices in cents: $p = c/100$. Polymarket prices are decimal: $p = x$. Normalize **once**, at ingestion.
+- Kalshi prices are fixed-point dollar strings per \$1-notional contract (`FixedPointDollars`, e.g. `"0.5600"`): $p = x$.
+  Legacy integer-cent payloads are still accepted: $p = c/100$ (a cents value in $(0,1)$ is rejected as already normalized).
+  Polymarket prices are decimal: $p = x$. Normalize **once**, at ingestion. *(Updated 2026-11-13 after verifying the current Kalshi docs and real responses; see PR #12.)*
+- Bid/ask midpoint $(b+a)/2$ is used only for a real two-sided book ($b > 0$, $a < 1$, $b \le a$). A Polymarket CLOB
+  `/prices-history` point is recorded as `quote_kind = price_history_point`.
 - Quote selection: last observation with timestamp $\le$ `as_of` and $\ge$ `as_of` − 24h. Otherwise the market baseline is `NOT AVAILABLE`.
 - Preference order: bid/ask midpoint, then candle close, then last trade; record which (`quote_kind`).
 - Binary markets only (MVP). Reject values outside $[0,1]$ after normalization.

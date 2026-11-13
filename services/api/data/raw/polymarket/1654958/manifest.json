@@ -1,0 +1,20 @@
+{
+  "entries": [
+    {
+      "bytes": 9191,
+      "collected_at": "2026-11-13T03:41:49.701466+00:00",
+      "endpoint": "polymarket.clob_prices_history",
+      "http_status": 200,
+      "params": {
+        "endTs": 1784678400,
+        "fidelity": 60,
+        "market": "111604417349377875799825956621596386269673370070912696668140891647145772186047",
+        "startTs": 1783468800
+      },
+      "path": "polymarket/1654958/20261113T034149701466Z.json",
+      "provenance": "REAL HISTORICAL",
+      "sha256": "3c53fe2a74f3a0f44bdbd91136613242102ffdf58b319178ffb79ea3fefae7e7",
+      "url": "https://clob.polymarket.com/prices-history"
+    }
+  ]
+}
