@@ -1,0 +1,48 @@
+[build-system]
+requires = ["setuptools>=69"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "faultline-api"
+version = "0.1.0"
+description = "FAULTLINE backend: FastAPI service, replay pipeline, deterministic finance engine."
+requires-python = ">=3.11"
+dependencies = [
+    "fastapi>=0.115",
+    "uvicorn[standard]>=0.30",
+    "pydantic>=2.7",
+    "numpy>=1.26",
+    "scipy>=1.13",
+    "networkx>=3.3",
+    "httpx>=0.27",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8.2",
+    "ruff>=0.6",
+]
+
+# Flat layout with several top-level packages: list them explicitly so setuptools does not
+# try to package data/, var/ or tests/. namespaces=true so a package dir without __init__.py
+# (e.g. markets/ while it is being built) is still picked up.
+[tool.setuptools]
+py-modules = ["main", "models", "config", "errors"]
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["core*", "markets*", "agents*", "routes*"]
+namespaces = true
+
+[tool.pytest.ini_options]
+pythonpath = ["."]
+testpaths = ["tests"]
+addopts = "-ra"
+
+[tool.ruff]
+line-length = 120
+target-version = "py311"
+extend-exclude = [".venv", "var"]
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "B", "UP"]
