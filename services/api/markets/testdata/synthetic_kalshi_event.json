@@ -1,0 +1,10 @@
+{
+  "_provenance": "SYNTHETIC: hand-written from the documented Event schema (docs.kalshi.com/api-reference/events/get-event). NOT an API response.",
+  "event": {
+    "event_ticker": "SYNTHETIC-EVT",
+    "series_ticker": "SYNTHETICSERIES",
+    "title": "Synthetic event",
+    "mutually_exclusive": true
+  },
+  "markets": []
+}

@@ -1,0 +1,10 @@
+{
+  "_provenance": "SYNTHETIC: hand-written, NOT an API response. A non-binary outcome list to test the binary-only guard.",
+  "id": "999000002",
+  "question": "Synthetic three-way question?",
+  "outcomes": "[\"A\", \"B\", \"C\"]",
+  "clobTokenIds": "[\"1\", \"2\", \"3\"]",
+  "startDate": "2026-01-01T00:00:00Z",
+  "endDate": "2026-02-01T00:00:00Z",
+  "version": "v1"
+}

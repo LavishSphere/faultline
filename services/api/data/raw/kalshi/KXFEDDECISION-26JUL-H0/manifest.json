@@ -1,0 +1,19 @@
+{
+  "entries": [
+    {
+      "bytes": 113435,
+      "collected_at": "2026-11-13T03:41:49.253625+00:00",
+      "endpoint": "kalshi.historical_candlesticks",
+      "http_status": 200,
+      "params": {
+        "end_ts": 1784678400,
+        "period_interval": 60,
+        "start_ts": 1783468800
+      },
+      "path": "kalshi/KXFEDDECISION-26JUL-H0/20261113T034149253625Z.json",
+      "provenance": "REAL HISTORICAL",
+      "sha256": "4d0096f8bea3d196fdb8474b80b85c35894da22850dd82212bdc4fc99df25461",
+      "url": "https://external-api.kalshi.com/trade-api/v2/historical/markets/KXFEDDECISION-26JUL-H0/candlesticks"
+    }
+  ]
+}

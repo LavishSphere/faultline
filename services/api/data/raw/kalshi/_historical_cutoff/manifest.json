@@ -1,0 +1,15 @@
+{
+  "entries": [
+    {
+      "bytes": 188,
+      "collected_at": "2026-11-13T03:41:49.042044+00:00",
+      "endpoint": "kalshi.historical_cutoff",
+      "http_status": 200,
+      "params": {},
+      "path": "kalshi/_historical_cutoff/20261113T034149042044Z.json",
+      "provenance": "REAL HISTORICAL",
+      "sha256": "3abeb2fe0341f0e0bce3d8fb7f80125f0ceeabb3743b389544ed8f410473a9cb",
+      "url": "https://external-api.kalshi.com/trade-api/v2/historical/cutoff"
+    }
+  ]
+}

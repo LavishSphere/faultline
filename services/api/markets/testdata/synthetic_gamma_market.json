@@ -1,0 +1,19 @@
+{
+  "_provenance": "SYNTHETIC: hand-written from the documented Gamma Market schema (docs.polymarket.com/api-spec/gamma-openapi.yaml, market-details.md). NOT an API response. Ids are invented; outcome keys are present only to test that parsers drop them.",
+  "id": "999000001",
+  "question": "Synthetic binary question?",
+  "conditionId": "0xsynthetic",
+  "slug": "synthetic-binary-question",
+  "description": "Synthetic resolution rules.",
+  "resolutionSource": "https://example.invalid/synthetic-source",
+  "startDate": "2026-01-01T00:00:00Z",
+  "endDate": "2026-02-01T00:00:00Z",
+  "closedTime": "2026-02-01 00:10:00+00",
+  "outcomes": "[\"Yes\", \"No\"]",
+  "outcomePrices": "[\"1\", \"0\"]",
+  "clobTokenIds": "[\"111\", \"222\"]",
+  "umaResolutionStatus": "resolved",
+  "negRisk": false,
+  "version": "v1",
+  "closed": true
+}
