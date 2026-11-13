@@ -67,11 +67,25 @@ class Provenance(StrEnum):
 
 
 class ErrorCode(StrEnum):
-    MODEL_UNAVAILABLE = "MODEL_UNAVAILABLE"
+    """Every machine-readable API error code. The single source: routes, errors.py and agents/ import it.
+
+    HTTP status is chosen by the raiser, not encoded here. New codes are appended (existing order kept).
+    """
+
+    MODEL_UNAVAILABLE = "MODEL_UNAVAILABLE"  # model server down, timeout, model not installed
     NO_FEASIBLE_PLAN = "NO_FEASIBLE_PLAN"
     NOT_REVEALABLE = "NOT_REVEALABLE"
     INSUFFICIENT_DATA = "INSUFFICIENT_DATA"
     NOT_FOUND = "NOT_FOUND"
+    # routes (routes/__init__.py RouteError)
+    VALIDATION_ERROR = "VALIDATION_ERROR"  # request body / query failed validation (422)
+    INFEASIBLE_INPUT = "INFEASIBLE_INPUT"  # valid shape, but financing that cannot happen (422)
+    DATA_UNAVAILABLE = "DATA_UNAVAILABLE"  # a required data file is missing (503)
+    DATA_INVALID = "DATA_INVALID"  # a data file exists but fails its schema (500)
+    # model provider (agents/provider.py exceptions): each means there is NO forecast for the call
+    MODEL_OUTPUT_INVALID = "MODEL_OUTPUT_INVALID"  # answer failed output validation on every attempt
+    PROMPT_TOO_LONG = "PROMPT_TOO_LONG"  # prompt + answer budget exceeds the context window; refused, not truncated
+    PROMPT_NOT_VERIFIED = "PROMPT_NOT_VERIFIED"  # cannot confirm the model saw the whole prompt; answer discarded
 
 
 class ApiError(BaseModel):
