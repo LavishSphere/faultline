@@ -79,7 +79,13 @@ $$
 $$
 
 where $x_c$ = "defer non-critical capex", $z_t \in [0,\bar z]$ = payroll reduction share (§4), $F_b$ = one-time backup-supplier switching fee.
-Pre-horizon values $S_0$, $P_{1-L_p},\dots,P_0$ are given as initial conditions.
+Pre-horizon values $S_0$, $P_{1-L_p},\dots,P_0$ are given as initial conditions, as are $C_0$, $I_0$, $B_0$, and
+$D_1$ (term-loan principal at the start of week 1; the "$D_0$" in §10 means this value).
+Principal evolves as $D_{t+1} = D_t - A_t$. In the demand shock, $\rho = 0$ means the recovery branch is empty
+($m_t = 1$ immediately after $t_2$), which is how §9 Case B "week 2 only" is encoded ($t_1 = t_2 = 2$, $\rho = 0$).
+Financing that cannot happen is rejected by the simulator, not simulated: a repayment above the balance ($B_t < 0$) or
+amortization above the remaining principal ($D_{t+1} < 0$), with a \$$10^{-6}$ tolerance for solver round-off.
+Inputs must be finite (no NaN or ±∞).
 
 **Runway:** first $t$ with $C_t < 0$ on the simulated path; reported as `> T weeks` if none. (No extrapolated burn-rate runway unless labeled.)
 
