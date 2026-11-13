@@ -236,6 +236,48 @@ def test_terminal_revolver_blocks_borrow_and_never_repay():
     assert res.max_feasible_cash_floor == approx(100_000 - 3 * (51_423.076923 - 50_000))  # 95,730.769231
 
 
+def _three_week_slump() -> ScenarioShock:
+    return ScenarioShock(name="90% drop weeks 1-2", demand=DemandShock(delta=0.9, start_week=1, end_week=2))
+
+
+def test_three_week_purchases_cannot_go_negative():
+    # §3 physical rule (issue #39, finance-owner decision on PR #69): P_t >= 0, so a cut v_t cannot exceed that week's
+    # purchases. Same 3-week inputs as above, but a 90% drop in weeks 1-2, no revolver (B-bar = 0), C_min = 50,000.
+    # S_1 = S_2 = 5,000, so purchases before any cut are P_1 = P_2 = 0.65 x 5,000 = 3,250.
+    # No action:
+    #   C_1 = 100,000 + (0.8 x 5,000 + 0.2 x 50,000 = 14,000) - P_0 32,500 - 18,923.077 = 62,576.923
+    #   C_2 = 62,576.923 + (0.8 x 5,000 + 0.2 x 5,000 = 5,000) - P_1 3,250 - 18,923.077 = 45,403.846
+    #   C_3 = 45,403.846 + (0.8 x 50,000 + 0.2 x 5,000 = 41,000) - P_2 3,250 - 18,923.077 = 64,230.769
+    # Week 2 is 4,596.154 short. Only v_1 (paid in week 2) or a payroll cut in week 1 or 2 can raise C_2.
+    # Without the rule the cheapest plan was v_1 = 4,596.154, i.e. P_1 = -1,346.154: impossible.
+    # With it: v_1 = 3,250 (P_1 = 0) and the remaining 1,346.154 from payroll (harm 5/$).
+    params = three_week_params(revolver_limit=0.0, min_cash=50_000.0)
+    no_action = simulate(params, _three_week_slump(), ActionPlan())
+    assert no_action.cash == [approx(62_576.923077), approx(45_403.846154), approx(64_230.769231)]
+    assert no_action.purchases[:2] == [approx(3_250.0), approx(3_250.0)]
+
+    allowed = run(params, _three_week_slump(), protect=False)
+    assert allowed.status == OPTIMAL
+    assert allowed.plan.purchase_cut == [approx(3_250.0), approx(0.0), approx(0.0)]
+    sim = simulate(params, _three_week_slump(), allowed.plan)  # accepted: no negative purchases
+    assert sim.purchases[0] == approx(0.0)
+    assert min(sim.purchases) >= -TOL
+    payroll_cut_dollars = [z * 12_000.0 for z in allowed.plan.payroll_cut]
+    assert sum(payroll_cut_dollars[:2]) == approx(1_346.153846)  # week 1 or 2, same harm; only the total is fixed
+    assert payroll_cut_dollars[2] == approx(0.0)
+    # C_2 = 45,403.846 + 3,250 + 1,346.154 = 50,000; C_3 = 64,230.769 + 3,250 + 1,346.154 = 68,826.923.
+    assert allowed.cash[1:] == [approx(50_000.0), approx(68_826.923077)]
+    # Objective = 0.05 x 3,250 + 5 x 1,346.153846 - 0.0001 x 50,000 = 162.50 + 6,730.769231 - 5 = 6,888.269231.
+    assert allowed.objective == approx(6_888.269231)
+    assert "purchases non-negative, week 1" in allowed.binding_constraints
+    assert "liquidity floor, week 2" in allowed.binding_constraints
+
+    protected = run(params, _three_week_slump(), protect=True)
+    assert protected.status == NO_FEASIBLE_PLAN
+    # Best C_2 without payroll: 45,403.846 + 3,250 = 48,653.846.
+    assert protected.max_feasible_cash_floor == approx(48_653.846154)
+
+
 def test_infeasible_without_any_floor_reports_not_available():
     # I_0 = 60,000 below I_min = 70,000: no plan exists even with the liquidity floor removed.
     res = run(three_week_params(min_inventory=70_000.0), CASE_B, protect=False)
@@ -283,6 +325,31 @@ def test_bad_quarter_is_fixed_by_purchase_cuts_in_both_modes():
         assert res.plan.payroll_cut == [approx(0.0)] * 26
         assert res.min_cash == approx(25_000.0)
         assert "liquidity floor, week 26" in res.binding_constraints
+
+
+def _deep_slump() -> ScenarioShock:
+    return ScenarioShock(name="70% drop weeks 5-8", demand=DemandShock(delta=0.7, start_week=5, end_week=8))
+
+
+def test_deep_slump_keeps_purchases_non_negative():
+    # 70% drop in weeks 5-8: S_t = 15,000, so purchases before any cut are 0.65 x 15,000 = 9,750 in those weeks,
+    # below the 10,000/wk cut cap. Before the P_t >= 0 row the optimizer could choose v_5 = 10,000 (P_5 = -250), which
+    # simulate() now rejects (issue #39). No-action min cash is 1,115.38 in week 8.
+    # Permanent loss 0.35 x 0.7 x 50,000 x 4 = 49,000 -> C_26 = 14,000, so cuts must total 11,000 plus the revolver
+    # interest; the week-7/8 trough is bridged by the revolver and repaid.
+    shock = _deep_slump()
+    assert simulate(DEMO, shock, ActionPlan()).min_cash == approx(1_115.384615)
+    for protect in (False, True):
+        res = run(DEMO, shock, protect)
+        assert res.status == OPTIMAL
+        sim = simulate(DEMO, shock, res.plan)  # would raise ValueError on negative purchases
+        assert min(sim.purchases) >= -TOL
+        assert res.cash == [approx(c) for c in sim.cash]
+        assert res.min_cash == approx(25_000.0)
+        interest = sum(sim.revolver_interest)
+        assert sum(res.plan.purchase_cut) == approx(11_000.0 + interest)
+        assert res.disruption_cost == approx(0.05 * sum(res.plan.purchase_cut) + 0.01 * sum(res.plan.revolver_draw))
+        assert res.plan.payroll_cut == [approx(0.0)] * 26
 
 
 def _long_outage() -> ScenarioShock:
@@ -386,6 +453,10 @@ AGREEMENT_CASES = [
     ("3-week revolver", three_week_params(), CASE_B, False, SEC10),
     ("3-week facility limit", three_week_params(revolver_limit=500.0), CASE_B, False, SEC10),
     ("3-week payroll", three_week_params(revolver_limit=500.0, min_inventory=59_800.0), CASE_B, False, SEC10),
+    ("deep slump, payroll allowed", DEMO, _deep_slump(), False, SEC10),
+    ("deep slump, payroll protected", DEMO, _deep_slump(), True, SEC10),
+    ("3-week slump, purchases at zero", three_week_params(revolver_limit=0.0, min_cash=50_000.0), _three_week_slump(),
+     False, SEC10),
 ]
 
 
@@ -404,6 +475,7 @@ def test_simulator_agrees_with_optimizer(label, params, shock, protect, settings
     assert all(-TOL <= b <= params.revolver_limit + TOL for b in sim.revolver_balance)
     assert min(sim.inventory) >= params.min_inventory - TOL
     assert sim.revolver_balance[-1] <= params.revolver_balance_0 + TOL
+    assert min(sim.purchases) >= -TOL  # §3 physical rule (issue #39)
 
 
 def test_opening_revolver_balance_terminal_condition():

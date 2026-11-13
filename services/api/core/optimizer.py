@@ -23,6 +23,8 @@ Decisions (one variable vector, §4):
 §4 hard constraints:
     1. C_t >= C_min    2. 0 <= B_t <= B-bar    3. I_t >= I_min    4. debt service J_t + A_t is a fixed outflow
     5. protect payroll: z_t <= 0    6. mu <= C_t    7. B_T <= B_0
+plus the §3 physical rule that simulate() enforces (issue #39, finance-owner decision on PR #69):
+    purchases non-negative: P_t >= 0 for every t (a purchase cut v_t cannot exceed that week's purchases)
 
 Objective (minimize disruption, tie-break toward more cash):
     c_b x_b + c_c x_c + c_e x_e + c_v sum_t v_t + c_y sum_t y_t + c_z sum_t z_t W_t - epsilon mu
@@ -244,6 +246,7 @@ class _Problem:
             S.append(S_t)
             premium = _var(ix.xb, params.backup_premium * (1.0 - g) * lost)
             P.append(S_t.scale(1.0 - g) - _var(ix("v", t)) + premium)
+        self.P = P  # P[t] = purchases in week t as an expression of the decisions (index 0 unused)
 
         rows: list[dict[int, float]] = []
         lo: list[float] = []
@@ -278,6 +281,7 @@ class _Problem:
             add_row(_var(ix("B", t)) - B_prev - _var(ix("y", t)) + _var(ix("q", t)), 0.0, 0.0)  # §3 revolver
             add_row(_var(ix("I", t)) - I_prev + _var(ix("v", t)), 0.0, 0.0)  # §3 inventory I_t = I_{t-1} - v_t
             add_row(_var(ix.mu) - _var(ix("C", t)), -np.inf, 0.0)  # §4.6 mu <= C_t
+            add_row(P[t], 0.0, np.inf)  # §3 physical rule (issue #39): P_t >= 0
             D -= A[i]  # D_{t+1} = D_t - A_t
 
         A_mat = np.zeros((len(rows), ix.n))
@@ -325,6 +329,11 @@ class _Problem:
 # --------------------------------------------------------------------------- reading the solution
 
 
+def _value(expr: _Affine, sol: np.ndarray) -> float:
+    """Evaluate a linear expression at the solver's solution."""
+    return expr.const + sum(c * float(sol[j]) for j, c in expr.coef.items())
+
+
 def _clean(value: float) -> float:
     """Drop solver round-off: |value| < ZERO_TOL -> 0, never negative (ActionPlan requires v, y, q, z >= 0)."""
     return 0.0 if value < ZERO_TOL else float(value)
@@ -338,6 +347,7 @@ def _binding(prob: _Problem, sol: np.ndarray) -> list[str]:
         ("liquidity floor", lambda t: sol[ix("C", t)] - p.min_cash),
         ("facility limit", lambda t: prob.B_cap - sol[ix("B", t)]),
         ("inventory floor", lambda t: sol[ix("I", t)] - p.min_inventory),
+        ("purchases non-negative", lambda t: _value(prob.P[t], sol)),
     )
     for label, slack in checks:
         names += [f"{label}, week {t}" for t in range(1, T + 1) if slack(t) < BINDING_TOL]
@@ -425,7 +435,12 @@ def optimize(
 
     plan, actions = _plan_and_actions(prob, sol)
     cash = [float(sol[ix("C", t)]) for t in range(1, T + 1)]
-    check = simulate(params, shock, plan)
+    try:
+        check = simulate(params, shock, plan)
+    except ValueError as exc:  # simulate() rejects physically impossible plans (§3); never report one as OPTIMAL
+        return OptimizationResult(
+            status=SOLVER_ERROR, solver_message=f"simulate() rejected the solver's plan: {exc}", **common
+        )
     gap = max(abs(s - c) for s, c in zip(check.cash, cash, strict=True))
     if gap > AGREEMENT_TOL:
         return OptimizationResult(
