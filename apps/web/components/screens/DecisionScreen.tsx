@@ -1,5 +1,6 @@
 import { DecisionBranches } from "../DecisionBranches";
 import { FinancialReadout } from "../FinancialReadout";
+import { IntegrityPanel } from "../integrity/IntegrityPanel";
 import { ModelStatus } from "../ModelStatus";
 import { NotAvailable, Panel } from "../Panel";
 import { ScreenHeader } from "./ScreenHeader";
@@ -68,6 +69,8 @@ export function DecisionScreen({ step }: { step: Step }) {
         </h2>
         <DecisionBranches />
       </section>
+
+      <IntegrityPanel code="B.4" />
     </div>
   );
 }

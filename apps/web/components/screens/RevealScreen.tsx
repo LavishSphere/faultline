@@ -1,3 +1,4 @@
+import { IntegrityPanel } from "../integrity/IntegrityPanel";
 import { NotAvailable, Panel } from "../Panel";
 import { Scorecard } from "../Scorecard";
 import { ScreenHeader } from "./ScreenHeader";
@@ -33,6 +34,8 @@ export function RevealScreen({ step }: { step: Step }) {
           <Scorecard />
         </div>
       </div>
+
+      <IntegrityPanel code="D.2" />
     </div>
   );
 }

@@ -53,7 +53,13 @@ ANSWER = {
     "evidence_ids": ["evid_ok", "evid_edge"],
 }
 
-PRE_REVEAL = {("get", "/api/cases"), ("get", "/api/cases/{case_id}/evidence"), ("post", "/api/replay/run")}
+# /api/integrity (#81) is pre-reveal too: it reports checks about a case and run, never the outcome.
+PRE_REVEAL = {
+    ("get", "/api/cases"),
+    ("get", "/api/cases/{case_id}/evidence"),
+    ("post", "/api/replay/run"),
+    ("get", "/api/integrity"),
+}
 POST_REVEAL = {("post", "/api/replay/{prediction_id}/reveal")}
 NOT_REPLAY = {"/api/health", "/api/simulate", "/api/scenarios", "/api/vc-lenses"}
 
@@ -559,7 +565,7 @@ def _paths(client: TestClient) -> dict:
 
 def test_every_case_and_replay_route_is_classified(world):
     ops = {(m, path) for path, item in _paths(world.client()).items() for m in item}
-    replay_ops = {op for op in ops if op[1].startswith(("/api/cases", "/api/replay"))}
+    replay_ops = {op for op in ops if op[1].startswith(("/api/cases", "/api/replay", "/api/integrity"))}
     assert replay_ops == PRE_REVEAL | POST_REVEAL, "classify new case/replay routes as pre- or post-reveal"
     unclassified = {op for op in ops - replay_ops if op[1] not in NOT_REPLAY}
     assert not unclassified, f"new routes must be classified in this test: {sorted(unclassified)}"
@@ -600,6 +606,14 @@ def test_pre_reveal_response_schemas_have_no_outcome_fields(world):
     assert "outcome" in _schema_property_names(reveal, components)
 
 
+def _run_pid(responses: list) -> str:
+    """prediction_id of the agent_plus_market run among the pre-reveal responses."""
+    runs = [r for r in responses if r.status_code == 200 and "prediction" in r.json()]
+    return next(r for r in runs if r.json()["prediction"]["variant"] == "agent_plus_market").json()["prediction"][
+        "prediction_id"
+    ]
+
+
 def _pre_reveal_calls(world: World, client: TestClient) -> list:
     """At least one request (success and failure) per pre-reveal route."""
     calls = {
@@ -616,6 +630,13 @@ def _pre_reveal_calls(world: World, client: TestClient) -> list:
             run(client, "agent_only", case_id="no_such_case"),
         ],
     }
+    pid = _run_pid(calls[("post", "/api/replay/run")])
+    calls[("get", "/api/integrity")] = [
+        client.get("/api/integrity"),
+        client.get("/api/integrity", params={"case_id": EVENT}),
+        client.get("/api/integrity", params={"prediction_id": pid}),
+        client.get("/api/integrity", params={"case_id": "no_such_case"}),
+    ]
     assert set(calls) == PRE_REVEAL
     return [resp for group in calls.values() for resp in group]
 
@@ -626,7 +647,7 @@ def test_pre_reveal_endpoints_never_return_sealed_values_before_or_after_a_revea
     assert {r.status_code for r in before} >= {200, 404, 422}
     for resp in before:
         assert_pre_reveal_clean(resp)
-    pid = before[-2].json()["prediction"]["prediction_id"]
+    pid = _run_pid(before)
     revealed = client.post(f"/api/replay/{pid}/reveal")
     assert revealed.status_code == 200 and CANARY in revealed.text  # the canary IS in the sealed file
     for resp in _pre_reveal_calls(world, client):
@@ -653,7 +674,7 @@ def test_pre_reveal_routes_never_open_the_sealed_directory(world, monkeypatch):
     assert any("demo_cases" in p for p in opened)  # the probe sees the case reads
     assert not [p for p in opened if "sealed_outcomes" in p.casefold()]
 
-    pid = responses[-2].json()["prediction"]["prediction_id"]
+    pid = _run_pid(responses)
     assert client.post(f"/api/replay/{pid}/reveal").status_code == 200
     assert [p for p in opened if "sealed_outcomes" in p]  # ... and would have caught a sealed read
 
