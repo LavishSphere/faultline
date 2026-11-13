@@ -44,6 +44,7 @@ FIRMS = (
     "Bessemer Venture Partners",
 )
 QUOTE_KINDS = ("documentary_fact", "analyst_interpretation", "quantitative_forecast")
+SCORABLE_KIND = "quantitative_forecast"  # the only quote kind that can be scorable: true
 REQUIRED_FIELDS = (
     "id",
     "firm",
@@ -135,7 +136,30 @@ def validate_lens(item: Any) -> list[str]:
                 continue
             if quote.get("kind") not in QUOTE_KINDS:
                 errors.append(f"{ident}: quotes[{i}].kind must be one of {QUOTE_KINDS}")
+            if "scorable" in quote:
+                if not isinstance(quote["scorable"], bool):
+                    errors.append(f"{ident}: quotes[{i}].scorable must be true or false")
+                elif quote["scorable"] and quote.get("kind") != SCORABLE_KIND:
+                    errors.append(f"{ident}: quotes[{i}].scorable is true, but only a {SCORABLE_KIND} can be scorable")
+    if "scorable" in item and not isinstance(item["scorable"], bool):
+        errors.append(f"{ident}: scorable must be true or false")
     return errors
+
+
+def quote_scorable(item: dict[str, Any], quote: dict[str, Any]) -> bool | None:
+    """Whether the dataset marks this quote as scorable; ``None`` when it does not say (NOT AVAILABLE).
+
+    ``scorable`` records whether a quoted forecast is stated precisely enough to be checked (metric,
+    threshold, horizon, resolution source). Curators set it from the quote's text alone, never from
+    what later happened, so it is safe in a prompt. A quote-level value wins; an item-level value
+    applies only to the item's ``quantitative_forecast`` quotes (facts and interpretations are not
+    forecasts). Nothing is inferred: no value in the dataset means ``None``.
+    """
+    if "scorable" in quote:
+        return quote["scorable"]
+    if quote.get("kind") == SCORABLE_KIND and "scorable" in item:
+        return item["scorable"]
+    return None
 
 
 def load_lenses(path: Path | str = DATA_PATH) -> list[dict[str, Any]]:
@@ -197,8 +221,10 @@ def lens_for_prompt(item: dict[str, Any], as_of: datetime | str) -> dict[str, An
     """Prompt-safe projection of an eligible lens: content only, no post-cutoff curation metadata.
 
     Keeps id, firm, title, url, published_at (only when on or before ``as_of``), thesis,
-    hypotheses, and quotes as {text, kind}. Drops accessed_at, archive fields, page metadata,
-    basis notes, quote notes, and limitations. Raises ValueError for an item not eligible at ``as_of``.
+    hypotheses, and quotes as {text, kind} plus ``scorable`` when the dataset states it
+    (``quote_scorable``; the key is absent, never null or guessed, when it does not). Drops
+    accessed_at, archive fields, page metadata, basis notes, quote notes, scorable_reason, and
+    limitations. Raises ValueError for an item not eligible at ``as_of``.
     """
     instant = _as_of_instant(as_of)
     if not is_eligible(item, instant):
@@ -214,5 +240,12 @@ def lens_for_prompt(item: dict[str, Any], as_of: datetime | str) -> dict[str, An
         out["published_at"] = published
     out["thesis"] = item["thesis"]
     out["hypotheses"] = list(item["hypotheses"])
-    out["quotes"] = [{"text": q["text"], "kind": q["kind"]} for q in item["quotes"]]
+    quotes = []
+    for q in item["quotes"]:
+        quote = {"text": q["text"], "kind": q["kind"]}
+        scorable = quote_scorable(item, q)
+        if scorable is not None:
+            quote["scorable"] = scorable
+        quotes.append(quote)
+    out["quotes"] = quotes
     return out

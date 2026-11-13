@@ -235,6 +235,77 @@ def test_missing_file_is_not_available(client, data_dir, as_of):
     assert any("NOT AVAILABLE" in n for n in body["notes"])
 
 
+def test_missing_file_reports_exclusion_count_as_null_not_zero(client, data_dir):
+    # With no dataset we cannot know how many lenses were excluded; 0 would be a fabricated count.
+    (data_dir / "research_lenses.json").unlink()
+    body = _get(client, "2026-07-01T00:00:00Z").json()
+    assert "excluded_not_yet_public" in body
+    assert body["excluded_not_yet_public"] is None
+
+
+# --------------------------------------------------------------------------- scorable (issue #52)
+
+
+def _write_scorable_fixture(data_dir: Path) -> dict:
+    """Copy of the real dataset with scorable set at quote level (Sequoia) and item level (Bessemer)."""
+    path = data_dir / "research_lenses.json"
+    payload = json.loads(path.read_text(encoding="utf-8"))
+    by_id = {item["id"]: item for item in payload["items"]}
+    by_id[SEQUOIA]["quotes"][0]["scorable"] = False
+    by_id[BESSEMER]["scorable"] = False
+    by_id[BESSEMER]["scorable_reason"] = "curator reason, never returned"
+    path.write_text(json.dumps(payload), encoding="utf-8")
+    return by_id
+
+
+def _quote_scorable(item: dict, quote: dict) -> bool | None:
+    if "scorable" in quote:
+        return quote["scorable"]
+    if quote["kind"] == "quantitative_forecast":
+        return item.get("scorable")
+    return None
+
+
+def _assert_scorable_matches(body: dict, by_id: dict) -> int:
+    seen = 0
+    for item in body["items"]:
+        source = by_id[item["id"]]
+        assert "scorable" not in item and "scorable_reason" not in item
+        for got, quote in zip(item["quotes"], source["quotes"], strict=True):
+            expected = _quote_scorable(source, quote)
+            if expected is None:
+                assert "scorable" not in got, (item["id"], got)  # absent = NOT AVAILABLE, never null or a guess
+            else:
+                assert got["scorable"] is expected, (item["id"], got)
+                seen += 1
+    return seen
+
+
+@pytest.mark.parametrize("as_of", [None, "2026-11-13T12:00:00Z"])
+def test_scorable_is_exposed_in_both_modes(client, data_dir, as_of):
+    by_id = _write_scorable_fixture(data_dir)
+    resp = _get(client, as_of)
+    assert resp.status_code == 200, resp.text
+    body = resp.json()
+    assert body["mode"] == ("live_explore" if as_of is None else "point_in_time")
+    assert _assert_scorable_matches(body, by_id) >= 2  # Sequoia quote-level + Bessemer forecast(s)
+
+
+def test_point_in_time_scorable_is_exactly_the_prompt_projection(client, data_dir):
+    _write_scorable_fixture(data_dir)
+    as_of = datetime(2026, 11, 13, 12, tzinfo=UTC)
+    lenses = load_lenses(data_dir / "research_lenses.json")
+    expected = [lens_for_prompt(item, as_of) for item in eligible_lenses(as_of, lenses)]
+    body = _get(client, "2026-11-13T12:00:00Z").json()
+    assert [item["quotes"] for item in body["items"]] == [item["quotes"] for item in expected]
+
+
+def test_real_dataset_has_no_null_scorable(client):
+    for as_of in (None, "2026-11-13T12:00:00Z"):
+        for item in _get(client, as_of).json()["items"]:
+            assert all(q.get("scorable", True) is not None for q in item["quotes"])
+
+
 @pytest.mark.parametrize("content", ["{oops", json.dumps({"label": "RESEARCH CONTEXT", "items": []})])
 def test_invalid_file_is_data_invalid(client, data_dir, content):
     (data_dir / "research_lenses.json").write_text(content, encoding="utf-8")
