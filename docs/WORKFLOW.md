@@ -55,3 +55,18 @@ land first in one PR. Merge order: contracts → engine → API → UI.
 | Fri | Finance engine + optimizer (finance-modeler), temporal gate + seal + scoring (backend), web shell + cascade graph (frontend), market collectors (markets) | Golden test cases; disruption costs; pick + audit 2–4 real resolved events |
 | Sat | Ollama recorded runs, benchmark, VC lenses, end-to-end golden path, polish | Case review; thesis summaries accuracy; financial narrative of demo |
 | Sun AM | Freeze, offline test, record backup run, rehearse 2-min demo | Rehearse finance Q&A |
+
+## CI merge checks (`.github/workflows/ci.yml`)
+Every PR runs these in parallel; the single required check **`checks`** passes only if all of them pass.
+
+| Job | Fails when |
+|---|---|
+| policy | > 3 commits · AI co-author trailer or "Generated with…" line · title not `<area>: <what>` · body doesn't close an open, lead-created `delegated` issue (partners: assigned to them) · partner touches lead-only files · engine file changed without MATH_MODEL.md or a ticked "No formula change" |
+| guardrails | agent-hook or scanner self-tests fail |
+| secrets | an added line contains an API key, token, or private key |
+| honesty | added non-test code claims "% accuracy", "beats the market/VCs", a VC accuracy score, a fake timed "result", or uses randomness in the engine/UI (suppress a deliberate case with `honesty-ok: <reason>`) |
+| backend | `ruff check` or `pytest` fails (skipped until `services/api` exists) |
+| web | `typecheck`, `lint`, or the static-export build fails (skipped until `apps/web` exists) |
+
+Rules are read from `.agents/team.json` on the **base** branch, so a PR can't relax its own checks.
+Deploy (CD) lands with issue #13: GitHub Pages builds from `main` only; the API is deployed by a lead.

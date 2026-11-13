@@ -25,7 +25,7 @@ import time
 from _team import CACHE_DIR, PROJECT_DIR, current_branch, identity, load_team, repo_root, run  # noqa: E402
 
 PARTNER_PROTECTED_PATHS = (
-    ".claude/", ".agents/", ".github/", ".githooks/", "scripts/guardrails/", "scripts/setup-github.sh",
+    ".claude/", ".agents/", ".github/", ".githooks/", "scripts/guardrails/", "scripts/ci/", "scripts/setup-github.sh",
     "scripts/test_guardrails.py", "scripts/agent-start.sh", "CODEOWNERS", "AGENTS.md", "CLAUDE.md",
     "docs/SPEC.md", "docs/WORKFLOW.md",
 )
