@@ -12,6 +12,7 @@ session: any error just means less context.
 from __future__ import annotations
 
 import json
+import re
 import sys
 import time
 
@@ -109,13 +110,36 @@ def full() -> None:
         if ident["login"]:
             leads = team.get("leads", [])
             code, out = run(["gh", "issue", "list", "--state", "open", "--label", team.get("delegation_label", "delegated"),
-                             "--assignee", ident["login"], "--json", "number,title,author",
-                             "--jq", '.[] | "\\(.number)\\t\\(.author.login)\\t\\(.title)"'], timeout=10)
+                             "--assignee", ident["login"], "--json", "number,title,author,body"], timeout=10)
             if code == 0:
-                rows = [r.split("\t", 2) for r in out.splitlines() if r.strip()]
-                valid = [r for r in rows if r[1].lower() in {l.lower() for l in leads}]
+                try:
+                    issues = json.loads(out or "[]")
+                except json.JSONDecodeError:
+                    issues = []
+                lead_set = {l.lower() for l in leads}
+                valid = [i for i in issues if i["author"]["login"].lower() in lead_set]
                 if valid:
-                    lines.append("- Delegated tasks waiting for you:\n" + "\n".join(f"  - #{n} {t}" for n, _, t in valid))
+                    state_cache: dict[str, str] = {}
+
+                    def waiting_on(body: str) -> list[str]:
+                        m = re.search(r"\*\*Starts after:\*\*([^\n]*)", body or "")
+                        pending = []
+                        for ref in re.findall(r"#(\d+)", m.group(1) if m else ""):
+                            if ref not in state_cache:
+                                _, st = run(["gh", "issue", "view", ref, "--json", "state", "--jq", ".state"], timeout=8)
+                                state_cache[ref] = st or "UNKNOWN"
+                            if state_cache[ref] != "CLOSED":
+                                pending.append(f"#{ref}")
+                        return pending
+
+                    rows = []
+                    for i in sorted(valid, key=lambda x: x["number"]):
+                        w = waiting_on(i.get("body", ""))
+                        rows.append(f"  - #{i['number']} {i['title']}" + (f"  (waiting on {', '.join(w)})" if w else "  (ready)"))
+                    ready = sum(1 for r in rows if r.endswith("(ready)"))
+                    lines.append("- Delegated tasks for you:\n" + "\n".join(rows))
+                    if ready > 1:
+                        lines.append(f"  -> {ready} tasks are ready. Offer /my-sprint to run them in parallel (one agent each, separate PRs).")
                 else:
                     lines.append("- No delegated tasks are assigned right now. Say so, and suggest the human ask a lead for one.")
         else:

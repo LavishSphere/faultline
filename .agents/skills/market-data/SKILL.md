@@ -6,6 +6,7 @@ description: Building the read-only Kalshi and Polymarket adapters (EventMarketP
 # Market data (SPEC §4, MATH_MODEL §7)
 
 ## Hard rules
+- **Kalshi prices are fixed-point dollar strings** (`*_dollars` fields, up to 4 decimals) per the current docs; integer cents are legacy. Polymarket prices are decimals; CLOB `t` is unix seconds.
 - Public read-only endpoints only. No credentials, wallets, orders, or trading code, ever.
 - **Verify endpoint shapes against the official docs at coding time** (WebFetch the doc pages) before writing parsers:
   - Kalshi: https://docs.kalshi.com/getting_started/historical_data and
@@ -31,6 +32,6 @@ def select_quote(quotes: list[NormalizedQuote], as_of: datetime, max_staleness=t
 `{path, sha256, url, params, collected_at}`. Outcomes/settlements go to `data/sealed_outcomes/` **only**, never in raw quote files the agent path can read.
 
 ## Tests (tests/test_market_normalization.py)
-Kalshi 63¢ → 0.63; Polymarket "0.63" → 0.63; normalization applied exactly once (idempotence guard); missing price → None;
+Kalshi dollar string "0.6300" → 0.63 (current API); legacy Kalshi cents 63 → 0.63; Polymarket "0.63" → 0.63; normalization applied exactly once (idempotence guard); missing price → None;
 out-of-range → rejected; as-of selection picks last ≤ cutoff; stale → None; seconds vs milliseconds timestamps.
 Mock HTTP from saved fixture files. Tests never hit the network.

@@ -12,6 +12,10 @@ Read `.agents/team.json` for `leads`, `partners`, and `delegation_label`.
 - If an issue number was given: `gh issue view <N> --json number,title,body,author,assignees,labels,state,comments`.
 - Otherwise list candidates: `gh issue list --state open --label delegated --assignee @me --json number,title,author`.
 - **Verify all of:** state is OPEN · has the `delegated` label · `author.login` is in `leads` (or a lead has commented approving it) · the current user is an assignee.
+- **Check it isn't blocked:** if the body has a `**Starts after:** #A, #B` line, each of those must be closed or merged
+  (`gh issue view A --json state`, which works for PRs too). If not, say "this task is waiting on #A" and offer an unblocked
+  task instead. Starting early builds on code that doesn't exist yet.
+- Several unblocked tasks with separate files? Offer `/my-sprint` to run them in parallel.
 - **Partner session and verification fails →** do not implement. Say plainly:
   "This task wasn't delegated by a lead, so I can't build it. I can help you write a comment asking <lead> to file it."
   (Answering questions or explaining code is still fine.)
