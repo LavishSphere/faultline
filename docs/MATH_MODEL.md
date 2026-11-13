@@ -47,14 +47,22 @@ A scenario is a tuple of deterministic paths: no probabilities are produced by t
 ## 2. Baseline demand and sales
 
 $$
-S^{dem}_t = m_t \sum_{\ell \in L} S^{base}_{\ell,t} \;+\; (1-x_e)\,X_t
+S^{core}_t = m_t \sum_{\ell \in L} S^{base}_{\ell,t}
+\qquad\qquad
+S^{dem}_t = S^{core}_t \;+\; (1-x_e)\,X_t
 $$
 
 $$
-S_t = S^{dem}_t\,\bigl(1 - \lambda_t\,(1 - x_b)\bigr)
+S_t = S^{core}_t\,\bigl(1 - \lambda_t\,(1 - x_b)\bigr) \;+\; (1-x_e)\,X_t
 $$
 
-where $x_b \in \{0,1\}$ = "use backup supplier" and $x_e \in \{0,1\}$ = "delay expansion" (§4).
+where $S^{core}_t$ is base-store demand, $S^{dem}_t$ is total demand, $x_b \in \{0,1\}$ = "use backup supplier" and
+$x_e \in \{0,1\}$ = "delay expansion" (§4). Lost sales are $S^{dem}_t - S_t = S^{core}_t\,\lambda_t\,(1-x_b)$.
+
+*Decision (issue #16): the outage hits base-store sales only.* The new store's sales $X_t$ do not depend on the primary
+supplier. This keeps the model linear: $m_t$ and $\lambda_t$ are scenario inputs, so the outage term contains only the
+decision $x_b$, and $X_t$ is multiplied only by $x_e$. No product of two decisions appears (the earlier form contained
+$(1-x_e)\,X_t\,x_b$).
 *Simplification [assumed]:* inventory buffer does not cover outage SKUs; outage translates directly to lost sales unless backup is used.
 
 ## 3. Cash-flow recurrence (the core engine)
@@ -63,11 +71,16 @@ where $x_b \in \{0,1\}$ = "use backup supplier" and $x_e \in \{0,1\}$ = "delay e
 $$R_t = a\,S_t + (1-a)\,S_{t-1}$$
 
 **Purchases** (replenish what was sold, minus a chosen purchase cut $v_t \ge 0$, plus backup premium $\pi$ on the outage share):
-$$P_t = (1-g)\,S_t - v_t + \pi\,(1-g)\,S^{dem}_t\,\lambda_t\,x_b$$
+$$P_t = (1-g)\,S_t - v_t + \pi\,(1-g)\,S^{core}_t\,\lambda_t\,x_b$$
+(the premium applies to the same base-store outage share as §2).
 
 **Inventory:**
-$$I_t = I_{t-1} + P_t - (1-g)S_t - \pi(1-g)S^{dem}_t\lambda_t x_b = I_{t-1} - v_t$$
+$$I_t = I_{t-1} + P_t - (1-g)S_t - \pi(1-g)S^{core}_t\lambda_t x_b = I_{t-1} - v_t$$
 (the premium is a cost, not extra stock).
+
+*MVP simplification [assumed] (issue #16): purchase cuts do not cause stock-outs.* Inventory has no effect on sales, so
+$S_t$ does not change with $v_t$. Two parameters stand in for stock-out risk: the inventory floor $I_{min}$, which caps
+total cuts at $\sum_t v_t \le I_0 - I_{min}$, and the disruption cost $c_v$ (§10).
 
 **Interest:** term loan $\;J_t = D_t\,r_t/52$; revolver $\;J^R_t = B_{t-1}\,(r_t + s_R)/52$.
 
@@ -89,7 +102,8 @@ Inputs must be finite (no NaN or ±∞).
 
 **Runway:** first $t$ with $C_t < 0$ on the simulated path; reported as `> T weeks` if none. (No extrapolated burn-rate runway unless labeled.)
 
-Every term is **linear** in the decisions $(x_b, x_c, x_e, v_t, y_t, q_t, z_t)$, given the scenario parameters. So the optimizer below is exact with respect to this model; there is no approximation.
+Every term is **linear** in the decisions $(x_b, x_c, x_e, v_t, y_t, q_t, z_t)$, given the scenario parameters. With the
+§2 base-store outage, no term multiplies two decisions together, so §3 stays linear in all decisions. So the optimizer below is exact with respect to this model; there is no approximation.
 
 ## 4. Recovery optimizer (MILP, `scipy.optimize.milp`)
 
@@ -103,6 +117,8 @@ Every term is **linear** in the decisions $(x_b, x_c, x_e, v_t, y_t, q_t, z_t)$,
 5. **Protect payroll mode:** $z_t = 0$ for all $t$ (variable upper bound set to 0, enforced in the solver, not in a prompt).
    Outside that mode, $z_t$ is an explicit, labeled action, never implicit.
 6. $\mu \le C_t$ for all $t$
+7. **Terminal revolver:** $B_T \le B_0$ (issue #16). The facility must be back to its opening balance by the end of the
+   horizon, so no plan can borrow and never repay, which would flatter the cash path.
 
 **Objective** (minimize disruption, tie-break toward more cash):
 $$
@@ -172,6 +188,8 @@ Common: $C_0 = 100{,}000$; $S^{base} = 50{,}000$/wk (all stores); $S_0 = 50{,}00
 $P_0 = 32{,}500$; $W = 12{,}000$; $O = 6{,}000$; $D = 600{,}000$; $A = 0$; no revolver, capex, expansion, outage.
 These cases use their own inputs (note $L_p = 1$ here, versus 2 weeks in §10).
 *Hand-checked 2026-11-12 (issue #6): every value in cases A–C and every scoring fixture below matches.*
+*Unchanged by issue #16:* none of cases A–C has an outage, an expansion, a revolver or a purchase cut. The §2 base-store
+outage, the §4 terminal revolver condition and the §10 expansion-cost note therefore leave every value below as it was.
 
 **Case A, no shock, $r = 8\%$:** $R_t = 50{,}000$; outflow $= 32{,}500 + 12{,}000 + 6{,}000 + 923.077 = 51{,}423.077$
 → $C_1 = 98{,}576.923$, $C_2 = 97{,}153.846$, $C_3 = 95{,}730.769$.
@@ -212,7 +230,7 @@ modelling rationale, not a citation.
 | Payroll-cut cap $\bar z$ | 0.10 | Up to 10% through reduced hours and no overtime, without layoffs. Forced to 0 in protect-payroll mode (§4). |
 | Outage share $\phi$ | 0.40 | 40% of sales rely on product lines from the primary distributor. |
 | Backup premium $\pi$, switching fee $F_b$ | 0.12, 2,000 | Spot buying from a secondary supplier costs about 12% more. The fee covers set-up, a credit application and delivery changes. |
-| Capex $K_t$, expansion $E_t$, expansion sales $X_t$ | set per demo case (placeholder) | Timing and size belong to each scenario, so they are set in the case definition, not here. |
+| Capex $K_t$, expansion $E_t$, expansion sales $X_t$ | set per demo case (placeholder) | Timing and size belong to each scenario, so they are set in the case definition, not here. **Expansion costs (issue #16):** each case's $E_t$ includes the new store's payroll and opex from the week it opens, not only fit-out spending, because §3 has no other line for the new store's running costs. |
 | Tie-break $\varepsilon$ | $10^{-4}$ per \$ of minimum cash | 100× smaller than the cheapest lever ($c_y$ below), so the optimizer never draws or cuts just to raise minimum cash. |
 
 **Baseline economics (kept on purpose).** Weekly gross profit is $0.35 \times 50{,}000 = 17{,}500$. Weekly fixed costs are
