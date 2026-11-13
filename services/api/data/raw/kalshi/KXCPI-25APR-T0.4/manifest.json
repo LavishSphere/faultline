@@ -1,0 +1,32 @@
+{
+  "entries": [
+    {
+      "bytes": 17464,
+      "collected_at": "2026-11-13T17:58:27.801000+00:00",
+      "endpoint": "kalshi.historical_candlesticks",
+      "http_status": 200,
+      "notes": {
+        "collector": "scripts/collect_market_snapshots.py",
+        "data_tier": "historical",
+        "kalshi_market_settled_cutoff": "2026-09-13T00:00:00+00:00",
+        "plan_group": "CPI MoM 2025-04 (april-inflation-monthly)",
+        "plan_leg": "\u22650.5% == Kalshi Above 0.4%",
+        "points_in_response_set": 54,
+        "reference_close": "2025-05-13T12:25:00+00:00",
+        "venue_scheduled_close": "2025-05-13T12:25:00+00:00",
+        "window_end": "2025-05-06T00:00:00+00:00",
+        "window_rule": "T-7d: end = 00:00Z of (reference_close - 7d), lookback 3d",
+        "window_start": "2025-05-03T00:00:00+00:00"
+      },
+      "params": {
+        "end_ts": 1746489600,
+        "period_interval": 60,
+        "start_ts": 1746230400
+      },
+      "path": "kalshi/KXCPI-25APR-T0.4/20261113T175827801000Z.json",
+      "provenance": "REAL HISTORICAL",
+      "sha256": "fee2ed7963a85061619ff459e5b55e13830e4f9b5e03f90004dd3df8cd9ecf0f",
+      "url": "https://external-api.kalshi.com/trade-api/v2/historical/markets/KXCPI-25APR-T0.4/candlesticks"
+    }
+  ]
+}

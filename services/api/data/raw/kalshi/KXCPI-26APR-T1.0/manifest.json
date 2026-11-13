@@ -1,0 +1,32 @@
+{
+  "entries": [
+    {
+      "bytes": 2265,
+      "collected_at": "2026-11-13T17:58:49.329135+00:00",
+      "endpoint": "kalshi.historical_candlesticks",
+      "http_status": 200,
+      "notes": {
+        "collector": "scripts/collect_market_snapshots.py",
+        "data_tier": "historical",
+        "kalshi_market_settled_cutoff": "2026-09-13T00:00:00+00:00",
+        "plan_group": "CPI MoM 2026-04 (april-inflation-us-monthly)",
+        "plan_leg": "\u22651.1% == Kalshi Above 1.0%",
+        "points_in_response_set": 7,
+        "reference_close": "2026-05-12T12:25:00+00:00",
+        "venue_scheduled_close": "2026-05-12T12:25:00+00:00",
+        "window_end": "2026-05-05T00:00:00+00:00",
+        "window_rule": "T-7d: end = 00:00Z of (reference_close - 7d), lookback 3d",
+        "window_start": "2026-05-02T00:00:00+00:00"
+      },
+      "params": {
+        "end_ts": 1777939200,
+        "period_interval": 60,
+        "start_ts": 1777680000
+      },
+      "path": "kalshi/KXCPI-26APR-T1.0/20261113T175849329135Z.json",
+      "provenance": "REAL HISTORICAL",
+      "sha256": "5a417de601554523edbb9a62fcb33b360b1b6108819d5b5e76e8949f48226373",
+      "url": "https://external-api.kalshi.com/trade-api/v2/historical/markets/KXCPI-26APR-T1.0/candlesticks"
+    }
+  ]
+}
