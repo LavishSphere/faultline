@@ -40,6 +40,7 @@ from pydantic import AwareDatetime, BaseModel, ConfigDict, Field
 from agents import skeptic
 from agents.local_ollama import LocalOllamaProvider
 from agents.provider import (
+    ForecastResult,
     ModelOutputInvalid,
     ModelProvider,
     ModelUnavailable,
@@ -49,11 +50,11 @@ from agents.provider import (
 )
 from agents.skeptic import SkepticProblem
 from config import Settings, get_settings
-from core import provenance
+from core import provenance as prov
 from core import store as store_module
 from core.evaluator import OutcomeVault, SealedOutcome, SealedOutcomeInvalid, brier, correct_at_half, log_loss
 from core.store import HashMismatch, PredictionExists, PredictionStore
-from core.temporal_gate import MarketNotAvailable
+from core.temporal_gate import MarketNotAvailable, ModelInput
 from errors import FaultlineError
 from models import ApiError, ErrorCode, Identifier, Prediction, Provenance
 from routes import CodedRoute, FieldIssue, RouteError
@@ -188,6 +189,46 @@ def _audit_note(after_event: bool, after_any: bool) -> str | None:
     return None
 
 
+def prediction_from_result(
+    mi: ModelInput,
+    result: ForecastResult,
+    provider: ModelProvider,
+    *,
+    prediction_id: str,
+    recorded_at: datetime,
+    provenance: Provenance,
+) -> Prediction:
+    """The Prediction to persist for one validated forecast (shared with scripts/record_runs.py).
+
+    ``prompt_sha256`` hashes what the model answered (``result.final_prompt``, incl. a repair turn) and
+    ``gated_prompt_sha256`` the gate's prompt; persist it with ``store.save(prediction, mi, final_prompt=...)``.
+    """
+    out = result.output
+    return Prediction(
+        prediction_id=prediction_id,
+        event_id=mi.event_id,
+        as_of=datetime.fromisoformat(mi.as_of),
+        agent_model=result.agent_model,
+        model_digest=result.model_digest,
+        variant=mi.variant,
+        p_yes=out.p_yes,
+        decision=out.decision,
+        rationale=out.rationale,
+        evidence_ids=list(out.evidence_ids),
+        prompt_sha256=prov.prompt_sha256(result.final_prompt),
+        snapshot_sha256=mi.snapshot_sha256,
+        temperature=result.temperature,
+        seed=result.seed,
+        recorded_at=recorded_at,
+        provenance=provenance,
+        gated_prompt_sha256=mi.prompt_sha256,
+        attempts=result.attempts,
+        transcript_sha256=result.transcript_sha256,
+        num_ctx=getattr(provider, "num_ctx", None),
+        num_predict=getattr(provider, "num_predict", None),
+    )
+
+
 def _provider_error(exc: ProviderError) -> RouteError:
     for cls, (code, status) in _PROVIDER_ERRORS.items():
         if isinstance(exc, cls):
@@ -249,29 +290,13 @@ async def run_replay(
     if report.rejected:
         raise _skeptic_rejection(report)
 
-    out = result.output
-    prediction = Prediction(
+    prediction = prediction_from_result(
+        mi,
+        result,
+        provider,
         prediction_id=f"pred_{uuid4().hex}",
-        event_id=mi.event_id,
-        as_of=datetime.fromisoformat(mi.as_of),
-        agent_model=result.agent_model,
-        model_digest=result.model_digest,
-        variant=mi.variant,
-        p_yes=out.p_yes,
-        decision=out.decision,
-        rationale=out.rationale,
-        evidence_ids=list(out.evidence_ids),
-        prompt_sha256=provenance.prompt_sha256(result.final_prompt),
-        snapshot_sha256=mi.snapshot_sha256,
-        temperature=result.temperature,
-        seed=result.seed,
         recorded_at=datetime.now(UTC),
         provenance=RUN_PROVENANCE,
-        gated_prompt_sha256=mi.prompt_sha256,
-        attempts=result.attempts,
-        transcript_sha256=result.transcript_sha256,
-        num_ctx=getattr(provider, "num_ctx", None),
-        num_predict=getattr(provider, "num_predict", None),
     )
     store = get_prediction_store()
     try:

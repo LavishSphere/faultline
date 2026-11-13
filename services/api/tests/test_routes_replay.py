@@ -56,6 +56,10 @@ ANSWER = {
 PRE_REVEAL = {("get", "/api/cases"), ("get", "/api/cases/{case_id}/evidence"), ("post", "/api/replay/run")}
 POST_REVEAL = {("post", "/api/replay/{prediction_id}/reveal")}
 NOT_REPLAY = {"/api/health", "/api/simulate", "/api/scenarios", "/api/vc-lenses"}
+# routes/benchmark.py (tests/test_routes_benchmark*.py): GET serves recorded post-reveal scorecards, read-only (it
+# never reveals and never opens the store or sealed folder); compute reveals and is admin-only in public mode.
+BENCHMARK_POST_REVEAL_READ_ONLY = {("get", "/api/benchmark")}
+BENCHMARK_ADMIN_REVEALS = {("post", "/api/benchmark/compute")}
 
 RUN_KEYS = {
     "prediction", "skeptic", "market_at_cutoff", "persisted_at", "persist_seq", "record_sha256",
@@ -561,7 +565,9 @@ def test_every_case_and_replay_route_is_classified(world):
     ops = {(m, path) for path, item in _paths(world.client()).items() for m in item}
     replay_ops = {op for op in ops if op[1].startswith(("/api/cases", "/api/replay"))}
     assert replay_ops == PRE_REVEAL | POST_REVEAL, "classify new case/replay routes as pre- or post-reveal"
-    unclassified = {op for op in ops - replay_ops if op[1] not in NOT_REPLAY}
+    benchmark_ops = {op for op in ops if op[1].startswith("/api/benchmark")}
+    assert benchmark_ops == BENCHMARK_POST_REVEAL_READ_ONLY | BENCHMARK_ADMIN_REVEALS, "classify new benchmark routes"
+    unclassified = {op for op in ops - replay_ops - benchmark_ops if op[1] not in NOT_REPLAY}
     assert not unclassified, f"new routes must be classified in this test: {sorted(unclassified)}"
 
 
