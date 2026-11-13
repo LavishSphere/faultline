@@ -1,0 +1,18 @@
+# secrets
+.env
+.env.local
+**/.env
+# claude local overrides
+.claude/settings.local.json
+# python
+__pycache__/
+*.pyc
+.venv/
+.pytest_cache/
+services/api/var/
+# node
+node_modules/
+.next/
+apps/web/.vercel
+# os
+.DS_Store

@@ -1,0 +1,55 @@
+{
+  "$schema": "https://json.schemastore.org/claude-code-settings.json",
+  "hooks": {
+    "SessionStart": [
+      {
+        "hooks": [
+          { "type": "command", "command": "f=\"$CLAUDE_PROJECT_DIR/scripts/guardrails/sync.py\"; if [ -f \"$f\" ]; then python3 \"$f\"; fi", "timeout": 60 }
+        ]
+      }
+    ],
+    "UserPromptSubmit": [
+      {
+        "hooks": [
+          { "type": "command", "command": "f=\"$CLAUDE_PROJECT_DIR/scripts/guardrails/sync.py\"; if [ -f \"$f\" ]; then python3 \"$f\" --quick; fi", "timeout": 40 }
+        ]
+      }
+    ],
+    "PreToolUse": [
+      {
+        "matcher": "Bash|Edit|Write|MultiEdit|NotebookEdit",
+        "hooks": [
+          { "type": "command", "command": "f=\"$CLAUDE_PROJECT_DIR/scripts/guardrails/guard.py\"; if [ -f \"$f\" ]; then python3 \"$f\"; fi", "timeout": 20 }
+        ]
+      }
+    ]
+  },
+  "permissions": {
+    "allow": [
+      "Bash(git status:*)",
+      "Bash(git fetch:*)",
+      "Bash(git log:*)",
+      "Bash(git diff:*)",
+      "Bash(git branch:*)",
+      "Bash(git switch:*)",
+      "Bash(gh issue list:*)",
+      "Bash(gh issue view:*)",
+      "Bash(gh pr list:*)",
+      "Bash(gh pr view:*)",
+      "Bash(gh pr diff:*)",
+      "Bash(gh pr checks:*)",
+      "Bash(make test:*)",
+      "Bash(make check:*)"
+    ],
+    "ask": [
+      "Bash(gh pr merge:*)"
+    ],
+    "deny": [
+      "Bash(git push --force:*)",
+      "Bash(git push -f:*)",
+      "Read(./.env)",
+      "Read(./.env.local)",
+      "Read(./**/.env)"
+    ]
+  }
+}

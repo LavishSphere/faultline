@@ -1,0 +1,3 @@
+#!/bin/sh
+# FAULTLINE guardrail (agent-agnostic). Logic: scripts/guardrails/githook.py
+exec python3 "$(git rev-parse --show-toplevel)/scripts/guardrails/githook.py" pre-commit "$@"

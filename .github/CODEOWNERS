@@ -1,0 +1,14 @@
+# Every change to main needs a lead's approval. Guardrail/instruction files are lead-only.
+*                                  @LavishSphere
+/.agents/                          @LavishSphere
+/.claude/                          @LavishSphere
+/.github/                          @LavishSphere
+/.githooks/                        @LavishSphere
+/scripts/guardrails/               @LavishSphere
+/AGENTS.md                         @LavishSphere
+/CLAUDE.md                         @LavishSphere
+/docs/SPEC.md                      @LavishSphere
+# Finance owner is also requested on the math (lead approval still required to merge)
+/docs/MATH_MODEL.md                @LavishSphere @YaseenAhmad12
+/services/api/core/financials.py   @LavishSphere @YaseenAhmad12
+/services/api/core/optimizer.py    @LavishSphere @YaseenAhmad12

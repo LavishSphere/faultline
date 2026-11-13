@@ -1,0 +1,26 @@
+name: Delegated task
+description: A scoped task a lead assigns to a teammate or agent (leads only)
+title: "<area>: <task>"
+labels: ["delegated"]
+body:
+  - type: textarea
+    id: goal
+    attributes: { label: Goal (plain language) }
+    validations: { required: true }
+  - type: textarea
+    id: why
+    attributes: { label: Why it matters (SPEC § / MATH_MODEL §) }
+  - type: textarea
+    id: acceptance
+    attributes: { label: Acceptance criteria, description: "Checkboxes, testable, numeric where possible" }
+    validations: { required: true }
+  - type: textarea
+    id: files
+    attributes: { label: Files in scope }
+    validations: { required: true }
+  - type: textarea
+    id: out
+    attributes: { label: Out of scope }
+  - type: textarea
+    id: notes
+    attributes: { label: Notes for the agent }
