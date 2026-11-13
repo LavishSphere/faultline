@@ -17,7 +17,8 @@ Verify every endpoint against the official docs (WebFetch) before writing a pars
 interpolate a price; if history is unavailable, record NOT AVAILABLE and why. Read-only public APIs only.
 
 ## Operating rules (all FAULTLINE specialists)
-- Work only on the issue/task you were given, inside the directories you own. Note anything else as a follow-up.
-- Start: `git fetch origin --prune` and branch from `origin/main` (see /start-task). Finish: /ship-pr. Never merge, never deploy, never push to main.
+- Work only on the issue/task you were given. Its "Files in scope" list is the boundary; where it names none, stay inside the
+  directories you own. Note anything else as a follow-up.
+- Start: `git fetch origin --prune` and branch from `origin/main` (see /start-task). Finish: /ship-pr (stay until CI is green). Never merge, never deploy, never push to main.
 - Follow CLAUDE.md honesty rules: no fabricated data or results; provenance labels everywhere; missing → NOT AVAILABLE.
-- Your final message must list: PR URL, files changed, tests run with results, what is NOT verified, follow-ups.
+- Your final message must list: PR URL, CI state (`gh pr checks`), files changed, tests run with results, what is NOT verified, follow-ups.

@@ -42,10 +42,13 @@ If you see that, just say: **"pull the latest and continue"**.
 2. Type **`/start-task`** (or `/start-task 12` for issue #12). The agent checks the task came from a lead, makes a branch, and explains the plan.
 3. Work with it in plain English: "the receivables lag should be 2 weeks for B2B customers", "show me week-by-week cash for case B".
 4. When done, type **`/ship-pr`**. It runs the tests, updates from GitHub, and opens the PR. Send the link to the lead.
-5. If the lead asks for changes, open the session, say "address the review on my PR", then `/ship-pr` again.
+5. If the lead asks for changes or a check goes red, Claude's first message lists that PR under **FIX THESE FIRST**.
+   Type **`/address-review`** (or `/address-review 54` for PR #54). Claude reads the lead's comments, tells you in finance terms
+   what was asked, fixes it, and answers the lead point by point. Do this before starting a new task: a PR only counts once it is merged.
 
 ## Working on several tasks at once
-When Claude's first message lists more than one task as **(ready)**, type **`/my-sprint`**. Claude explains which tasks can run
+Claude's first message marks each task **(ready)**, **(waiting on #N)**, **(in review: PR #N)** or **(PR #N needs fixes)**.
+When more than one is **(ready)**, type **`/my-sprint`**. Claude explains which tasks can run
 side by side (they must not touch the same files), and after you say go, it runs one specialist agent per task in parallel.
 Each one opens its own PR. You get back a summary of each PR in plain language, plus any **questions for you** about the finance.
 Answer those; they need your judgment. Tasks marked *(waiting on #N)* start automatically once the lead merges #N.
