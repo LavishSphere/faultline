@@ -2,7 +2,8 @@
 
 * ``snapshot_sha256`` = SHA-256 of the canonical JSON of the exact evidence + market-quote list given to
   the model: ``{"evidence": [...], "market_quotes": [...]}``.
-* ``prompt_sha256`` = SHA-256 of the final rendered prompt string (UTF-8).
+* ``prompt_sha256`` = SHA-256 of the final prompt string the model saw (UTF-8).
+* ``transcript_sha256`` = SHA-256 of the canonical JSON of that call's chat messages (one user message).
 
 Canonical JSON: keys sorted, no whitespace (``","`` and ``":"`` separators), UTF-8 (non-ASCII kept as is,
 not ``\\u`` escaped), NaN/Infinity refused. Only plain JSON types are accepted: datetimes, bytes and
@@ -68,3 +69,13 @@ def snapshot_payload_json(payload: dict[str, Any]) -> str:
 
 def snapshot_sha256(payload: dict[str, Any]) -> str:
     return sha256_hex(snapshot_payload_json(payload))
+
+
+def transcript_sha256(user_message: str) -> str:
+    """SHA-256 of the canonical JSON of the chat messages of one model call: a single user message.
+
+    Same definition as ``agents.local_ollama`` (``ForecastResult.transcript_sha256``), so the store can recompute it.
+    """
+    if not isinstance(user_message, str):
+        raise TypeError("transcript_sha256 takes the user message text")
+    return sha256_hex(canonical_json([{"role": "user", "content": user_message}]))
