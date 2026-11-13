@@ -202,7 +202,6 @@ export const PENDING_ENDPOINTS = {
   simulate: "POST /api/simulate",
   optimize: "POST /api/optimize",
   benchmark: "GET /api/benchmark",
-  vcLenses: "GET /api/vc-lenses",
 } as const;
 
 export type PendingEndpoint = keyof typeof PENDING_ENDPOINTS;

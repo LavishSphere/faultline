@@ -17,7 +17,9 @@ export function ResearchScreen({ step }: { step: Step }) {
       <ThesisCourt />
       <p className="max-w-3xl text-xs leading-relaxed text-muted">
         Public articles and portfolio pages are evidence and thesis context, not records of private investment
-        decisions or returns. A source is used in a replay only if it was published before that case&apos;s cutoff.
+        decisions or returns. In point-in-time mode the API returns only sources provably public at the cutoff you
+        enter; the browser does not filter, rank or score them. Quote kinds separate documentary fact, analyst
+        interpretation and quantitative forecast; none is scored against the firms.
       </p>
     </div>
   );
