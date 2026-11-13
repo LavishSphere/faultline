@@ -80,4 +80,127 @@ The curator does not choose events; it only applies the rule and records any exc
 
 ## Part 2: Application of the rule
 
-Added in a later commit, after this rule was committed.
+Applied on 2026-11-13, after Part 1 was committed. **Changes to the rule:** none.
+
+### Step 1: which meetings qualify (rules 1, 2, 7c)
+
+The FOMC calendar (fetched 2026-11-13) lists eight scheduled 2026 meetings: January 27-28, March 17-18,
+April 28-29, June 16-17, July 28-29, September 15-16, October 27-28 and December 8-9. It lists no unscheduled
+2026 meeting. The four most recent with a statement released before 2026-11-13 are June, July, September and
+October. All four are included. December 8-9 has not happened yet. January, March and April fall outside the
+"four most recent" window.
+
+**Exclusions: none.** No selected meeting failed rule 7 (a), (b) or (c).
+
+**Considered and not used (outside the rule, not exclusions):** CPI-print or payroll-print events (rule 1 limits
+the family to FOMC decisions), the December 2026 meeting (not yet held), January to April 2026 meetings (outside
+the window).
+
+### Included cases
+
+| `event_id` | Question (one binary per meeting) | `as_of` (UTC) | Market quote at `as_of` | Evidence items |
+|---|---|---|---|---|
+| `fomc-2026-jun` | Will the FOMC leave the target range for the federal funds rate unchanged at its June 16-17, 2026 meeting? | 2026-06-10T00:00:00Z | `NOT AVAILABLE` (no saved snapshot) | 4 |
+| `fomc-2026-jul` | ... unchanged at its July 28-29, 2026 meeting? | 2026-07-22T00:00:00Z | Kalshi `KXFEDDECISION-26JUL-H0` ("Fed maintains rate"): bid/ask midpoint **0.855** (bid 0.8500, ask 0.8600), candle ending 2026-07-22T00:00:00Z. Polymarket `1654958` ("no change"): price-history point **0.839** at 2026-07-21T23:00:22Z. Both from the saved #12 snapshots | 4 |
+| `fomc-2026-sep` | ... unchanged at its September 15-16, 2026 meeting? | 2026-09-09T00:00:00Z | `NOT AVAILABLE` (no saved snapshot) | 4 |
+| `fomc-2026-oct` | ... unchanged at its October 27-28, 2026 meeting? | 2026-10-21T00:00:00Z | `NOT AVAILABLE` (no saved snapshot) | 4 |
+
+Market prices are a **market-implied probability (price-derived; affected by fees, spread, liquidity), not a
+true probability**. The July quotes were produced by the #12 parsers and normalizer (`parse_candlesticks`,
+`parse_prices_history`, `normalize_quotes`) from the exact committed bytes of
+`services/api/data/raw/kalshi/KXFEDDECISION-26JUL-H0/20261113T034149253625Z.json` (sha256 `4d0096f8…5461`) and
+`services/api/data/raw/polymarket/1654958/20261113T034149701466Z.json` (sha256 `3c53fe2a…e7e7`). The case file holds
+every saved quote with `as_of − 24h ≤ ts ≤ as_of` (25 Kalshi, 24 Polymarket). The gate selects the last one per
+market. Nothing was typed by hand. Kalshi is the pre-registered benchmark (rule 6), so scoring code must pass
+`venue="kalshi"` when it needs one market price.
+
+The exact settlement wording is in each case file (`case.resolution_rule`). It is the same for all four cases
+apart from the meeting date. It does not name the range in effect before the meeting (see "Cross-case
+visibility" below).
+
+**Venue rules vs our rule (July market metadata, read through the #12 adapters on 2026-11-13; it was not
+stored).** Kalshi resolves YES on "a Hike of 0bps", and it also counts a cancelled scheduled meeting as "Fed
+maintains rate". Polymarket measures the change in the **upper bound** only. Our rule needs **both** bounds
+unchanged. The FOMC moves both bounds together, so the three only differ if one bound moves alone or a meeting is
+cancelled.
+
+### Step 2: evidence (rule 5)
+
+Each case has exactly the four documents of rule 5. Every item has `published_at = available_at` = the official
+release time printed on the document, which is before `as_of` in every case:
+
+| Case | Previous FOMC statement | Previous FOMC minutes | BLS CPI release | BLS Employment Situation |
+|---|---|---|---|---|
+| `fomc-2026-jun` | Apr 29, 18:00Z | May 20, 18:00Z (Apr 28-29 minutes) | May 12, 12:30Z (April CPI) | Jun 5, 12:30Z (May) |
+| `fomc-2026-jul` | Jun 17, 18:00Z | Jul 8, 18:00Z (Jun 16-17 minutes) | Jul 14, 12:30Z (June CPI) | Jul 2, 12:30Z (June) |
+| `fomc-2026-sep` | Jul 29, 18:00Z | Aug 19, 18:00Z (Jul 28-29 minutes) | Aug 12, 12:30Z (July CPI) | Sep 4, 12:30Z (August) |
+| `fomc-2026-oct` | Sep 16, 18:00Z | Oct 7, 18:00Z (Sep 15-16 minutes) | Oct 14, 12:30Z (September CPI) | Oct 2, 12:30Z (September) |
+
+(All times are 2026, UTC. FOMC: "For release at 2:00 p.m. EDT". BLS: "embargoed until 8:30 a.m. (ET)".)
+
+How the rule was read, mechanically (no judgment calls on content):
+- **Statement:** every paragraph between the "For release at 2:00 p.m. EDT" line and "For media inquiries". The
+  statement format changed from June 2026 (a shorter statement opening with the vote count). The rule takes it as
+  published.
+- **Minutes:** every paragraph containing the exact phrase "outlook for monetary policy" (2 paragraphs in the
+  April minutes, 1 in each of the others).
+- **CPI:** the release's title line plus every paragraph before "Table A.".
+- **Employment Situation:** the release's title line plus its first paragraph.
+- **"Most recent at or before `as_of`":** for FOMC documents, from the calendar dates. For BLS, the latest Internet
+  Archive capture before `as_of` of BLS's "current release" page (`cpi.nr0.htm`, `empsit.nr0.htm`) shows which
+  release was current at the cutoff. For example, the last capture before the June case cutoff still shows the April CPI release, so the May CPI was not yet out.
+
+How each item was checked:
+- **Federal Reserve pages** were fetched live on 2026-11-13. Each excerpt paragraph was also found word for word
+  (after whitespace normalization) in an Internet Archive capture of the same URL taken **before** `as_of`
+  (`archive_url`).
+- **BLS pages refuse automated requests (HTTP 403)**, so BLS text comes from a pre-`as_of` Internet Archive capture
+  of the permanent BLS archive URL (`source_url`, e.g. `bls.gov/news.release/archives/cpi_05122026.htm`). Each
+  paragraph was also found in a second pre-`as_of` capture of the BLS current-release page.
+- Text is verbatim. HTML tags were removed, entities decoded and whitespace collapsed. Line breaks in BLS's
+  preformatted text were joined with spaces. `content_sha256` is the SHA-256 of `content` (UTF-8).
+- Classification (kept in each file's `curation_notes.evidence_classification`): statements are official records
+  of the policy action (documentary fact) plus the Committee's own guidance (official interpretation, not a numeric
+  forecast). Minutes are the Secretariat's summary of participants' views (interpretation). CPI and payroll releases
+  are official statistics as first published (documentary fact, subject to revision).
+- `retrospective_unverified = false` for all 16 items, because each has a pre-`as_of` archive capture containing the text.
+
+`snapshot_hash` = `sha256:` + SHA-256 of the canonical JSON of the gated payload at `as_of` (evidence plus the
+selected quotes, or evidence plus `[]` when the market is `NOT AVAILABLE`), computed with PR #29's
+`core.temporal_gate` / `core.provenance` and checked by reloading.
+
+### Step 3: sealed outcomes
+
+Each `services/api/data/sealed_outcomes/<event_id>.json` was written last, from the meeting's own FOMC
+statement. It compares that statement's target range with the range in the previous scheduled meeting's statement
+(rule 3). It records the statement URL, the verbatim decision sentences and the release time. Case files and this
+document contain no outcome.
+
+### Contamination notes (rule 8)
+
+| Case | Event date | `llama3.1:8b` (knowledge cutoff Dec 2023, Meta model card) | `contamination_flag` |
+|---|---|---|---|
+| `fomc-2026-jun` | June 2026 | after cutoff (about 2.5 years) | `unlikely` |
+| `fomc-2026-jul` | July 2026 | after cutoff | `unlikely` |
+| `fomc-2026-sep` | September 2026 | after cutoff | `unlikely` |
+| `fomc-2026-oct` | October 2026 | after cutoff | `unlikely` |
+
+`unlikely` is not "none". A different replay model (for example a `gemma4` tag) must be checked against its
+own model card before these flags are reused. The **curator** (Claude, training data to about mid-2026) may
+know some of these results, the June meeting in particular. The mechanical rule stops that from steering
+which cases or evidence were picked. It does not make the curator blind.
+
+### Known limits of this case set
+
+- **n = 4 < 5:** the scoreboard must show `INSUFFICIENT DATA` (MATH_MODEL §6). Only one case (July) has a market
+  baseline, so a market-only comparison has n = 1.
+- **Cross-case visibility.** Consecutive meetings are linked. Each case's evidence includes the previous meeting's
+  statement, and that statement *is* the previous case's result (for example, the October case's evidence contains
+  the September statement). The temporal gate isolates each case, so a model replaying September never sees it.
+  But anyone reading the October case file, or replaying cases in one model session, learns the September
+  result. Run each case in a fresh model call, and do not show later cases' evidence in the UI before earlier
+  cases are revealed.
+- **The curator read some of this while applying the rule.** Building a later case's evidence meant reading the
+  previous meeting's statement and minutes, so the curator saw earlier cases' results before writing the sealed
+  files. Selection was already fixed by then (Part 1).
+- **One event family, one central bank:** four correlated FOMC decisions are not a broad macro sample.
