@@ -404,7 +404,8 @@ class EvidenceStore:
         """Load ``<cases_dir>/<event_id>.json`` files (default ``<FAULTLINE_DATA_DIR>/demo_cases``).
 
         File shape: ``{"case": ReplayCase, "evidence": [EvidenceItem], "market_quotes": [NormalizedQuote]}``.
-        Other top-level keys (curation notes) are ignored and never reach a prompt. A missing directory gives
+        Other top-level keys (curation notes) are ignored and never reach a prompt. Dotfiles are skipped (same
+        rule as ``GET /api/cases``). A missing directory gives
         an empty store (the benchmark then reports INSUFFICIENT DATA).
         """
         root = Path(cases_dir) if cases_dir is not None else get_settings().data_dir / "demo_cases"
@@ -413,6 +414,8 @@ class EvidenceStore:
             return cls([])
         records = []
         for path in sorted(root.glob("*.json")):
+            if path.name.startswith("."):
+                continue  # dotfiles (e.g. macOS "._x.json" resource forks) are not case files
             _refuse_sealed(path)
             _refuse_linked_file(path)
             records.append(_load_case_file(path))

@@ -81,6 +81,32 @@ REPAIR_INSTRUCTION = (
 )
 
 
+def repair_instruction(problems: Sequence[str]) -> str:
+    """The exact suffix appended to the gated prompt for the one repair attempt: one ``- <problem>`` line each.
+
+    Problems are flattened to one line, so ``is_repair_instruction`` can recognise every suffix produced here.
+    """
+    lines = [" ".join(str(p).splitlines()) for p in problems]
+    return REPAIR_INSTRUCTION.format(problems="\n".join(f"- {line}" for line in lines))
+
+
+def is_repair_instruction(suffix: str) -> bool:
+    """True iff ``suffix`` is exactly ``repair_instruction(problems)`` for one or more non-empty problems.
+
+    The fixed header and footer come from ``REPAIR_INSTRUCTION``; only ``- ...`` problem lines may sit between
+    them. Used by ``core.store`` to refuse a "repair" prompt that appends anything else to the gated prompt.
+    """
+    head, sep, tail = REPAIR_INSTRUCTION.partition("{problems}")
+    if not isinstance(suffix, str) or not sep or len(suffix) <= len(head) + len(tail):
+        return False
+    if not suffix.startswith(head) or not suffix.endswith(tail):
+        return False
+    lines = suffix[len(head) : len(suffix) - len(tail)].split("\n")
+    if not all(line.startswith("- ") and line[2:].strip() and "\r" not in line for line in lines):
+        return False
+    return repair_instruction([line[2:] for line in lines]) == suffix
+
+
 def _canonical(obj: Any) -> str:
     return json.dumps(obj, sort_keys=True, separators=(",", ":"), ensure_ascii=False, allow_nan=False)
 
@@ -284,7 +310,7 @@ class LocalOllamaProvider:
                     # Outside the except block: a PromptTooLong here carries no chained ValidationError
                     # (whose text would echo the model's raw output).
                     if attempt < MAX_ATTEMPTS:
-                        instruction = REPAIR_INSTRUCTION.format(problems="\n".join(f"- {p}" for p in problems))
+                        instruction = repair_instruction(problems)
                         user_message = prompt + instruction
                         self.precheck(user_message)
                         # The repair message is the whole prompt plus the instruction, so it cannot count fewer.
