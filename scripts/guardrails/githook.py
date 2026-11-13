@@ -11,6 +11,7 @@ Agents are instructed never to set it, and the GitHub ruleset still blocks non-a
 from __future__ import annotations
 
 import os
+import re
 import sys
 from pathlib import Path
 
@@ -27,10 +28,25 @@ def deny(msg: str) -> None:
     sys.exit(1)
 
 
+CLAUDE_TRAILER = re.compile(r"^\s*co-authored-by:.*\b(claude|anthropic)\b", re.I)
+
+
+def strip_claude_trailer(path: str) -> None:
+    """commit-msg: remove AI co-author trailers (team rule: commits are authored by the human only)."""
+    p = Path(path)
+    lines = [l for l in p.read_text().splitlines() if not CLAUDE_TRAILER.match(l)]
+    while lines and not lines[-1].strip():
+        lines.pop()
+    p.write_text("\n".join(lines) + "\n")
+
+
 def main() -> None:
+    hook = sys.argv[1] if len(sys.argv) > 1 else ""
+    if hook == "commit-msg" and len(sys.argv) > 2:
+        strip_claude_trailer(sys.argv[2])  # applies to everyone, overrides included
+        return
     if os.environ.get("FAULTLINE_LEAD_OVERRIDE") == "1":
         return
-    hook = sys.argv[1] if len(sys.argv) > 1 else ""
     protected = {b.lower() for b in load_team().get("protected_branches", ["main", "master"])}
 
     if hook == "pre-commit":

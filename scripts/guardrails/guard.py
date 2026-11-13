@@ -22,10 +22,10 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import time
 
-from _team import CACHE_DIR, PROJECT_DIR, current_branch, identity, load_team, run  # noqa: E402
+from _team import CACHE_DIR, PROJECT_DIR, current_branch, identity, load_team, repo_root, run  # noqa: E402
 
 PARTNER_PROTECTED_PATHS = (
-    ".claude/", ".agents/", ".github/", ".githooks/", "scripts/guardrails/", "scripts/setup-github.sh",
+    ".claude/", ".agents/", ".github/", ".githooks/", "scripts/guardrails/", "scripts/ci/", "scripts/setup-github.sh",
     "scripts/test_guardrails.py", "scripts/agent-start.sh", "CODEOWNERS", "AGENTS.md", "CLAUDE.md",
     "docs/SPEC.md", "docs/WORKFLOW.md",
 )
@@ -59,14 +59,27 @@ def segments(cmd: str) -> list[list[str]]:
     return out
 
 
-def check_bash(cmd: str, role: str) -> None:
+def check_bash(cmd: str, role: str, cwd: str | None = None) -> None:
     team = load_team()
     protected = {b.lower() for b in team.get("protected_branches", ["main", "master"])}
-    branch = current_branch().lower()
+    # Track the directory each segment runs in (hook `cwd`, then any `cd X` / `git -C X`),
+    # so agents in git worktrees are judged by THEIR branch, not the main checkout's.
+    here = Path(cwd) if cwd else PROJECT_DIR
 
     for t in segments(cmd):
         low = [x.lower() for x in t]
         head = low[0]
+        if head == "cd" and len(t) > 1:
+            here = (here / Path(t[1]).expanduser()).resolve()
+            continue
+        seg_dir = here
+        if head == "git":
+            for j in range(1, len(t) - 1):
+                if not t[j].startswith("-"):
+                    break
+                if t[j] == "-C":
+                    seg_dir = (seg_dir / Path(t[j + 1]).expanduser()).resolve()
+        branch = current_branch(seg_dir).lower()
 
         if head == "git":
             # strip global options (`git -C dir -c k=v --no-pager push ...`) so they can't hide the subcommand
@@ -108,6 +121,13 @@ def check_bash(cmd: str, role: str) -> None:
                 block("`git commit --no-verify` skips the repo's git hooks.")
             elif sub == "commit" and branch in protected:
                 block(f"committing directly on `{branch}`. Create a branch first: `git switch -c <prefix>/<issue>-<slug>`.")
+            elif sub == "commit" and "--amend" not in low:
+                limit = int(team.get("max_pr_commits", 3))
+                _, ahead = run(["git", "rev-list", "--count", f"origin/{team.get('default_branch', 'main')}..HEAD"], cwd=seg_dir)
+                if ahead.isdigit() and int(ahead) >= limit:
+                    block(f"this branch already has {ahead} commit(s); a PR may have at most {limit}. "
+                          "Fold the change in with `git commit --amend`, or squash: "
+                          "`git reset --soft origin/main` then make 1-3 meaningful commits.")
             elif sub == "merge" and branch in protected and "--ff-only" not in low:
                 block(f"merging into `{branch}` locally. Merges to main happen on GitHub after lead review.")
             elif sub in ("rebase",) and branch in protected:
@@ -148,7 +168,7 @@ def check_bash(cmd: str, role: str) -> None:
 FRESH_SECONDS = 10 * 60
 
 
-def require_fresh() -> None:
+def require_fresh(root: Path | None = None) -> None:
     """Partners must be on the latest GitHub main before editing: fetch if stale, block if behind."""
     stamp = CACHE_DIR / "last_fetch"
     try:
@@ -156,7 +176,7 @@ def require_fresh() -> None:
     except (OSError, ValueError):
         age = float("inf")
     if age > FRESH_SECONDS:
-        code, _ = run(["git", "fetch", "origin", "--prune", "--quiet"], timeout=20)
+        code, _ = run(["git", "fetch", "origin", "--prune", "--quiet"], timeout=20, cwd=root)
         if code != 0:
             block("couldn't reach GitHub to pull the latest changes before editing. "
                   "Ask the human to check their internet / run `gh auth login`, then try again.")
@@ -165,7 +185,7 @@ def require_fresh() -> None:
             stamp.write_text(str(time.time()))
         except OSError:
             pass
-    _, behind = run(["git", "rev-list", "--count", "HEAD..origin/main"])
+    _, behind = run(["git", "rev-list", "--count", "HEAD..origin/main"], cwd=root)
     if behind.isdigit() and int(behind) > 0:
         block(f"this copy is {behind} commit(s) behind GitHub main. Pull first: run the /sync procedure "
               "(or the human runs `make pull`), then redo this edit.")
@@ -174,11 +194,12 @@ def require_fresh() -> None:
 def check_write(path_str: str, role: str) -> None:
     if role == "lead" or not path_str:
         return
+    root = repo_root(Path(path_str).resolve())  # the worktree/checkout the file lives in
     try:
-        rel = Path(path_str).resolve().relative_to(PROJECT_DIR.resolve()).as_posix()
+        rel = Path(path_str).resolve().relative_to(root.resolve()).as_posix()
     except ValueError:
         return
-    require_fresh()
+    require_fresh(root)
     for p in PARTNER_PROTECTED_PATHS:
         if rel == p.rstrip("/") or rel.startswith(p):
             block(f"partners cannot edit `{rel}` (guardrail/config file). If it needs a change, describe it in the PR and a lead will make it.")
@@ -193,7 +214,7 @@ def main() -> None:
     ti = data.get("tool_input", {}) or {}
     role = identity()["role"]
     if tool == "Bash":
-        check_bash(ti.get("command", ""), role)
+        check_bash(ti.get("command", ""), role, data.get("cwd"))
     elif tool in ("Edit", "Write", "MultiEdit", "NotebookEdit"):
         check_write(ti.get("file_path") or ti.get("notebook_path", ""), role)
     sys.exit(0)

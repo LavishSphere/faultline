@@ -5,6 +5,7 @@ description: Finish a task by verifying it, rebasing on the latest origin/main, 
 
 # Ship a PR (never merge, never deploy)
 
+0. **Rules:** at most 3 commits on the branch (`git rev-list --count origin/main..HEAD`; squash with `git reset --soft origin/main` if over), and no `Co-Authored-By: Claude` trailers.
 1. **Verify**
    - `make test` (or `cd services/api && python -m pytest -q`) and, if `apps/web` exists, `make check`.
    - Fix failures that are inside the task's scope. If something outside scope fails, report it; do not paper over it.

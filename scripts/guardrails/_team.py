@@ -21,11 +21,11 @@ ROLE_CACHE = CACHE_DIR / "identity.json"
 ROLE_TTL_SECONDS = 6 * 3600
 
 
-def run(cmd: list[str], timeout: float = 10.0) -> tuple[int, str]:
+def run(cmd: list[str], timeout: float = 10.0, cwd: Path | str | None = None) -> tuple[int, str]:
     try:
         p = subprocess.run(
             cmd,
-            cwd=PROJECT_DIR,
+            cwd=cwd or PROJECT_DIR,
             capture_output=True,
             text=True,
             timeout=timeout,
@@ -85,6 +85,17 @@ def _apply_override(ident: dict, team: dict) -> dict:
     return ident
 
 
-def current_branch() -> str:
-    _, out = run(["git", "rev-parse", "--abbrev-ref", "HEAD"])
+def current_branch(cwd: Path | str | None = None) -> str:
+    """Branch checked out in `cwd` (a worktree has its own HEAD), defaulting to the project dir."""
+    _, out = run(["git", "rev-parse", "--abbrev-ref", "HEAD"], cwd=cwd)
     return out
+
+
+def repo_root(path: Path | str | None) -> Path:
+    """Top level of the checkout/worktree containing `path`, else the project dir."""
+    p = Path(path) if path else PROJECT_DIR
+    d = p if p.is_dir() else p.parent
+    while not d.exists() and d != d.parent:
+        d = d.parent
+    code, out = run(["git", "rev-parse", "--show-toplevel"], cwd=d)
+    return Path(out) if code == 0 and out else PROJECT_DIR

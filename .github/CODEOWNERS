@@ -5,6 +5,7 @@
 /.github/                          @LavishSphere
 /.githooks/                        @LavishSphere
 /scripts/guardrails/               @LavishSphere
+/scripts/ci/                       @LavishSphere
 /AGENTS.md                         @LavishSphere
 /CLAUDE.md                         @LavishSphere
 /docs/SPEC.md                      @LavishSphere

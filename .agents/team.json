@@ -1,8 +1,15 @@
 {
   "repo": "LavishSphere/faultline",
   "default_branch": "main",
-  "protected_branches": ["main", "master", "production", "prod"],
-  "leads": ["LavishSphere"],
+  "protected_branches": [
+    "main",
+    "master",
+    "production",
+    "prod"
+  ],
+  "leads": [
+    "LavishSphere"
+  ],
   "partners": {
     "YaseenAhmad12": {
       "name": "Yaseen",
@@ -19,5 +26,6 @@
     "ws:frontend",
     "ws:research",
     "ws:eval"
-  ]
+  ],
+  "max_pr_commits": 3
 }

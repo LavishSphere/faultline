@@ -12,6 +12,12 @@ Closes #
 - [ ] Provenance labels on anything new that is displayed (REAL HISTORICAL / SYNTHETIC / RECORDED RUN / SIMULATED)
 - [ ] No sealed outcome reachable before reveal; evidence obeys `available_at <= as_of`
 - [ ] If a formula changed, `docs/MATH_MODEL.md` is updated in this PR
+- [ ] No formula change <!-- tick only if engine files changed but the math did not; CI checks this -->
+
+<!-- CI merge checks: ≤3 commits · no AI attribution · title `<area>: <what>` · closes a lead-delegated issue ·
+     secrets + honesty scans · ruff + pytest · web typecheck/lint/static build. -->
+<!-- Do not add AI attribution lines ("Generated with …", Co-Authored-By: Claude) to commits or this description. -->
+
 
 ## Follow-ups (out of scope, not done here)
 

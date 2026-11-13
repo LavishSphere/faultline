@@ -1,32 +1,146 @@
 name: ci
+# Merge checks for FAULTLINE. The ruleset on `main` requires the single `checks` job below,
+# which passes only if every other job passed (or was skipped because its app doesn't exist yet).
 on:
   pull_request:
+    types: [opened, synchronize, reopened, edited, ready_for_review]
   push:
     branches: [main]
 permissions:
   contents: read
+concurrency:
+  group: ci-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
 jobs:
-  checks:
+  policy:
+    name: policy (PR rules)
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    permissions: { contents: read, issues: read, pull-requests: read }
+    steps:
+      - uses: actions/checkout@v4
+        with: { fetch-depth: 0 }
+      - uses: actions/setup-python@v5
+        with: { python-version: "3.12" }
+      - name: Commits ≤ 3, no AI attribution, title, linked delegated issue, scope, math contract
+        env: { GITHUB_TOKEN: "${{ github.token }}" }
+        run: python3 scripts/ci/pr_policy.py
+
+  guardrails:
+    name: guardrails (agent hooks self-test)
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
         with: { python-version: "3.12" }
-      - uses: actions/setup-node@v4
-        with: { node-version: "22" }
-      - name: Guard hooks self-test
-        run: python3 scripts/test_guardrails.py
-      - name: Backend tests
+      - run: python3 scripts/test_guardrails.py
+      - run: python3 scripts/ci/content_scan.py --self-test
+
+  secrets:
+    name: secrets scan
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with: { fetch-depth: 0 }
+      - name: Scan added lines (PR) or whole tree (main)
         run: |
-          if [ -f services/api/pyproject.toml ]; then
-            cd services/api && pip install -e ".[dev]" && python -m pytest -q
+          if [ "${{ github.event_name }}" = "pull_request" ]; then
+            python3 scripts/ci/content_scan.py secrets "${{ github.event.pull_request.base.sha }}" "${{ github.event.pull_request.head.sha }}"
           else
-            echo "services/api not created yet; skipping"
+            python3 scripts/ci/content_scan.py secrets
           fi
-      - name: Web typecheck & build
+
+  honesty:
+    name: honesty scan (no fake claims)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with: { fetch-depth: 0 }
+      - name: Headline metrics, superiority claims, fake live states, randomness in engine
         run: |
-          if [ -f apps/web/package.json ]; then
-            cd apps/web && npm ci && npm run typecheck && npm run build
+          if [ "${{ github.event_name }}" = "pull_request" ]; then
+            python3 scripts/ci/content_scan.py honesty "${{ github.event.pull_request.base.sha }}" "${{ github.event.pull_request.head.sha }}"
           else
-            echo "apps/web not created yet; skipping"
+            python3 scripts/ci/content_scan.py honesty
           fi
+
+  # hashFiles() is only allowed in steps, so each app job detects its app first and gates the rest.
+  backend:
+    name: backend (ruff + pytest)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - id: app
+        name: Detect services/api
+        run: |
+          if [ -f services/api/pyproject.toml ]; then echo "present=true" >> "$GITHUB_OUTPUT"; else echo "present=false" >> "$GITHUB_OUTPUT"; echo "services/api not created yet; skipping"; fi
+      - if: steps.app.outputs.present == 'true'
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: services/api/pyproject.toml
+      - if: steps.app.outputs.present == 'true'
+        name: Install
+        working-directory: services/api
+        run: pip install -e ".[dev]"
+      - if: steps.app.outputs.present == 'true'
+        name: Lint
+        working-directory: services/api
+        run: ruff check .
+      - if: steps.app.outputs.present == 'true'
+        name: Tests (no network)
+        working-directory: services/api
+        run: python -m pytest -q --durations=5
+
+  web:
+    name: web (typecheck + lint + static build)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - id: app
+        name: Detect apps/web
+        run: |
+          if [ -f apps/web/package.json ]; then echo "present=true" >> "$GITHUB_OUTPUT"; else echo "present=false" >> "$GITHUB_OUTPUT"; echo "apps/web not created yet; skipping"; fi
+      - if: steps.app.outputs.present == 'true'
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: apps/web/package-lock.json
+      - if: steps.app.outputs.present == 'true'
+        name: Install
+        working-directory: apps/web
+        run: npm ci
+      - if: steps.app.outputs.present == 'true'
+        name: Typecheck
+        working-directory: apps/web
+        run: npm run typecheck
+      - if: steps.app.outputs.present == 'true'
+        name: Lint
+        working-directory: apps/web
+        run: npm run lint
+      - if: steps.app.outputs.present == 'true'
+        name: Static export build (what GitHub Pages serves)
+        working-directory: apps/web
+        run: npm run build
+        env: { FAULTLINE_STATIC_EXPORT: "1" }
+
+  checks:
+    name: checks
+    if: always()
+    needs: [policy, guardrails, secrets, honesty, backend, web]
+    runs-on: ubuntu-latest
+    steps:
+      - name: All merge checks passed
+        env: { NEEDS: "${{ toJSON(needs) }}" }
+        run: |
+          python3 - <<'EOF'
+          import json, os, sys
+          needs = json.loads(os.environ["NEEDS"])
+          bad = {k: v["result"] for k, v in needs.items() if v["result"] not in ("success", "skipped")}
+          for k, v in needs.items():
+              print(f"{'OK ' if k not in bad else 'BAD'} {k}: {v['result']}")
+          sys.exit(1 if bad else 0)
+          EOF

@@ -1,0 +1,3 @@
+#!/bin/sh
+# FAULTLINE: strip AI co-author trailers from every commit message. Logic: scripts/guardrails/githook.py
+exec python3 "$(git rev-parse --show-toplevel)/scripts/guardrails/githook.py" commit-msg "$1"
