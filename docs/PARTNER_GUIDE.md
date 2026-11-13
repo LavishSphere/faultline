@@ -28,7 +28,8 @@ at the same time; editing an old copy creates conflicts. In Terminal:
 ```bash
 cd ~/faultline && make pull
 ```
-(`make pull` is our safe version of `git pull`: it gets the latest `main` from GitHub and puts your work on top of it.)
+(`make pull` is our safe version of `git pull`: it gets the latest `main` from GitHub and puts your work on top of it.
+If your Mac says `make: command not found`, run `xcode-select --install` once, or use `bash scripts/pull.sh`, which does the same.)
 Claude also checks this before every edit and will stop and say "pull first" if your copy is out of date.
 If you see that, just say: **"pull the latest and continue"**.
 
@@ -38,6 +39,12 @@ If you see that, just say: **"pull the latest and continue"**.
 3. Work with it in plain English: "the receivables lag should be 2 weeks for B2B customers", "show me week-by-week cash for case B".
 4. When done, type **`/ship-pr`**. It runs the tests, updates from GitHub, and opens the PR. Send the link to the lead.
 5. If the lead asks for changes, open the session, say "address the review on my PR", then `/ship-pr` again.
+
+## Working on several tasks at once
+When Claude's first message lists more than one task as **(ready)**, type **`/my-sprint`**. Claude explains which tasks can run
+side by side (they must not touch the same files), and after you say go, it runs one specialist agent per task in parallel.
+Each one opens its own PR. You get back a summary of each PR in plain language, plus any **questions for you** about the finance.
+Answer those; they need your judgment. Tasks marked *(waiting on #N)* start automatically once the lead merges #N.
 
 ## What the agent will not do (by design)
 - Work on something that isn't a delegated task. Ask a lead to create an issue.

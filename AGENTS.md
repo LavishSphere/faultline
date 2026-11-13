@@ -60,6 +60,7 @@ follow it** when the trigger applies (e.g. the user says "start task 12" → rea
 |---|---|---|
 | `sync` | start of work, branch behind, before PR | everyone |
 | `start-task` | beginning any implementation task | everyone (mandatory for partners) |
+| `my-sprint` | several unblocked delegated tasks → one agent each, in parallel, separate PRs | everyone |
 | `ship-pr` | work is done → verify, rebase, push branch, open PR | everyone |
 | `delegate` | turn a lead's request into a scoped GitHub issue | leads only |
 | `review-pr` | review a PR against spec + honesty rules | leads only |

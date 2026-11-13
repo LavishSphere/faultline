@@ -6,11 +6,10 @@ description: Frontend and visual design system for FAULTLINE - Next.js App Route
 # Cascade UI (SPEC §2, §8)
 
 ## Aesthetic (non-negotiable)
-Premium financial terminal. Tokens in `apps/web/app/globals.css`:
-`--bg #070B14` (near-black navy) · `--panel #0D1424` · `--text #F2EDE4` (warm off-white) · `--muted #8A93A6` ·
-`--risk #F5A524` (amber) · `--viable #19D3C5` (electric teal) · `--fail #E5484D` (crimson). Numbers in a tabular mono
-(`font-variant-numeric: tabular-nums`; e.g. JetBrains Mono / IBM Plex Mono via next/font), headings large and tight.
-No stock/AI-generated imagery. No generic SaaS cards-with-shadows.
+Match the lead's sites (https://khayrul.com, https://vitra.khayrul.com), simplified: calm, editorial, thin borders, panels not heavy cards, light + dark theme toggle.
+Tokens in `apps/web/app/globals.css` (dark / light): bg `#0a0e17`/`#f8fafc` · panel `#11161f`/`#ffffff` · hover `#171d29`/`#f1f5f9` · border `#232b3a`/`#e2e8f0` · text `#f1f5f9`/`#0f172a` · text-2 `#cbd5e1`/`#334155` · muted `#7c8aa5`/`#64748b` · accent `#818cf8`/`#6366f1` · link-hover `#f472b6`/`#db2777` · `--edge` ≥ 3:1 contrast for graph lines.
+Status: viable cyan `#42e8d3` · fail magenta `#f16c91` · risk amber `#f5a524` · info blue `#66b8ff` (light theme uses darker AA variants). Fonts: Geist, Geist Mono (all numbers, `tabular-nums`), Instrument Serif (display), self-hosted via `geist` + `next/font/local`. Radii 0.25–0.75rem; backdrop-blur(12px) on floating panels; easing cubic-bezier(.22,1,.36,1), ~150ms. Static export only (GitHub Pages): no API routes or server actions.
+No stock/AI-generated imagery. No 3D.
 
 ## Honesty in the UI
 - Every number comes from the API. **No hardcoded results, no fake "thinking..." sequences.** Loading states reflect real requests.

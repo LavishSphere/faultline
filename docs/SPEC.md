@@ -64,9 +64,10 @@ Financially sophisticated small-business operators, fractional CFOs, advisors, a
 
 ### Visual design, non-negotiable
 
-- Premium financial-terminal aesthetic, not a generic SaaS template and **no AI-generated decorative imagery**.
-- Near-black/navy canvas, warm off-white typography, restrained amber for risk, electric teal for viable paths, crimson for failed constraints.
-- A substantial animated network visualization (React Flow + custom SVG/canvas, or React Three Fiber *only if performance is robust*).
+- **Design language: the lead's own sites** (https://khayrul.com, https://vitra.khayrul.com), simplified: calm, editorial, thin 1px borders, generous negative space, light + dark themes. Not a generic SaaS template; **no AI-generated decorative imagery**.
+- Tokens (dark): bg `#0a0e17`, panel `#11161f`, border `#232b3a`, text `#f1f5f9`, muted `#7c8aa5`, accent indigo `#818cf8`. Light theme: bg `#f8fafc`, text `#0f172a`, accent `#6366f1`. Status: viable = cyan `#42e8d3`, fail/infeasible = magenta `#f16c91`, risk = amber `#f5a524` (light theme uses darker AA-contrast variants). *Updated 2026-11-13 by lead decision, replacing the original terminal palette.*
+- Type: Geist (UI), Geist Mono (all numbers, tabular), Instrument Serif (display headings). Self-hosted; no runtime font CDN.
+- A substantial animated network visualization (React Flow + custom SVG/canvas; no 3D).
 - Big cinematic type and useful negative space; subtle physics, particles/edges, timeline transitions, hover evidence, and 60-fps aspirations.
 - A financial readout that changes accurately in sync with the model. Numbers should be large, legible, and formatted consistently.
 - Favor small labels `AS-OF`, `SEALED`, `VERIFIED`, `FORECAST`, `REVEALED`, `SIMULATED` over paragraphs.
@@ -147,7 +148,7 @@ Polymarket's public research guide describes querying the CLOB by an outcome's `
 - Never poll live APIs during sealed historical agent inference; build an offline snapshot first.
 - Use explicit `as_of` to select the **last actual quote/candle <= cutoff** within an allowed maximum staleness window (e.g. 24h). If nothing qualifies, mark the market baseline unavailable.
 - Handle binary versus multi-outcome markets; implement **binary first**. Respect contract definitions and settlement ambiguities. Do not naively equate mutually exclusive markets to independent binary events.
-- Normalize percentage/cents/decimal scales exactly once and test them.
+- Normalize percentage/cents/decimal scales exactly once and test them. *Verified 2026-11-13: Kalshi now returns fixed-point **dollar strings** (e.g. `"0.5600"`, p = x); integer cents are a legacy format. Polymarket prices are decimals.*
 - Record venue, market identifier, URL, quote kind (last trade, midpoint, candle close), timezone, timestamps, spread/liquidity when available, and data-collection time.
 - Market price is a price-derived implied probability, potentially distorted by fees, spread, liquidity, incentives, or risk premium. Label it that way, not "ground truth probability".
 - Market data availability can be patchy. If a price history cannot be obtained reliably, do not fabricate it. Fall back to a documented dataset or show `NOT AVAILABLE`.
