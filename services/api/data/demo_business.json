@@ -1,0 +1,74 @@
+{
+  "provenance": "SYNTHETIC",
+  "description": "Fictional 3-store regional food retailer used for FAULTLINE stress tests. Not a real company; no real financial data.",
+  "status": "PLACEHOLDER: parameter values are the docs/MATH_MODEL.md §10 [assumed] placeholders. Yaseen (finance owner) is finalizing them in issue #6; expect changes.",
+  "parameter_sources": {
+    "from_MATH_MODEL_section_10": [
+      "stores[].base_sales",
+      "gross_margin",
+      "same_week_collection",
+      "supplier_lag_weeks",
+      "payroll",
+      "opex",
+      "term_loan_principal_1",
+      "base_rate",
+      "revolver_limit",
+      "revolver_spread",
+      "min_cash",
+      "min_inventory",
+      "inventory_0",
+      "backup_premium",
+      "backup_switch_fee",
+      "scenario_parameters.supplier_outage_dependent_share"
+    ],
+    "from_MATH_MODEL_section_9": [
+      "cash_0",
+      "horizon_weeks"
+    ],
+    "steady_state_derived": {
+      "sales_0": "S_0 = sum of store base sales = 18,000 + 17,000 + 15,000 = 50,000",
+      "prior_purchases": "P_-1 = P_0 = (1 - g) * S_0 = 0.65 * 50,000 = 32,500 (L_p = 2 needs two values)"
+    },
+    "new_placeholders_not_in_MATH_MODEL_pending_issue_6": {
+      "revolver_balance_0": "0 (facility undrawn at start)",
+      "amortization": "0 (interest-only term loan)",
+      "capex": "0 (no scheduled non-critical capex)",
+      "expansion_outflow": "0 (no expansion planned)",
+      "expansion_sales": "0"
+    }
+  },
+  "business": {
+    "provenance": "SYNTHETIC",
+    "horizon_weeks": 26,
+    "cash_0": 100000.0,
+    "sales_0": 50000.0,
+    "prior_purchases": [32500.0, 32500.0],
+    "inventory_0": 65000.0,
+    "term_loan_principal_1": 600000.0,
+    "revolver_balance_0": 0.0,
+    "stores": [
+      {"name": "Store 1", "base_sales": 18000.0},
+      {"name": "Store 2", "base_sales": 17000.0},
+      {"name": "Store 3", "base_sales": 15000.0}
+    ],
+    "gross_margin": 0.35,
+    "same_week_collection": 0.8,
+    "supplier_lag_weeks": 2,
+    "payroll": 12000.0,
+    "opex": 6000.0,
+    "capex": 0.0,
+    "expansion_outflow": 0.0,
+    "expansion_sales": 0.0,
+    "base_rate": 0.08,
+    "amortization": 0.0,
+    "revolver_limit": 150000.0,
+    "revolver_spread": 0.02,
+    "backup_premium": 0.12,
+    "backup_switch_fee": 2000.0,
+    "min_cash": 25000.0,
+    "min_inventory": 40000.0
+  },
+  "scenario_parameters": {
+    "supplier_outage_dependent_share": 0.4
+  }
+}
