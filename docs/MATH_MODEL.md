@@ -98,6 +98,8 @@ Principal evolves as $D_{t+1} = D_t - A_t$. In the demand shock, $\rho = 0$ mean
 ($m_t = 1$ immediately after $t_2$), which is how §9 Case B "week 2 only" is encoded ($t_1 = t_2 = 2$, $\rho = 0$).
 Financing that cannot happen is rejected by the simulator, not simulated: a repayment above the balance ($B_t < 0$) or
 amortization above the remaining principal ($D_{t+1} < 0$), with a \$$10^{-6}$ tolerance for solver round-off.
+Physically impossible plans are rejected the same way: the simulator enforces $P_t \ge 0$ and $I_t \ge 0$ in every week
+(same tolerance; purchases are checked before inventory), while the floor $I_t \ge I_{min}$ stays an optimizer constraint (§4.3).
 Inputs must be finite (no NaN or ±∞).
 
 **Runway:** first $t$ with $C_t < 0$ on the simulated path; reported as `> T weeks` if none. (No extrapolated burn-rate runway unless labeled.)
