@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Self-test for scripts/guardrails/guard.py. Run: python3 scripts/test_guardrails.py"""
+"""Self-test for scripts/guardrails/ (guard.py blocking rules, sync.py banner helpers). Run: python3 scripts/test_guardrails.py"""
 from __future__ import annotations
 
 import sys
@@ -141,7 +141,52 @@ def main() -> int:
             print(f"FAIL fresh-gate [{role}] fetch={fetch_code} behind={behind}: expected {want}, got {got}")
     guard.run, guard.CACHE_DIR = real_run, real_cache
 
-    total = len(CASES) + len(WRITE_CASES) + len(FRESH_CASES) + len(LIMIT_CASES) + 1
+    # Session banner helpers (scripts/guardrails/sync.py): pure functions, no network
+    import sync
+    from datetime import datetime, timezone
+
+    def pr(n, login="YaseenAhmad12", review="REVIEW_REQUIRED", checks=(("SUCCESS", "2026-11-13T10:00:00Z"),), closes=(), draft=False):
+        roll = [{"name": "checks", "status": "COMPLETED", "conclusion": c, "startedAt": at} for c, at in checks]
+        return {"number": n, "title": f"t{n}", "author": {"login": login}, "isDraft": draft, "reviewDecision": review,
+                "statusCheckRollup": roll, "closingIssuesReferences": [{"number": c} for c in closes]}
+
+    rerun = (("FAILURE", "2026-11-13T10:00:00Z"), ("SUCCESS", "2026-11-13T11:00:00Z"))  # the latest run wins
+    prs = [pr(54, review="CHANGES_REQUESTED", closes=(20,)), pr(69, closes=(17,)), pr(43, checks=(("FAILURE", "x"),)),
+           pr(76, login="LavishSphere", checks=rerun), pr(5, review="APPROVED"), pr(6, draft=True),
+           pr(7, checks=())]
+    issues = [{"number": 17, "title": "a", "body": ""}, {"number": 20, "title": "b", "body": ""},
+              {"number": 47, "title": "c", "body": "**Starts after:** #17 merged, #29 merged"},
+              {"number": 78, "title": "d", "body": "**Starts after:** #29 merged"}, {"number": 79, "title": "e", "body": None}]
+    rows, ready = sync.task_rows(issues, prs, {"17": "OPEN", "29": "MERGED"})
+    team = {"deadlines": [{"at": "2026-11-14T13:00:00-05:00", "name": "practice demos", "when": "Sat 1pm ET"},
+                          {"at": "2026-11-15T11:00:00-05:00", "name": "code freeze", "when": "Sun 11am ET", "after": "CODE FREEZE."}]}
+    before = "\n".join(sync.deadline_lines(team, datetime(2026, 11, 13, 21, 0, tzinfo=timezone.utc)))
+    after = "\n".join(sync.deadline_lines(team, datetime(2026, 11, 15, 17, 0, tzinfo=timezone.utc)))
+    queue = "\n".join(sync.lead_queue_lines(prs))
+    mine = "\n".join(sync.partner_pr_lines(prs, "yaseenahmad12"))
+    BANNER_CASES = [
+        ("waits_on", [sync.waits_on(p) for p in prs], ["author", "review", "author", "review", "merge", "draft", "ci"]),
+        ("why_author", [sync.why_author(prs[0]), sync.why_author(prs[2])], ["changes requested", "CI red"]),
+        ("starts_after", sync.starts_after("x\n**Starts after:** #64 merged, #65 merged\n#99"), ["64", "65"]),
+        ("task status", [r.rsplit("(", 1)[1] for r in rows],
+         ["in review: PR #69)", "PR #54 needs fixes)", "waiting on #17)", "ready)", "ready)"]),
+        ("ready count excludes tasks that already have a PR", ready, 2),
+        ("deadline countdown", "practice demos in 21h 00m (Sat 1pm ET); code freeze in 1d 19h" in before, True),
+        ("deadline passed", after.startswith("- PASSED: code freeze (Sun 11am ET). CODE FREEZE.") and "Clock" not in after, True),
+        ("bad deadline entry is skipped", sync.deadline_lines({"deadlines": [{"at": "soon"}, {}]}), []),
+        ("lead queue counts", "Open PRs: 7. 3 wait on a lead, 2 wait on their author, 2 not ready" in queue, True),
+        ("lead queue keeps author-blocked PRs out of the review list",
+         queue.index("#54 t54") > queue.index("Waiting on the author") > queue.index("#69 t69"), True),
+        ("partner sees fixes first", mine.index("FIX THESE FIRST") < mine.index("#54") < mine.index("waiting for the lead"), True),
+        ("partner list is only their PRs", "#76" in mine, False),
+        ("no PRs", sync.lead_queue_lines([]), ["- Open PRs: none."]),
+    ]
+    for name, got, want in BANNER_CASES:
+        if got != want:
+            failures += 1
+            print(f"FAIL banner {name}: expected {want!r}, got {got!r}")
+
+    total = len(CASES) + len(WRITE_CASES) + len(FRESH_CASES) + len(LIMIT_CASES) + 1 + len(BANNER_CASES)
     print(f"guardrails: {total - failures}/{total} passed")
     return 1 if failures else 0
 
