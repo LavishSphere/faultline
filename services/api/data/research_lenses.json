@@ -1,0 +1,308 @@
+{
+  "schema_version": 1,
+  "label": "RESEARCH CONTEXT",
+  "provenance": "REAL_HISTORICAL",
+  "description": "Hand-verified public writing from four venture firms, used as RESEARCH CONTEXT in Thesis Court. These are not predictions by the firms, not records of their investment decisions, and not scored. Quotes are verbatim from the live page (accessed_at) and from the archive capture (archived_url). Thesis summaries and hypotheses are curator paraphrases pending finance review.",
+  "curated_at": "2026-11-13",
+  "items": [
+    {
+      "id": "link-ventures-home",
+      "firm": "Link Ventures",
+      "title": "Link Ventures | Backing AI founders from MIT, Harvard, and beyond",
+      "url": "https://linkventures.com/",
+      "source_type": "firm_thesis_page",
+      "authors": [],
+      "published_at": null,
+      "published_at_basis": "NOT AVAILABLE: living firm home page with no publication date on the page (footer shows only '© 2025 Link Ventures').",
+      "archived_url": "https://web.archive.org/web/20250914180905/https://www.linkventures.com/",
+      "archived_at": "2025-09-14T18:09:05Z",
+      "available_at": "2025-09-14",
+      "available_at_basis": "Earliest Wayback Machine capture we checked (roughly monthly captures, 2025-02 to 2026-10) that contains every quote below verbatim. Earlier captures used different wording: the 2025-03-05 capture reads 'a venture capital firm that is based in Kendall Square, just a block from MIT, that invests in technical founders developing disruptive AI technologies', and the 2025-06-17 to 2025-08-09 captures contain the first quote but not the other two. Only those captures were checked, so the current text may have appeared somewhat before 2025-09-14; the date is conservative.",
+      "accessed_at": "2026-11-13T03:33:45Z",
+      "themes": ["technical_founders", "ai_first", "operational_scalability", "shared_operating_infrastructure"],
+      "thesis": "Link Ventures says it invests at pre-seed to Series A in technical founders, mainly from MIT, Harvard and the Boston area, who build AI companies. It says it pairs capital with shared operating support (office space, payroll, compute, accounting, legal). As a lens: founder technical depth plus shared back-office infrastructure is presented as a way to scale an AI startup while saving time and capital.",
+      "thesis_review": "PENDING FINANCE REVIEW (Yaseen)",
+      "hypotheses": [
+        "Curator-derived, not a firm claim: technically deep founding teams with access to shared operating infrastructure (compute, payroll, legal, accounting) carry lower early operational execution risk.",
+        "Curator-derived, not a firm claim: using AI/ML inside a startup's own operations lets it scale with less time and capital than a conventional build-out."
+      ],
+      "quotes": [
+        {
+          "text": "Link Ventures is a venture capital firm based in Kendall Square, just a block from MIT and Harvard, that invests in technical founders developing disruptive AI technologies.",
+          "kind": "documentary_fact",
+          "note": "Self-description of stated investment focus."
+        },
+        {
+          "text": "We invest in top technical founders from MIT, Harvard, and Boston’s ecosystem building impactful AI solutions. Our focus is on scalable models, data-driven products, and disruptive innovation with global potential.",
+          "kind": "documentary_fact",
+          "note": "Stated investment criteria (what the firm says it looks for), not evidence of outcomes."
+        },
+        {
+          "text": "Link Ventures fuels AI-driven innovation, using machine learning to scale startups into market leaders—saving time and capital while building enduring value.",
+          "kind": "analyst_interpretation",
+          "note": "Promotional claim; no supporting data on the page."
+        }
+      ],
+      "limitations": [
+        "A firm home page is marketing copy, not research; it is persuasive writing, not a calibrated forecast.",
+        "No publication date on the page; availability for replay is established only from archive captures.",
+        "Living page: wording can change at any time. Quotes were confirmed on the live page on accessed_at and in the archived capture.",
+        "Says nothing about rejected investments, realized returns, or fund performance."
+      ]
+    },
+    {
+      "id": "link-ventures-portfolio-ai-power",
+      "firm": "Link Ventures",
+      "title": "Portfolio | Link Ventures",
+      "url": "https://linkventures.com/portfolio",
+      "source_type": "portfolio_page",
+      "authors": [],
+      "published_at": null,
+      "published_at_basis": "NOT AVAILABLE: living portfolio page. The Silverton Power and Spinor Energy entries show 'Year Invested 2026' but no exact date.",
+      "archived_url": "https://web.archive.org/web/20261005001622/https://linkventures.com/portfolio",
+      "archived_at": "2026-10-05T00:16:22Z",
+      "available_at": "2026-10-05",
+      "available_at_basis": "Earliest Wayback Machine capture we checked that contains every quote below. The 2026-06-09 capture did not contain the Silverton Power or Spinor Energy entries.",
+      "accessed_at": "2026-11-13T03:33:45Z",
+      "themes": ["critical_dependencies", "ai_infrastructure", "power_constraints", "capital_intensity"],
+      "thesis": "Two 2026 entries on Link's portfolio page (Silverton Power, Spinor Energy) describe electric power as a binding constraint on AI data-center build-out: years-long waits to connect new load, and load swings from large AI training sites. As a lens: AI-first businesses depend critically on physical infrastructure (grid power) whose lead times sit outside the company's control.",
+      "thesis_review": "PENDING FINANCE REVIEW (Yaseen)",
+      "hypotheses": [
+        "Curator-derived, not a firm claim: for a business whose growth needs new compute or data-center capacity, grid interconnection lead time is a critical dependency that can delay revenue and extend cash burn.",
+        "Curator-derived, not a firm claim: power-delivery bottlenecks create demand for on-grid storage and load-smoothing products."
+      ],
+      "quotes": [
+        {
+          "text": "Speed to power has become the binding constraint on the U.S. economy - the years-long wait to energize new load now gates everything from AI to advanced manufacturing - and Silverton is solving it with renewable power.",
+          "kind": "analyst_interpretation",
+          "note": "From the Silverton Power portfolio entry. The page does not say who wrote the entry."
+        },
+        {
+          "text": "Its near-term product is a behind-the-meter “shock absorber” that smooths the megawatt-per-millisecond load swings created by gigawatt-scale AI training campuses",
+          "kind": "documentary_fact",
+          "note": "Product description from the Spinor Energy portfolio entry (sentence continues on the page). Describes the product as stated; not an independent technical verification."
+        }
+      ],
+      "limitations": [
+        "A portfolio page is not a record of rejected investments or realized returns; it lists companies the firm chose to show.",
+        "Entry text has no stated author. Some entries on the same page are written in the first person by the company (e.g. Darwin Robotics), so blurbs may be company-supplied rather than Link's own analysis.",
+        "Only 'Year Invested' is shown, not a transaction date or terms.",
+        "Living page; entries were added between the 2026-06-09 and 2026-10-05 captures."
+      ]
+    },
+    {
+      "id": "a16z-fintech-thesis",
+      "firm": "Andreessen Horowitz (a16z)",
+      "title": "Fintech Investments, Team, & Thesis Overview | a16z",
+      "url": "https://a16z.com/fintech/",
+      "source_type": "firm_thesis_page",
+      "authors": [],
+      "published_at": null,
+      "published_at_basis": "NOT AVAILABLE as a visible date. Page metadata (JSON-LD) says datePublished 2023-04-11T07:25:18+00:00 and dateModified 2026-11-10T16:52:15+00:00, which date the page, not the current wording of the quoted paragraph.",
+      "page_metadata": {
+        "jsonld_datePublished": "2023-04-11T07:25:18+00:00",
+        "jsonld_dateModified": "2026-11-10T16:52:15+00:00"
+      },
+      "archived_url": "https://web.archive.org/web/20231126111633/https://a16z.com/fintech/",
+      "archived_at": "2023-11-26T11:16:33Z",
+      "available_at": "2023-11-26",
+      "available_at_basis": "Earliest Wayback Machine capture we checked that contains the current wording of every quote below. The 2023-05-09 capture had an earlier version ('mobile, digital money, machine learning, and new data sources ... reimagine the way we manage our finances'); the 2023-08-30 capture did not contain the current wording.",
+      "accessed_at": "2026-11-13T03:33:45Z",
+      "themes": ["fintech_infrastructure", "incumbent_bottlenecks", "legacy_infrastructure"],
+      "thesis": "a16z's fintech team says startups can use mobile, digital money, AI/ML and new data sources to leapfrog incumbents' outdated infrastructure, across banking, lending, insurance, real estate and investing, both in customer-facing products and in core infrastructure.",
+      "thesis_review": "PENDING FINANCE REVIEW (Yaseen)",
+      "hypotheses": [
+        "Curator-derived, not a firm claim: incumbents' outdated infrastructure is an operational bottleneck that new entrants can exploit.",
+        "Curator-derived, not a firm claim: core financial infrastructure, not only customer-facing apps, is a place where new entrants compete."
+      ],
+      "quotes": [
+        {
+          "text": "Fintech companies are innovating across broad categories—in banking, lending, insurance, real estate, and investing—both on the customer-facing side and in core infrastructure.",
+          "kind": "analyst_interpretation",
+          "note": "General characterization of the market; no data given."
+        },
+        {
+          "text": "We believe the combination of mobile, digital money, AI and machine learning, and new data sources offers startups a unique opportunity to leapfrog outdated infrastructure and compete with incumbent financial institutions to reimagine the way money moves.",
+          "kind": "analyst_interpretation",
+          "note": "Explicit belief statement (thesis), not a measurable forecast."
+        }
+      ],
+      "limitations": [
+        "Persuasive thesis writing, not a calibrated numerical forecast; contains no testable numeric prediction.",
+        "Living hub page: the thesis paragraph's wording changed between the 2023-05-09 and 2023-11-26 captures, so the wording quoted here should not be cited for any as_of before 2023-11-26.",
+        "Says nothing about which fintech companies a16z declined or how its fintech investments performed."
+      ]
+    },
+    {
+      "id": "a16z-investing-in-stitch",
+      "firm": "Andreessen Horowitz (a16z)",
+      "title": "Investing in Stitch",
+      "url": "https://a16z.com/announcement/investing-in-stitch/",
+      "source_type": "investment_announcement",
+      "authors": ["Alex Rampell", "James da Costa"],
+      "published_at": "2026-05-13",
+      "published_at_basis": "Page displays 'Posted May 13, 2026'. Page JSON-LD datePublished is 2026-05-14T05:55:55+00:00 (likely the evening of May 13 in US Pacific time; not confirmed).",
+      "page_metadata": {
+        "jsonld_datePublished": "2026-05-14T05:55:55+00:00"
+      },
+      "archived_url": "https://web.archive.org/web/20260515015515/https://a16z.com/announcement/investing-in-stitch/",
+      "archived_at": "2026-05-15T01:55:15Z",
+      "available_at": "2026-05-14",
+      "available_at_basis": "Conservative: the later of the displayed date (2026-05-13) and the UTC date of the JSON-LD datePublished timestamp (2026-05-14). Earliest Wayback capture is 2026-05-15T01:55:15Z.",
+      "accessed_at": "2026-11-13T03:33:45Z",
+      "themes": ["fintech_infrastructure", "systems_of_record", "incumbent_bottlenecks", "core_banking"],
+      "thesis": "a16z argues that core banking systems of record (FIS, Fiserv) are hard to replace, leaving banks with infrastructure debt that it calls the biggest obstacle to AI adoption. It backs Stitch, an API-first core banking and operations platform, starting in the Middle East where new financial institutions need core software for the first time. Traction figures are reported by a16z, not independently verified.",
+      "thesis_review": "PENDING FINANCE REVIEW (Yaseen)",
+      "hypotheses": [
+        "Curator-derived, not a firm claim: legacy systems of record are the binding constraint on AI adoption in banking, because agents need clean APIs and data.",
+        "Curator-derived, not a firm claim: replacing a core system is easiest where there is no incumbent yet (greenfield institutions), not at established banks."
+      ],
+      "quotes": [
+        {
+          "text": "The result of this incumbency is that financial institutions are sitting on decades of infrastructure debt. This debt has become the single biggest obstacle to AI adoption.",
+          "kind": "analyst_interpretation"
+        },
+        {
+          "text": "In the last six months alone, more than $5 billion has been transacted on the Stitch platform.",
+          "kind": "documentary_fact",
+          "note": "Company metric as reported by the investor; not independently verified and the six-month window is not dated on the page."
+        },
+        {
+          "text": "Customer numbers grew 10x in 2025, revenue grew 20x, and Stitch has seen pull beyond the GCC into Africa and Southeast Asia.",
+          "kind": "documentary_fact",
+          "note": "Growth multiples as reported by the investor; base values not disclosed."
+        },
+        {
+          "text": "We are thrilled to lead Stitch’s Series A — and honored to make this our first investment in Saudi Arabia.",
+          "kind": "documentary_fact",
+          "note": "Deal fact: a16z leads the Series A. Round size is not stated on the page."
+        }
+      ],
+      "limitations": [
+        "Investment announcements are persuasive writing by an interested party, not calibrated forecasts.",
+        "Traction metrics are self-reported and have no stated base values or audit.",
+        "One announced investment says nothing about deals a16z declined or about returns.",
+        "Not usable for any as_of before 2026-05-14."
+      ]
+    },
+    {
+      "id": "sequoia-partnering-with-etched",
+      "firm": "Sequoia Capital",
+      "title": "Partnering with Etched: Building the Inference Machine",
+      "url": "https://sequoiacap.com/article/partnering-with-etched-building-the-inference-machine",
+      "source_type": "investment_announcement",
+      "authors": ["Sonya Huang", "Abhishek Malani"],
+      "published_at": "2026-07-23",
+      "published_at_basis": "Page displays 'Published July 23, 2026'; JSON-LD datePublished 2026-07-23T00:00:00.000Z (dateModified 2026-07-24T00:00:00.000Z).",
+      "page_metadata": {
+        "jsonld_datePublished": "2026-07-23T00:00:00.000Z",
+        "jsonld_dateModified": "2026-07-24T00:00:00.000Z"
+      },
+      "archived_url": "https://web.archive.org/web/20260723191359/https://sequoiacap.com/article/partnering-with-etched-building-the-inference-machine/",
+      "archived_at": "2026-07-23T19:13:59Z",
+      "available_at": "2026-07-23",
+      "available_at_basis": "Displayed publication date; corroborated by a Wayback capture on the same day (2026-07-23T19:13:59Z).",
+      "accessed_at": "2026-11-13T03:33:45Z",
+      "themes": ["ai_infrastructure", "compute_constraints", "model_uncertainty", "capital_intensity"],
+      "thesis": "Sequoia argues inference is becoming a very large market and that AI progress is compute constrained. It backs Etched's inference-specific hardware while naming the main risk: hardware takes a long time to build while models change every few weeks. The Series C ($300M at a $10B pre-money valuation) shows how capital intensive the bet is.",
+      "thesis_review": "PENDING FINANCE REVIEW (Yaseen)",
+      "hypotheses": [
+        "Curator-derived, not a firm claim: compute supply, not model capability, is the binding constraint on AI deployment.",
+        "Curator-derived, not a firm claim: fast-changing model architectures are a key risk for specialized hardware, so the ability to iterate quickly matters more than any single chip generation."
+      ],
+      "quotes": [
+        {
+          "text": "We are delighted to be partnering with Etched and leading their $300 Million Series C at a $10 Billion pre-money valuation, joined by our friends at Jane Street, Andreessen Horowitz, Diffusion, and SK Hynix.",
+          "kind": "documentary_fact",
+          "note": "Deal terms as stated by the lead investor."
+        },
+        {
+          "text": "Earlier this year, Etched taped out its first generation chip at TSMC, making it the first post-ChatGPT-era company with a successful full-reticle A0 chip tape-out on TSMC’s leading-edge nodes.",
+          "kind": "documentary_fact",
+          "note": "Investor-relayed company claim ('first' is not independently verified)."
+        },
+        {
+          "text": "Novel computing hardware is among the hardest things in the world to get right, and the ground underneath is constantly moving. Models change every few weeks, context lengths stretch, attention gets reinvented, the mix of dense and sparse keeps shifting.",
+          "kind": "analyst_interpretation",
+          "note": "Risk framing: model uncertainty for hardware."
+        },
+        {
+          "text": "The intelligence race is fundamentally compute constrained.",
+          "kind": "analyst_interpretation"
+        },
+        {
+          "text": "Etched has built a beautiful machine in Gen 1. We expect it will do very well in the market.",
+          "kind": "analyst_interpretation",
+          "note": "A forward-looking but non-numeric expectation with no target or date; not a quantitative testable forecast."
+        }
+      ],
+      "limitations": [
+        "Published 2026-07-23: unusable for any replay with as_of before that date.",
+        "Investment announcement by the lead investor: persuasive writing, not a calibrated forecast. Contains no quantitative testable forecast.",
+        "Says nothing about deals Sequoia declined or about returns.",
+        "Sequoia notes Andreessen Horowitz also participated; this is not an independent second opinion from a16z."
+      ]
+    },
+    {
+      "id": "bessemer-state-of-ai-2025",
+      "firm": "Bessemer Venture Partners",
+      "title": "The State of AI 2025",
+      "url": "https://www.bvp.com/atlas/the-state-of-ai-2025",
+      "source_type": "research_report",
+      "authors": ["Kent Bennett", "Talia Goldberg", "Janelle Teng Wade", "Sameer Dholakia", "Mike Droesch", "Lauri Moore", "Caty Rea", "Lindsey Li", "Maha Malik", "Bhavik Nagda", "Lance Co Ting Keh", "Darsh Patel", "Christine Deakers"],
+      "published_at": "2025-08-13",
+      "published_at_basis": "Page displays 'Published on Aug 13, 2025' and 'Published08/13/2025'. No machine-readable date found in the page HTML.",
+      "archived_url": "https://web.archive.org/web/20250813212401/https://www.bvp.com/atlas/the-state-of-ai-2025",
+      "archived_at": "2025-08-13T21:24:01Z",
+      "available_at": "2025-08-13",
+      "available_at_basis": "Displayed publication date; corroborated by a Wayback capture on the same day (2025-08-13T21:24:01Z).",
+      "accessed_at": "2026-11-13T03:33:45Z",
+      "themes": ["systems_of_action", "systems_of_record", "infrastructure_reliability", "market_risk", "roi_assumptions"],
+      "thesis": "Bessemer argues AI is moving enterprise software from systems of record to 'systems of action' that act on data, making legacy switching-cost moats weaker. It also warns that some fast AI growth is fragile: low switching costs, weak retention, thin gross margins (about 25% on average for its 'Supernova' sample) and intense competition. It predicts that private, business-grounded evaluations will drive enterprise deployment.",
+      "thesis_review": "PENDING FINANCE REVIEW (Yaseen)",
+      "hypotheses": [
+        "Curator-derived, not a firm claim: hypergrowth revenue with low switching costs and thin gross margins is less durable than slower growth with strong retention and healthy margins.",
+        "Curator-derived, not a firm claim: AI lowers migration costs off legacy systems of record, weakening incumbents' switching-cost moats.",
+        "Curator-derived, not a firm claim: trusted, use-case-specific evaluation is a gating factor for enterprise AI deployment."
+      ],
+      "quotes": [
+        {
+          "text": "At Bessemer, we’ve already deployed over $1 billion in capital to AI-native startups since our initial commitment in 2023.",
+          "kind": "documentary_fact",
+          "note": "Self-reported by the firm."
+        },
+        {
+          "text": "On average, these AI Supernovas have only 25% gross margins, often trading distribution for profit in the short term.",
+          "kind": "documentary_fact",
+          "note": "Self-reported average over the ten 'Supernova' startups Bessemer says it surveyed; not independently verifiable."
+        },
+        {
+          "text": "Retention can be fragile, especially when switching costs are low.",
+          "kind": "analyst_interpretation",
+          "note": "Market-risk framing."
+        },
+        {
+          "text": "We feel we’re at the start of a once-in-a-generation shift—from systems of record to systems of action.",
+          "kind": "analyst_interpretation"
+        },
+        {
+          "text": "That’s why 2025–2026 will mark a turning point: AI evals will go private, grounded, and trusted—and enterprise deployment will 10x because of it.",
+          "kind": "quantitative_forecast",
+          "note": "Has a number (10x) and a time window (2025–2026), but no defined metric, baseline, or resolution source, so it cannot be scored as stated. Not scored by FAULTLINE."
+        },
+        {
+          "text": "In 2025 and 2026, we expect to see a surge in M&A activity as incumbents move aggressively to buy their way into the AI era.",
+          "kind": "analyst_interpretation",
+          "note": "Directional expectation with no numeric threshold."
+        }
+      ],
+      "limitations": [
+        "Published 2025-08-13: exclude from replays with as_of before that date.",
+        "Research marketing by an investor with portfolio exposure; the page's own disclaimer says certain companies discussed may be current or former Bessemer portfolio companies.",
+        "Benchmarks come from a sample chosen by the firm ('20 high-growth, durable AI startups across our portfolio and beyond'); not a representative or audited dataset.",
+        "Predictions are persuasive writing; none is scored by FAULTLINE, and none has an explicit resolution source.",
+        "Says nothing about deals Bessemer declined or about returns."
+      ]
+    }
+  ]
+}
