@@ -1,0 +1,32 @@
+{
+  "entries": [
+    {
+      "bytes": 22138,
+      "collected_at": "2026-11-13T17:58:44.798209+00:00",
+      "endpoint": "kalshi.historical_candlesticks",
+      "http_status": 200,
+      "notes": {
+        "collector": "scripts/collect_market_snapshots.py",
+        "data_tier": "historical",
+        "kalshi_market_settled_cutoff": "2026-09-13T00:00:00+00:00",
+        "plan_group": "CPI MoM 2026-02 (february-inflation-us-monthly-231)",
+        "plan_leg": "\u22650.4% == Kalshi Above 0.3%",
+        "points_in_response_set": 68,
+        "reference_close": "2026-03-11T12:29:00+00:00",
+        "venue_scheduled_close": "2026-03-11T12:29:00+00:00",
+        "window_end": "2026-03-04T00:00:00+00:00",
+        "window_rule": "T-7d: end = 00:00Z of (reference_close - 7d), lookback 3d",
+        "window_start": "2026-03-01T00:00:00+00:00"
+      },
+      "params": {
+        "end_ts": 1772582400,
+        "period_interval": 60,
+        "start_ts": 1772323200
+      },
+      "path": "kalshi/KXCPI-26FEB-T0.3/20261113T175844798209Z.json",
+      "provenance": "REAL HISTORICAL",
+      "sha256": "a6753c8b4a76aae291a2180dd7085d993c248f19b49ad7cab2bbc21f52d6b797",
+      "url": "https://external-api.kalshi.com/trade-api/v2/historical/markets/KXCPI-26FEB-T0.3/candlesticks"
+    }
+  ]
+}

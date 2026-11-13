@@ -7,7 +7,11 @@ import { ProvenanceBadge, type ProvenanceInput } from "./ProvenanceBadge";
 export type ReadoutFormat = "usd" | "probability" | "weeks" | "percent";
 
 const FORMATTERS: Record<ReadoutFormat, (n: number) => string> = {
-  usd: (n) => new Intl.NumberFormat("en-US", { style: "currency", currency: "USD", maximumFractionDigits: 0 }).format(n),
+  // Rounded first so a value that rounds to zero never renders as "-$0".
+  usd: (n) =>
+    new Intl.NumberFormat("en-US", { style: "currency", currency: "USD", maximumFractionDigits: 0 }).format(
+      Math.round(n) || 0,
+    ),
   probability: (n) => n.toFixed(3),
   weeks: (n) => n.toFixed(0),
   percent: (n) => `${(n * 100).toFixed(1)}%`,
@@ -33,8 +37,10 @@ export function FinancialReadout({
   format,
   provenance,
   unit,
+  prefix,
   sublabel,
   size = "lg",
+  dimmed = false,
 }: {
   label: string;
   value: ReadoutValue;
@@ -42,14 +48,25 @@ export function FinancialReadout({
   /** Provenance of the value when present. Ignored (NOT AVAILABLE) when value is null. */
   provenance: ProvenanceInput;
   unit?: string;
+  /** Small text before a numeric value, e.g. "week". */
+  prefix?: string;
   sublabel?: string;
-  size?: "md" | "lg" | "xl";
+  /** "fit": large, but steps down where the readout sits in a narrow side column. */
+  size?: "md" | "lg" | "xl" | "fit";
+  /** A newer request is in flight; the value shown is the previous response's. */
+  dimmed?: boolean;
 }) {
   const numeric = typeof value === "number" ? value : null;
   const shown = useCountUp(numeric);
   const fmt = FORMATTERS[format];
   const sizeClass =
-    size === "xl" ? "text-5xl md:text-7xl" : size === "lg" ? "text-4xl md:text-5xl" : "text-2xl md:text-3xl";
+    size === "xl"
+      ? "text-5xl md:text-7xl"
+      : size === "lg"
+        ? "text-4xl md:text-5xl"
+        : size === "fit"
+          ? "whitespace-nowrap text-4xl xl:text-[2rem] min-[1700px]:text-5xl"
+          : "text-2xl md:text-3xl";
 
   let body;
   if (value === null) {
@@ -64,11 +81,18 @@ export function FinancialReadout({
     const exact = typeof value === "number" ? fmt(value) : `> ${fmt(value.above)}`;
     const animated = typeof value === "number" ? fmt(shown ?? value) : exact;
     body = (
-      <p className={`num font-medium leading-none tracking-tight text-text ${sizeClass}`}>
+      <p
+        className={`num font-medium leading-none tracking-tight text-text transition-opacity ${sizeClass} ${dimmed ? "opacity-50" : ""}`}
+      >
+        {prefix && typeof value === "number" ? (
+          <span className="mr-2 text-base font-normal uppercase tracking-[0.1em] text-muted" aria-hidden="true">
+            {prefix}
+          </span>
+        ) : null}
         {/* Screen readers get the exact value, not intermediate animation frames. */}
         <span aria-hidden="true">{animated}</span>
         <span className="sr-only">
-          {typeof value === "number" ? exact : `more than ${fmt(value.above)}`}
+          {typeof value === "number" ? `${prefix ? `${prefix} ` : ""}${exact}` : `more than ${fmt(value.above)}`}
         </span>
         {unit ? <span className="ml-2 text-base text-muted">{unit}</span> : null}
       </p>

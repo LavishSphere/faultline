@@ -35,13 +35,12 @@ from core.financials import (
     cascade_deltas,
     simulate,
 )
-from models import Identifier
+from models import ErrorCode, Identifier
 from routes import (
     NOT_AVAILABLE,
     CodedRoute,
     FieldIssue,
     RouteError,
-    RouteErrorCode,
     error_responses,
     issues_from,
     read_json,
@@ -85,7 +84,7 @@ def load_business(settings: Settings) -> BusinessParams:
     path = settings.data_dir / BUSINESS_FILE
     if not path.is_file():
         raise RouteError(
-            RouteErrorCode.DATA_UNAVAILABLE,
+            ErrorCode.DATA_UNAVAILABLE,
             f"Demo business {NOT_AVAILABLE}: {BUSINESS_FILE} is missing from the data directory.",
             status_code=503,
         )
@@ -93,13 +92,13 @@ def load_business(settings: Settings) -> BusinessParams:
     raw = payload.get("business") if isinstance(payload, dict) else None
     if not isinstance(raw, dict):
         raise RouteError(
-            RouteErrorCode.DATA_INVALID, f"{BUSINESS_FILE} must contain a `business` object.", status_code=500
+            ErrorCode.DATA_INVALID, f"{BUSINESS_FILE} must contain a `business` object.", status_code=500
         )
     try:
         return BusinessParams.model_validate(raw)
     except ValidationError as exc:
         raise RouteError(
-            RouteErrorCode.DATA_INVALID,
+            ErrorCode.DATA_INVALID,
             f"{BUSINESS_FILE} `business` failed the BusinessParams schema.",
             status_code=500,
             errors=issues_from(exc.errors(), prefix=(BUSINESS_FILE, "business")),
@@ -173,14 +172,14 @@ def simulate_route(
 
     issues = series_length_issues(business.horizon_weeks, body.shock, plan)
     if issues:
-        raise RouteError(RouteErrorCode.VALIDATION_ERROR, "Weekly series length does not match the horizon.",
+        raise RouteError(ErrorCode.VALIDATION_ERROR, "Weekly series length does not match the horizon.",
                          errors=issues)
 
     try:
         baseline = simulate(business, ScenarioShock(), ActionPlan())
     except ValueError as exc:
         # The no-shock, no-action run failing means the fixture itself is inconsistent, not the request.
-        raise RouteError(RouteErrorCode.DATA_INVALID, f"{BUSINESS_FILE} baseline cannot be simulated: {exc}",
+        raise RouteError(ErrorCode.DATA_INVALID, f"{BUSINESS_FILE} baseline cannot be simulated: {exc}",
                          status_code=500) from None
     shock = body.shock.model_copy(update={"name": _result_name(body)})
     try:
@@ -189,15 +188,15 @@ def simulate_route(
     except (ValidationError, OverflowError):
         # Must precede ValueError (ValidationError subclasses it): an overflow to inf/NaN fails the
         # finite-only result models. Its dump echoes values, so it is replaced by a short message.
-        raise RouteError(RouteErrorCode.VALIDATION_ERROR, _OVERFLOW_MESSAGE) from None
+        raise RouteError(ErrorCode.VALIDATION_ERROR, _OVERFLOW_MESSAGE) from None
     except ValueError as exc:
         # simulate() raises ValueError only for financing that cannot happen (MATH_MODEL §3), e.g. repaying
         # more revolver than is drawn. Its messages contain week numbers and amounts, never file contents.
-        raise RouteError(RouteErrorCode.INFEASIBLE_INPUT, str(exc)) from None
+        raise RouteError(ErrorCode.INFEASIBLE_INPUT, str(exc)) from None
 
     physical = _physical_issue(result, plan)
     if physical:
-        raise RouteError(RouteErrorCode.INFEASIBLE_INPUT, physical)
+        raise RouteError(ErrorCode.INFEASIBLE_INPUT, physical)
 
     return SimulateResponse(
         provenance="SIMULATED",

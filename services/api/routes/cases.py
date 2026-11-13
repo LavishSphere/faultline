@@ -26,8 +26,8 @@ from fastapi import APIRouter, Depends
 from pydantic import BaseModel, ConfigDict, ValidationError
 
 from config import Settings, get_settings
-from models import OUTCOME_FIELD_PATTERN, ReplayCase, ReplayCasePublic
-from routes import NOT_AVAILABLE, CodedRoute, RouteError, RouteErrorCode, error_responses, issues_from, read_json
+from models import OUTCOME_FIELD_PATTERN, ErrorCode, ReplayCase, ReplayCasePublic
+from routes import NOT_AVAILABLE, CodedRoute, RouteError, error_responses, issues_from, read_json
 
 router = APIRouter(tags=["cases"], route_class=CodedRoute)
 
@@ -75,7 +75,7 @@ class CasesResponse(BaseModel):
 
 
 def _invalid(message: str, errors=None) -> RouteError:
-    return RouteError(RouteErrorCode.DATA_INVALID, message, status_code=500, errors=errors)
+    return RouteError(ErrorCode.DATA_INVALID, message, status_code=500, errors=errors)
 
 
 def _load_case(path: Path, root: Path) -> ReplayCasePublic:
