@@ -2,8 +2,14 @@
 
 This is the only module that reads ``data/sealed_outcomes/``. It does so in exactly one place,
 ``OutcomeVault.reveal(prediction_id)``, which raises ``NotRevealable`` unless that prediction is already
-persisted in the SQLite store and its stored prompt/snapshot still match their SHA-256 hashes. The event to
-reveal is taken from the persisted prediction, never from the caller.
+persisted in the SQLite store and its stored prompt, snapshot and forecast still match their SHA-256 hashes.
+The event to reveal is taken from the persisted prediction, never from the caller.
+
+Forecast-before-outcome is enforced per EVENT, not per prediction: ``build_scorecard(vault)`` reads every
+persisted prediction from the store itself and excludes any prediction persisted after the first reveal of
+any prediction for the same event (``audit_log`` order). The population and each forecast's market baseline,
+contamination flag and synthetic flag were fixed by the gate before any reveal; nothing comes from the caller.
+The configured sealed folder can only be revealed into the configured prediction store.
 
 Scoring (MATH_MODEL §6), for outcome y in {0, 1} and forecast p in [0, 1]:
   Brier = (p - y)^2
@@ -12,7 +18,8 @@ Scoring (MATH_MODEL §6), for outcome y in {0, 1} and forecast p in [0, 1]:
 
 Aggregation: forecasters are compared on identical (event_id, as_of) pairs; multiple horizons are averaged
 within an event first, and events are the unit of resampling. Uncertainty: paired bootstrap over events,
-B = 10,000, fixed seed, 95% percentile CI of mean Brier(agent) - mean Brier(market).
+B = 10,000, fixed seed, 95% percentile CI of mean Brier(agent) - mean Brier(market). The scorecard always
+uses the pre-specified B and seed; they cannot be overridden through ``build_scorecard``.
 
 Display: n < 5 -> INSUFFICIENT DATA (per-event scores still listed); 5 <= n < 30 -> small-sample caveat;
 "agent better than market" only if the CI upper bound < 0, otherwise "No improvement measured".
@@ -21,8 +28,10 @@ Display: n < 5 -> INSUFFICIENT DATA (per-event scores still listed); 5 <= n < 30
 from __future__ import annotations
 
 import math
-from collections.abc import Callable, Iterable, Sequence
-from dataclasses import dataclass, field
+import os
+import threading
+from collections.abc import Callable, Sequence
+from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Literal
@@ -31,10 +40,12 @@ import numpy as np
 from pydantic import AwareDatetime, BaseModel, ConfigDict
 
 from config import get_settings
-from core.store import PredictionStore, check_audit
+from core import store as store_module
+from core.store import PredictionStore, StoredPrediction
+from core.temporal_gate import PROMPT_VARIANTS, EvidenceStore
 from errors import FaultlineError
 from markets.base import MARKET_LABEL
-from models import ContaminationFlag, ErrorCode, ForecastVariant, Identifier, Prediction, Probability, Provenance
+from models import ErrorCode, ForecastVariant, Identifier, Prediction, Provenance
 
 EPS = 1e-6
 DEFAULT_RESAMPLES = 10_000
@@ -49,8 +60,22 @@ NO_IMPROVEMENT = "No improvement measured"
 AGENT_BETTER = "agent better than market"
 LABEL_INSUFFICIENT = "INSUFFICIENT DATA: No valid comparison"
 LABEL_ILLUSTRATIVE = "ILLUSTRATIVE: Synthetic demo fixtures"
+LABEL_NOT_OFFICIAL = "ILLUSTRATIVE: Historical cases, not an official run (see official_blockers)"
 
-ExclusionReason = Literal["no_persisted_prediction", "contamination_likely", "market_not_available"]
+ExclusionReason = Literal[
+    "no_persisted_prediction",
+    "persisted_after_outcome_revealed",
+    "multiple_predictions",
+    "contamination_likely",
+    "market_not_available",
+    "sealed_outcome_not_available",
+    "context_mismatch",
+]
+# Exclusions an operator could cause on purpose (skip a run, re-run, peek, use other case data). Any of them on a
+# real committed case blocks the OFFICIAL label. The other reasons are fixed by committed, reviewed data.
+OPERATOR_REASONS = frozenset(
+    {"no_persisted_prediction", "persisted_after_outcome_revealed", "multiple_predictions", "context_mismatch"}
+)
 
 
 # ---------------------------------------------------------------- errors
@@ -82,26 +107,52 @@ class SealedOutcome(BaseModel):
     notes: str | None = None
 
 
-_REVEAL_TOKEN = object()
+_BUILDING = threading.local()
 
 
 @dataclass(frozen=True)
 class RevealedOutcome:
-    """A persisted prediction together with its realized outcome. Created only by ``OutcomeVault.reveal``."""
+    """A persisted prediction with its realized outcome and audit ordering. Created only by ``OutcomeVault.reveal``.
+
+    ``persist_seq`` / ``event_first_reveal_seq`` are positions in the store's single append-only audit log;
+    ``persisted_before_outcome_revealed`` compares them, so it does not depend on clock resolution.
+    """
 
     prediction: Prediction
     y: int
     sealed: SealedOutcome
     revealed_at: datetime
-    _token: object = field(repr=False, compare=False, kw_only=True)
+    reveal_seq: int
+    persisted_at: datetime
+    persist_seq: int
+    event_first_revealed_at: datetime
+    event_first_reveal_seq: int
 
     def __post_init__(self) -> None:
-        if self._token is not _REVEAL_TOKEN:
+        if not getattr(_BUILDING, "active", False):
             raise TypeError("RevealedOutcome is created only by OutcomeVault.reveal")
+
+    @property
+    def persisted_before_outcome_revealed(self) -> bool:
+        return self.persist_seq < self.event_first_reveal_seq
 
 
 def _utcnow() -> datetime:
     return datetime.now(UTC)
+
+
+def configured_sealed_dir() -> Path:
+    return get_settings().data_dir / "sealed_outcomes"
+
+
+def _same_path(a: Path | str, b: Path | str) -> bool:
+    a, b = Path(a), Path(b)
+    try:
+        if a.exists() and b.exists():
+            return os.path.samefile(a, b)
+    except OSError:
+        pass
+    return os.path.normcase(str(a.resolve())) == os.path.normcase(str(b.resolve()))
 
 
 class OutcomeVault:
@@ -112,9 +163,26 @@ class OutcomeVault:
         sealed_dir: Path | str | None = None,
         clock: Callable[[], datetime] = _utcnow,
     ) -> None:
+        if not isinstance(store, PredictionStore):
+            raise TypeError("OutcomeVault needs a PredictionStore")
         self._store = store
-        self._dir = Path(sealed_dir) if sealed_dir is not None else get_settings().data_dir / "sealed_outcomes"
+        self._dir = Path(sealed_dir) if sealed_dir is not None else configured_sealed_dir()
         self._clock = clock
+        # One reveal ledger per real sealed folder: the configured folder may only be revealed into the
+        # configured prediction store, so a scratch store cannot peek at real outcomes without a trace.
+        if _same_path(self._dir, configured_sealed_dir()) and not _same_path(store.path, store_module.DEFAULT_DB_PATH):
+            raise ValueError(
+                "the configured sealed-outcome folder can only be revealed into the configured prediction store "
+                f"({store_module.DEFAULT_DB_PATH}); refusing {store.path}"
+            )
+
+    @property
+    def store(self) -> PredictionStore:
+        return self._store
+
+    @property
+    def sealed_dir(self) -> Path:
+        return self._dir
 
     def _path_for(self, event_id: str) -> Path:
         if not event_id or "/" in event_id or "\\" in event_id or event_id.startswith("."):
@@ -126,11 +194,11 @@ class OutcomeVault:
 
     def reveal(self, prediction_id: str) -> RevealedOutcome:
         """Return the realized outcome for a persisted prediction. Raises before touching the sealed directory
-        unless the prediction is persisted with intact prompt/snapshot hashes."""
+        unless the prediction is persisted with intact prompt, snapshot and record hashes."""
         rec = self._store.get_record(prediction_id)
         if rec is None:
             raise NotRevealable(f"prediction {prediction_id!r} is not persisted; persist the forecast before reveal")
-        problems = check_audit(rec.prediction, rec.prompt, rec.snapshot_json)
+        problems = self._store.verify(prediction_id)
         if problems:
             raise NotRevealable(f"audit hash check failed for {prediction_id!r}: " + "; ".join(problems))
         revealed_at = self._clock()
@@ -144,14 +212,24 @@ class OutcomeVault:
         sealed = SealedOutcome.model_validate_json(path.read_text(encoding="utf-8"))
         if sealed.event_id != event_id:
             raise ValueError(f"sealed outcome file for {event_id!r} names a different event")
-        self._store.record_reveal(prediction_id, revealed_at)
-        return RevealedOutcome(
-            prediction=rec.prediction,
-            y=1 if sealed.outcome == "YES" else 0,
-            sealed=sealed,
-            revealed_at=revealed_at,
-            _token=_REVEAL_TOKEN,
-        )
+        mark = self._store.record_reveal(rec.prediction, revealed_at)
+        first = self._store.first_reveal(event_id)
+        assert first is not None  # the reveal just recorded
+        _BUILDING.active = True
+        try:
+            return RevealedOutcome(
+                prediction=rec.prediction,
+                y=1 if sealed.outcome == "YES" else 0,
+                sealed=sealed,
+                revealed_at=revealed_at,
+                reveal_seq=mark.seq,
+                persisted_at=rec.persisted_at,
+                persist_seq=rec.persist_seq,
+                event_first_revealed_at=first.at,
+                event_first_reveal_seq=first.seq,
+            )
+        finally:
+            _BUILDING.active = False
 
 
 # ---------------------------------------------------------------- per-forecast scores
@@ -246,38 +324,24 @@ def paired_bootstrap(
 # ---------------------------------------------------------------- scorecard
 
 
-class EventContext(BaseModel):
-    """Pre-reveal facts about one (event_id, as_of) snapshot needed for scoring. Holds no outcome."""
-
-    model_config = ConfigDict(extra="forbid", frozen=True)
-
-    event_id: Identifier
-    as_of: AwareDatetime
-    market_p_yes: Probability | None  # None: no quote within 24h before as_of (NOT AVAILABLE)
-    contamination_flag: ContaminationFlag = "unknown"
-    synthetic: bool = True
-
-    @classmethod
-    def from_snapshot(cls, snapshot, *, venue: str | None = None) -> EventContext:
-        """Build from a ``core.temporal_gate.GatedSnapshot``; ``venue`` picks one market when several exist."""
-        quotes = [q for q in snapshot.market_quotes if venue is None or q["venue"] == venue]
-        if len(quotes) > 1:
-            raise ValueError("several market quotes available; pass venue= to choose the benchmark market")
-        return cls(
-            event_id=snapshot.case.event_id,
-            as_of=snapshot.as_of,
-            market_p_yes=quotes[0]["p_yes"] if quotes else None,
-            contamination_flag=snapshot.case.contamination_flag,
-            synthetic=snapshot.case.synthetic,
-        )
-
-
 class ScoreExclusion(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True)
 
     event_id: str
     as_of: AwareDatetime
     reason: ExclusionReason
+    prediction_ids: list[str] = []
+
+
+class IgnoredPrediction(BaseModel):
+    """A persisted prediction that was not used, e.g. saved after the event's outcome was first revealed."""
+
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    prediction_id: str
+    event_id: str
+    as_of: AwareDatetime
+    reason: Literal["persisted_after_outcome_revealed"]
 
 
 class EventScore(BaseModel):
@@ -288,6 +352,8 @@ class EventScore(BaseModel):
     event_id: str
     n_snapshots: int
     y: int
+    prediction_ids: list[str]
+    market_refs: list[str]  # "venue:market_id" of the market baseline used
     brier: dict[str, float]
     log_loss: dict[str, float]
     accuracy_at_0_5: dict[str, float]
@@ -329,68 +395,156 @@ class Scorecard(BaseModel):
     n_excluded: int
     exclusions_by_reason: dict[str, int]
     exclusions: list[ScoreExclusion]
+    ignored_predictions: list[IgnoredPrediction]
     per_event: list[EventScore]
     summary: dict[str, ForecasterSummary] | None
     comparison: Comparison | None
+    official_blockers: list[str]  # why a real-historical scorecard is not OFFICIAL; empty when it is
+
+
+def configured_cases_dir() -> Path:
+    return get_settings().data_dir / "demo_cases"
+
+
+def _context_mismatch(cases: EvidenceStore, event_id: str, as_of: datetime, variant: str, rec) -> bool:
+    """True unless re-deriving the forecast's input from ``cases`` reproduces its hashes and frozen context."""
+    try:
+        mi = cases.get_as_of(event_id, as_of).model_input(variant)  # type: ignore[arg-type]
+    except (LookupError, ValueError):
+        return True
+    ctx = rec.context
+    return (
+        mi.prompt_sha256,
+        mi.snapshot_sha256,
+        mi.market_baseline_p_yes,
+        mi.market_baseline_ref,
+        mi.contamination_flag,
+        bool(mi.synthetic),
+        mi.case_sha256,
+    ) != (
+        rec.prediction.prompt_sha256,
+        rec.prediction.snapshot_sha256,
+        ctx.market_baseline_p_yes,
+        ctx.market_baseline_ref,
+        ctx.contamination_flag,
+        ctx.synthetic,
+        ctx.case_sha256,
+    )
 
 
 def build_scorecard(
-    reveals: Iterable[RevealedOutcome],
-    contexts: Iterable[EventContext],
+    vault: OutcomeVault,
     *,
     agent_variant: ForecastVariant = "agent_only",
-    n_resamples: int = DEFAULT_RESAMPLES,
-    seed: int = BOOTSTRAP_SEED,
+    cases: EvidenceStore | None = None,
 ) -> Scorecard:
-    """Score one agent variant against naive (p = 0.5) and market-only on identical (event_id, as_of) pairs."""
-    by_key: dict[tuple[str, datetime, str], dict[str, RevealedOutcome]] = {}
-    for r in reveals:
-        if not isinstance(r, RevealedOutcome):
-            raise TypeError("build_scorecard needs RevealedOutcome values from OutcomeVault.reveal")
-        p = r.prediction
-        key = (p.event_id, p.as_of.astimezone(UTC), p.variant)
-        by_key.setdefault(key, {})[p.prediction_id] = r
+    """Score one agent variant against naive (p = 0.5) and market-only on identical (event_id, as_of) pairs.
 
-    ctx_list = sorted(contexts, key=lambda c: (c.event_id, c.as_of))
-    seen: set[tuple[str, datetime]] = set()
+    Nothing about the population or the baselines comes from the caller:
+      * the keys are every (event_id, as_of) with a persisted prediction of ANY variant in the vault's store,
+        plus, if ``cases`` is given, every case at its own cutoff (so unpredicted cases are reported);
+      * the market baseline, contamination flag and synthetic flag of each prediction are the ones the gate
+        fixed in its ``ModelInput`` and the store persisted with it, before any reveal.
+    Per key, for ``agent_variant``:
+      * none persisted -> excluded ``no_persisted_prediction``;
+      * persisted after the event's first reveal (any as_of, any variant) -> ignored, and if nothing else is
+        left the key is excluded ``persisted_after_outcome_revealed``;
+      * more than one persisted before that reveal -> excluded ``multiple_predictions`` (no choosing);
+      * then ``contamination_likely``, ``market_not_available``, ``sealed_outcome_not_available``.
+    With ``cases``, a remaining prediction whose input cannot be re-derived from ``cases`` with the same prompt
+    and snapshot hashes and the same frozen context (incl. the case content hash) -> ``context_mismatch``.
+    The single remaining prediction is revealed through the vault (logged) and scored.
+
+    The OFFICIAL label additionally requires (else ``official_blockers`` says why and the label is ILLUSTRATIVE):
+    ``cases`` loaded by ``EvidenceStore.from_dir()`` from the configured case directory; the vault on the
+    configured sealed folder (hence the configured store); no ``OPERATOR_REASONS`` exclusion on any real or
+    uncommitted case; and every scored forecast persisted before the FIRST reveal anywhere in the store.
+    """
+    if not isinstance(vault, OutcomeVault):
+        raise TypeError("build_scorecard needs the OutcomeVault; predictions are read from its store")
+    if agent_variant not in PROMPT_VARIANTS:
+        raise ValueError(f"agent_variant must be one of {PROMPT_VARIANTS}")
+    if cases is not None and not isinstance(cases, EvidenceStore):
+        raise TypeError("cases must be the EvidenceStore the forecasts were made from")
+    store = vault.store
+
+    all_recs = store.all_records()
+    keys: set[tuple[str, datetime]] = {(r.prediction.event_id, r.prediction.as_of.astimezone(UTC)) for r in all_recs}
+    if cases is not None:
+        keys |= {(cid, cases.public_case(cid).as_of.astimezone(UTC)) for cid in cases.case_ids()}
+    # First reveal per event and in the whole store, read once before this scorecard reveals anything.
+    first_reveal = {event_id: store.first_reveal(event_id) for event_id, _ in keys}
+    first_reveal_any = store.first_reveal_any()
+
     exclusions: list[ScoreExclusion] = []
+    ignored: list[IgnoredPrediction] = []
+    candidates: list[tuple[str, datetime, StoredPrediction]] = []
+    for event_id, as_of in sorted(keys):
+        recs = store.records_for(event_id, as_of, agent_variant)
+        first = first_reveal[event_id]
+        before = [r for r in recs if first is None or r.persist_seq < first.seq]
+        before_seqs = {r.persist_seq for r in before}
+        for r in recs:
+            if r.persist_seq not in before_seqs:
+                ignored.append(
+                    IgnoredPrediction(
+                        prediction_id=r.prediction.prediction_id,
+                        event_id=event_id,
+                        as_of=as_of,
+                        reason="persisted_after_outcome_revealed",
+                    )
+                )
+        reason: ExclusionReason | None = None
+        ids = [r.prediction.prediction_id for r in recs]
+        if not recs:
+            reason = "no_persisted_prediction"
+        elif not before:
+            reason = "persisted_after_outcome_revealed"
+        elif len(before) > 1:
+            reason, ids = "multiple_predictions", [r.prediction.prediction_id for r in before]
+        elif cases is not None and _context_mismatch(cases, event_id, as_of, agent_variant, before[0]):
+            reason = "context_mismatch"
+        elif before[0].context.contamination_flag == "likely":
+            reason = "contamination_likely"
+        elif before[0].context.market_baseline_p_yes is None:
+            reason = "market_not_available"
+        if reason is None:
+            candidates.append((event_id, as_of, before[0]))
+        else:
+            exclusions.append(ScoreExclusion(event_id=event_id, as_of=as_of, reason=reason, prediction_ids=ids))
+
     agent_key = agent_variant
     forecasters = ["naive", "market", agent_key]
-    snapshots: dict[str, list[tuple[int, dict[str, float]]]] = {}
+    snapshots: dict[str, list[tuple[int, str, dict[str, float]]]] = {}
+    market_refs: dict[str, list[str | None]] = {}
     real_flags: set[bool] = set()
-
-    for ctx in ctx_list:
-        as_of = ctx.as_of.astimezone(UTC)
-        if (ctx.event_id, as_of) in seen:
-            raise ValueError(f"duplicate context for ({ctx.event_id}, {as_of.isoformat()})")
-        seen.add((ctx.event_id, as_of))
-        found = list(by_key.get((ctx.event_id, as_of, agent_variant), {}).values())
-        if len(found) > 1:
-            raise ValueError(
-                f"more than one persisted {agent_variant} prediction for ({ctx.event_id}, {as_of.isoformat()}); "
-                "refusing to choose one (no cherry-picking)"
-            )
-        reason: ExclusionReason | None = None
-        if not found:
-            reason = "no_persisted_prediction"
-        else:
-            sealed_real = found[0].sealed.provenance == Provenance.REAL_HISTORICAL
-            if sealed_real == ctx.synthetic:
-                raise ValueError(
-                    f"{ctx.event_id}: context synthetic={ctx.synthetic} disagrees with sealed provenance "
-                    f"{found[0].sealed.provenance.value}"
+    scored_seqs: list[int] = []
+    for event_id, as_of, rec in candidates:
+        ctx = rec.context
+        pid = rec.prediction.prediction_id
+        try:
+            rev = vault.reveal(pid)
+        except OutcomeNotAvailable:
+            exclusions.append(
+                ScoreExclusion(
+                    event_id=event_id, as_of=as_of, reason="sealed_outcome_not_available", prediction_ids=[pid]
                 )
-            if ctx.contamination_flag == "likely":
-                reason = "contamination_likely"
-            elif ctx.market_p_yes is None:
-                reason = "market_not_available"
-        if reason is not None:
-            exclusions.append(ScoreExclusion(event_id=ctx.event_id, as_of=as_of, reason=reason))
+            )
             continue
-        rev = found[0]
-        real_flags.add(not ctx.synthetic)
-        probs = {"naive": 0.5, "market": float(ctx.market_p_yes), agent_key: rev.prediction.p_yes}  # type: ignore[arg-type]
-        snapshots.setdefault(ctx.event_id, []).append((rev.y, probs))
+        pre = first_reveal[event_id]
+        if rev.persist_seq != rec.persist_seq or (pre is not None and rev.persist_seq >= pre.seq):
+            raise RuntimeError(f"audit order changed while scoring {pid!r}")
+        sealed_real = rev.sealed.provenance == Provenance.REAL_HISTORICAL
+        if sealed_real == ctx.synthetic:
+            raise ValueError(
+                f"{event_id}: case synthetic={ctx.synthetic} disagrees with sealed provenance "
+                f"{rev.sealed.provenance.value}"
+            )
+        real_flags.add(sealed_real)
+        scored_seqs.append(rec.persist_seq)
+        probs = {"naive": 0.5, "market": float(ctx.market_baseline_p_yes), agent_key: rev.prediction.p_yes}  # type: ignore[arg-type]
+        snapshots.setdefault(event_id, []).append((rev.y, pid, probs))
+        market_refs.setdefault(event_id, []).append(ctx.market_baseline_ref)
 
     if len(real_flags) > 1:
         raise ValueError("synthetic and real historical cases must be scored separately")
@@ -399,7 +553,7 @@ def build_scorecard(
     per_event: list[EventScore] = []
     for event_id in sorted(snapshots):
         rows = snapshots[event_id]
-        ys = {y for y, _ in rows}
+        ys = {y for y, _, _ in rows}
         if len(ys) != 1:
             raise ValueError(f"{event_id}: inconsistent outcomes across snapshots")
         y = ys.pop()
@@ -408,9 +562,13 @@ def build_scorecard(
                 event_id=event_id,
                 n_snapshots=len(rows),
                 y=y,
-                brier={f: float(np.mean([brier(pr[f], y) for _, pr in rows])) for f in forecasters},
-                log_loss={f: float(np.mean([log_loss(pr[f], y) for _, pr in rows])) for f in forecasters},
-                accuracy_at_0_5={f: float(np.mean([correct_at_half(pr[f], y) for _, pr in rows])) for f in forecasters},
+                prediction_ids=[pid for _, pid, _ in rows],
+                market_refs=sorted({ref for ref in market_refs[event_id] if ref is not None}),
+                brier={f: float(np.mean([brier(pr[f], y) for _, _, pr in rows])) for f in forecasters},
+                log_loss={f: float(np.mean([log_loss(pr[f], y) for _, _, pr in rows])) for f in forecasters},
+                accuracy_at_0_5={
+                    f: float(np.mean([correct_at_half(pr[f], y) for _, _, pr in rows])) for f in forecasters
+                },
             )
         )
 
@@ -418,13 +576,46 @@ def build_scorecard(
     by_reason: dict[str, int] = {}
     for x in exclusions:
         by_reason[x.reason] = by_reason.get(x.reason, 0) + 1
+    blockers: list[str] = []
+    if cases is None:
+        blockers.append("cases not given: not checked against the committed case files")
+    elif cases.source_dir is None or not _same_path(cases.source_dir, configured_cases_dir()):
+        blockers.append(f"cases were not loaded by EvidenceStore.from_dir() from {configured_cases_dir()}")
+    if not _same_path(vault.sealed_dir, configured_sealed_dir()):
+        blockers.append(f"the vault does not use the configured sealed-outcome folder {configured_sealed_dir()}")
+    committed = set(cases.case_ids()) if cases is not None else set()
+    operator = [
+        x
+        for x in exclusions
+        if x.reason in OPERATOR_REASONS and not (x.event_id in committed and cases.public_case(x.event_id).synthetic)
+    ]
+    for reason in sorted({x.reason for x in operator}):
+        hit = sorted({x.event_id for x in operator if x.reason == reason})
+        blockers.append(f"{reason}: {len(hit)} event(s) {hit}")
+    peeked = sorted(
+        {
+            p.event_id
+            for p in ignored
+            if not (p.event_id in committed and cases.public_case(p.event_id).synthetic)
+        }
+    )
+    if peeked:
+        blockers.append(f"persisted_after_outcome_revealed (ignored forecasts): {len(peeked)} event(s) {peeked}")
+    late = [seq for seq in scored_seqs if first_reveal_any is not None and seq >= first_reveal_any.seq]
+    if late:
+        blockers.append(
+            f"{len(late)} scored forecast(s) were saved after an outcome in this store had already been revealed "
+            "(possible cross-event leakage)"
+        )
     common = dict(
+        official_blockers=blockers,
         agent_variant=agent_variant,
         forecasters=forecasters,
         n_events=n,
         n_excluded=len(exclusions),
         exclusions_by_reason=by_reason,
-        exclusions=exclusions,
+        exclusions=sorted(exclusions, key=lambda x: (x.event_id, x.as_of)),
+        ignored_predictions=ignored,
         per_event=per_event,
         provenance=None if n == 0 else (Provenance.REAL_HISTORICAL if is_real else Provenance.SYNTHETIC),
     )
@@ -441,12 +632,7 @@ def build_scorecard(
         )
         for f in forecasters
     }
-    boot = paired_bootstrap(
-        [e.brier[agent_key] for e in per_event],
-        [e.brier["market"] for e in per_event],
-        n_resamples=n_resamples,
-        seed=seed,
-    )
+    boot = paired_bootstrap([e.brier[agent_key] for e in per_event], [e.brier["market"] for e in per_event])
     comparison = Comparison(
         agent_variant=agent_variant,
         mean_delta_brier=boot.mean_delta,
@@ -457,7 +643,11 @@ def build_scorecard(
         seed=boot.seed,
     )
     return Scorecard(
-        label=f"OFFICIAL: Computed from {n} historical cases" if is_real else LABEL_ILLUSTRATIVE,
+        label=(
+            LABEL_ILLUSTRATIVE
+            if not is_real
+            else (LABEL_NOT_OFFICIAL if blockers else f"OFFICIAL: Computed from {n} historical cases")
+        ),
         verdict=AGENT_BETTER if boot.ci_high < 0 else NO_IMPROVEMENT,
         caveat=None if n >= SMALL_SAMPLE_EVENTS else f"small sample: n = {n} events (< {SMALL_SAMPLE_EVENTS})",
         summary=summary,

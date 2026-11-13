@@ -7,8 +7,10 @@ date is in 2025 so that post-cutoff curation metadata (dated 2026-11) is easy to
 from __future__ import annotations
 
 import ast
+import dataclasses
 import hashlib
 import json
+import os
 import re
 import sys
 from datetime import UTC, datetime, timedelta, timezone
@@ -220,7 +222,20 @@ def test_as_of_after_case_cutoff_is_refused():
         store.get_as_of(EVENT, AS_OF + timedelta(seconds=1))
 
 
-@pytest.mark.parametrize("bad", [datetime(2025, 1, 15, 12, 0), "2025-01-15", "2025-01-15T12:00:00"])
+@pytest.mark.parametrize(
+    "bad",
+    [
+        datetime(2025, 1, 15, 12, 0),
+        "2025-01-15",
+        "2025-01-15Z",
+        "2025-01-15+00:00",
+        "2025-01-15T12:00:00",
+        # Longer than a date but not an instant to the minute: refused by the format rule itself (an
+        # earlier length-based check let these through).
+        "2025-01-15T12+00:00",
+        "2025-01-15T12Z",
+    ],
+)
 def test_naive_or_date_only_as_of_is_refused(bad):
     with pytest.raises((TypeError, ValueError)):
         EvidenceStore([standard_record()]).get_as_of(EVENT, bad)
@@ -300,6 +315,101 @@ def test_quotes_for_two_venues_are_selected_independently():
     assert [x.item_id for x in snap.exclusions if x.kind == "market"] == ["polymarket:999"]
 
 
+def _two_market_record(market_quote_id: str | None, *, stale_named: bool = False) -> CaseRecord:
+    return CaseRecord(
+        case=make_case(market_quote_id=market_quote_id),
+        evidence=(),
+        market_quotes=(
+            make_quote(AS_OF - timedelta(hours=1), "0.5600"),
+            make_quote(
+                AS_OF - (timedelta(hours=30) if stale_named else timedelta(hours=3)),
+                "0.53",
+                venue="polymarket",
+                market_id="123456",
+            ),
+        ),
+    )
+
+
+@pytest.mark.parametrize(
+    ("market_quote_id", "stale_named", "expected"),
+    [
+        (None, False, (None, None)),  # two markets, none named: no silent choice
+        ("kalshi:SYNTH-FED-H25", False, (0.56, "kalshi:SYNTH-FED-H25")),
+        ("polymarket:123456", False, (0.53, "polymarket:123456")),
+        ("polymarket:123456", True, (None, None)),  # the named market is stale: NOT AVAILABLE, no fallback
+        ("quote_001", False, (None, None)),  # not a venue:market_id reference
+    ],
+)
+def test_market_baseline_follows_the_fixed_rule(market_quote_id, stale_named, expected):
+    snap = EvidenceStore([_two_market_record(market_quote_id, stale_named=stale_named)]).get_as_of(EVENT, AS_OF)
+    assert snap.market_baseline() == expected
+    mi = snap.model_input("agent_only")
+    assert (mi.market_baseline_p_yes, mi.market_baseline_ref) == expected
+
+
+def test_single_market_is_the_baseline_and_context_comes_from_the_case():
+    record = CaseRecord(
+        case=make_case(contamination_flag="likely", synthetic=True),
+        evidence=(),
+        market_quotes=(make_quote(AS_OF - timedelta(hours=2), "0.5600"),),
+    )
+    mi = EvidenceStore([record]).get_as_of(EVENT, AS_OF).model_input("agent_only")
+    assert (mi.market_baseline_p_yes, mi.market_baseline_ref) == (0.56, "kalshi:SYNTH-FED-H25")
+    assert (mi.contamination_flag, mi.synthetic) == ("likely", True)
+    # The scoring context is audit data, never model input.
+    assert "0.56" not in mi.prompt and "0.56" not in mi.snapshot_json and "likely" not in mi.prompt
+
+
+@pytest.mark.parametrize(
+    ("market_quote_id", "markets", "match"),
+    [
+        ("kalshi:NOT-IN-FILE", 1, "names no market"),
+        (None, 2, "no market_quote_id"),
+    ],
+)
+def test_committed_case_files_must_name_an_existing_benchmark_market(tmp_path, market_quote_id, markets, match):
+    quotes = [quote_dict(AS_OF - timedelta(hours=1), "0.56")]
+    if markets == 2:
+        quotes.append(quote_dict(AS_OF - timedelta(hours=2), "0.53", venue="polymarket", market_id="123456"))
+    data = case_file_dict(quotes=quotes)
+    data["case"]["market_quote_id"] = market_quote_id
+    cases = tmp_path / "data" / "demo_cases"
+    write_case_file(cases, data)
+    with pytest.raises(ValueError, match=match):
+        EvidenceStore.from_dir(cases)
+    data["case"]["market_quote_id"] = "kalshi:SYNTH-FED-H25"
+    write_case_file(cases, data)
+    assert EvidenceStore.from_dir(cases).get_as_of(EVENT, AS_OF).market_baseline() == (0.56, "kalshi:SYNTH-FED-H25")
+
+
+def test_case_content_hash_is_frozen_into_the_model_input(tmp_path):
+    base = EvidenceStore([standard_record()])
+    mi = base.get_as_of(EVENT, AS_OF).model_input("agent_only")
+    assert mi.case_sha256 == base.case_sha256(EVENT) and len(mi.case_sha256) == 64
+    relabeled = CaseRecord(
+        case=make_case(contamination_flag="likely"),
+        evidence=standard_record().evidence,
+        market_quotes=standard_record().market_quotes,
+    )
+    other = EvidenceStore([relabeled]).get_as_of(EVENT, AS_OF).model_input("agent_only")
+    assert other.case_sha256 != mi.case_sha256
+    # Loading the same content from a committed file gives the same hash (formatting does not matter).
+    cases = tmp_path / "demo_cases"
+    rec = standard_record()
+    write_case_file(
+        cases,
+        {
+            "case": rec.case.model_dump(mode="json"),
+            "evidence": [e.model_dump(mode="json") for e in rec.evidence],
+            "market_quotes": [q.model_dump(mode="json") for q in rec.market_quotes],
+        },
+    )
+    loaded = EvidenceStore.from_dir(cases)
+    assert loaded.case_sha256(EVENT) == base.case_sha256(EVENT)
+    assert loaded.source_dir == cases.resolve() and base.source_dir is None
+
+
 # ---------------------------------------------------------------- outcome-key stripping
 
 
@@ -343,9 +453,13 @@ def test_outcome_like_keys_in_evidence_file_are_stripped(tmp_path):
     assert outcome_keys_in_snapshot(obj) == []
 
 
-def test_quote_file_with_non_yes_outcome_is_refused(tmp_path):
+@pytest.mark.parametrize(
+    ("key", "value"),
+    [("outcome", "NO"), ("outcome", "yes"), ("Outcome", "NO"), ("OUTCOME", "YES"), ("outcome", 1)],
+)
+def test_quote_file_with_non_yes_outcome_is_refused(tmp_path, key, value):
     q = quote_dict(AS_OF - timedelta(hours=1), "0.5")
-    q["outcome"] = "NO"
+    q[key] = value
     cases = tmp_path / "data" / "demo_cases"
     write_case_file(cases, case_file_dict(quotes=[q]))
     with pytest.raises(SealedDataError):
@@ -473,7 +587,28 @@ def test_prompt_contains_case_question_and_criteria():
 
 def test_gated_snapshot_cannot_be_built_outside_the_store():
     with pytest.raises(TypeError):
-        GatedSnapshot(case=None, as_of=AS_OF, evidence=(), market_quotes=(), exclusions=())  # type: ignore[call-arg]
+        GatedSnapshot(case=None, as_of=AS_OF, evidence=(), market_quotes=(), exclusions=())  # type: ignore[arg-type]
+
+
+def test_gated_snapshot_cannot_be_forged_with_dataclasses_replace():
+    snap = EvidenceStore([standard_record()]).get_as_of(EVENT, AS_OF)
+    future = dict(snap.evidence[0], evidence_id="future", available_at="2030-01-01T00:00:00Z", content="CANARY")
+    with pytest.raises(TypeError):
+        dataclasses.replace(snap, evidence=(*snap.evidence, future))
+    with pytest.raises(TypeError):
+        dataclasses.replace(snap.model_input("agent_only"), prompt="forged")
+
+
+def test_public_case_lists_only_admissible_evidence_ids():
+    rec = standard_record()
+    rec = CaseRecord(
+        case=make_case(evidence_ids=["evid_ok", "evid_edge", "evid_future", "evid_unverified", "evid_other"]),
+        evidence=rec.evidence,
+        market_quotes=rec.market_quotes,
+    )
+    store = EvidenceStore([rec])
+    assert store.public_case(EVENT).evidence_ids == ["evid_ok", "evid_edge"]
+    assert store.get_as_of(EVENT, AS_OF - timedelta(days=1)).case.evidence_ids == ["evid_ok"]
 
 
 def test_render_prompt_only_accepts_gated_snapshots():
@@ -589,6 +724,44 @@ def test_from_dir_refuses_a_symlink_into_sealed_outcomes(tmp_path):
     cases.mkdir()
     (cases / f"{EVENT}.json").symlink_to(target)
     with pytest.raises(SealedDataError):
+        EvidenceStore.from_dir(cases)
+
+
+@pytest.mark.parametrize("name", ["SEALED_OUTCOMES", "Sealed_Outcomes", "sealed_outcomeS"])
+def test_from_dir_refuses_sealed_dir_in_any_letter_case(tmp_path, name):
+    (tmp_path / "data" / "sealed_outcomes").mkdir(parents=True)
+    with pytest.raises(SealedDataError):
+        EvidenceStore.from_dir(tmp_path / "data" / name)
+
+
+def test_from_dir_refuses_the_configured_sealed_dir_by_inode(tmp_path, monkeypatch):
+    """Name checks alone are not enough: the configured sealed directory is also matched by (st_dev, st_ino)."""
+    from core import temporal_gate
+
+    vault_dir = tmp_path / "innocent_name"  # stands in for the configured sealed directory
+    (vault_dir / "nested").mkdir(parents=True)
+    monkeypatch.setattr(temporal_gate, "_configured_sealed_dir", lambda: vault_dir)
+    with pytest.raises(SealedDataError):
+        EvidenceStore.from_dir(vault_dir)
+    with pytest.raises(SealedDataError):
+        EvidenceStore.from_dir(vault_dir / "nested")
+    alias = tmp_path / "alias"
+    alias.symlink_to(vault_dir, target_is_directory=True)
+    with pytest.raises(SealedDataError):
+        EvidenceStore.from_dir(alias)
+    assert EvidenceStore.from_dir(tmp_path / "elsewhere").case_ids() == []
+
+
+def test_from_dir_refuses_hard_linked_case_files(tmp_path):
+    data = tmp_path / "data"
+    sealed = data / "sealed_outcomes"
+    sealed.mkdir(parents=True)
+    target = sealed / f"{EVENT}.json"
+    target.write_text(json.dumps(case_file_dict()), encoding="utf-8")
+    cases = data / "demo_cases"
+    cases.mkdir()
+    os.link(target, cases / f"{EVENT}.json")
+    with pytest.raises(SealedDataError, match="hard link"):
         EvidenceStore.from_dir(cases)
 
 

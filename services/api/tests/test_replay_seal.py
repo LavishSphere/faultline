@@ -5,6 +5,7 @@ Written before core/provenance.py, core/store.py and core/evaluator.py. All fixt
 
 from __future__ import annotations
 
+import dataclasses
 import json
 import re
 import sqlite3
@@ -27,9 +28,15 @@ from test_temporal_gate import (
 )
 
 from core import provenance
-from core.evaluator import NotRevealable, OutcomeNotAvailable, OutcomeVault, RevealedOutcome
-from core.store import DEFAULT_DB_PATH, HashMismatch, PredictionExists, PredictionStore
-from core.temporal_gate import EvidenceStore, MarketNotAvailable
+from core.evaluator import (
+    NotRevealable,
+    OutcomeNotAvailable,
+    OutcomeVault,
+    RevealedOutcome,
+    build_scorecard,
+)
+from core.store import DEFAULT_DB_PATH, HashMismatch, PredictionExists, PredictionStore, record_sha256
+from core.temporal_gate import EvidenceStore, MarketNotAvailable, ModelInput
 from models import ErrorCode, Prediction, Provenance
 
 API_DIR = Path(__file__).resolve().parents[1]
@@ -245,109 +252,221 @@ def test_reveal_after_persist_returns_outcome_and_is_logged(world):
     store, vault, snap, _ = world
     mi = snap.model_input("agent_only")
     pred = prediction_for(mi, snap)
-    store.save(pred, prompt=mi.prompt, snapshot_json=mi.snapshot_json)
+    saved = store.save(pred, mi)
     revealed = vault.reveal("pred_001")
     assert isinstance(revealed, RevealedOutcome)
     assert revealed.y == 1 and revealed.prediction == pred
-    rec = store.get_record("pred_001")
+    assert (revealed.persisted_at, revealed.persist_seq) == (saved.persisted_at, saved.persist_seq)
+    assert revealed.event_first_reveal_seq == revealed.reveal_seq > revealed.persist_seq
+    assert revealed.event_first_revealed_at == revealed.revealed_at
+    assert revealed.persisted_before_outcome_revealed
     reveals = store.reveal_times("pred_001")
-    assert len(reveals) == 1 and rec.persisted_at < reveals[0] == revealed.revealed_at
+    assert len(reveals) == 1 and saved.persisted_at < reveals[0] == revealed.revealed_at
 
 
-def test_revealed_outcome_cannot_be_forged():
-    with pytest.raises(TypeError):
-        RevealedOutcome(prediction=None, y=1, sealed=None, revealed_at=AS_OF)  # type: ignore[call-arg]
+def test_reveal_clock_before_persist_time_is_refused(tmp_path):
+    sealed = tmp_path / "sealed_outcomes"
+    write_sealed(sealed, sealed_dict())
+    store = PredictionStore(tmp_path / "p.sqlite3", clock=Clock(RECORDED + timedelta(days=1)))
+    vault = OutcomeVault(store, sealed_dir=sealed, clock=Clock(RECORDED))  # clock behind the store's
+    snap = EvidenceStore([standard_record()]).get_as_of(EVENT, AS_OF)
+    mi = snap.model_input("agent_only")
+    store.save(prediction_for(mi, snap), mi)
+    with pytest.raises(NotRevealable, match="precedes"):
+        vault.reveal("pred_001")
+    assert store.reveal_times("pred_001") == []
 
 
-def test_save_rejects_hashes_that_do_not_match(world):
+def test_revealed_outcome_cannot_be_forged(world):
     store, vault, snap, _ = world
     mi = snap.model_input("agent_only")
-    with pytest.raises(HashMismatch):
-        store.save(prediction_for(mi, snap), prompt=mi.prompt + " ", snapshot_json=mi.snapshot_json)
-    with pytest.raises(HashMismatch):
-        store.save(prediction_for(mi, snap), prompt=mi.prompt, snapshot_json=mi.snapshot_json.replace("evid_ok", "x"))
+    store.save(prediction_for(mi, snap), mi)
+    real = vault.reveal("pred_001")
+    with pytest.raises(TypeError):
+        dataclasses.replace(real, y=0)
+    with pytest.raises(TypeError):
+        RevealedOutcome(**{f.name: getattr(real, f.name) for f in dataclasses.fields(real)})
+
+
+def test_save_requires_the_gate_model_input(world):
+    store, _, snap, _ = world
+    mi = snap.model_input("agent_only")
+    pred = prediction_for(mi, snap)
+    with pytest.raises(TypeError):
+        store.save(pred, {"prompt": mi.prompt, "snapshot_json": mi.snapshot_json})  # type: ignore[arg-type]
+    with pytest.raises(TypeError):
+        dataclasses.replace(mi, prompt="forged")
+    with pytest.raises(TypeError):
+        ModelInput(**dataclasses.asdict(mi))
+    assert store.get("pred_001") is None
+
+
+FORGED_SNAPSHOT = provenance.canonical_json(
+    {"evidence": [{"evidence_id": "x", "available_at": "2030-01-01T00:00:00Z", "content": CANARY}], "market_quotes": []}
+)
+
+
+@pytest.mark.parametrize(
+    ("overrides", "error", "match"),
+    [
+        ({"event_id": "other_event"}, ValueError, "event_id"),
+        ({"as_of": AS_OF - timedelta(days=7)}, ValueError, "as_of"),
+        ({"prompt_sha256": "0" * 64}, HashMismatch, "prompt_sha256"),
+        ({"snapshot_sha256": provenance.sha256_hex(FORGED_SNAPSHOT)}, HashMismatch, "snapshot_sha256"),
+        ({"variant": "agent_plus_market"}, ValueError, "agent_plus_market"),
+        ({"variant": "hosted_comparator"}, ValueError, "hosted_comparator"),
+    ],
+    ids=["event", "as_of", "prompt-hash", "forged-snapshot-hash", "variant", "hosted-comparator"],
+)
+def test_save_rejects_prediction_not_matching_its_model_input(world, overrides, error, match):
+    store, vault, snap, _ = world
+    mi = snap.model_input("agent_only")
+    with pytest.raises(error, match=match):
+        store.save(prediction_for(mi, snap, **overrides), mi)
     assert store.get("pred_001") is None
     with pytest.raises(NotRevealable):
         vault.reveal("pred_001")
 
 
-def test_save_rejects_non_canonical_snapshot(world):
-    store, _, snap, _ = world
-    mi = snap.model_input("agent_only")
-    pretty = json.dumps(json.loads(mi.snapshot_json), indent=2)
-    pred = prediction_for(mi, snap, snapshot_sha256=provenance.sha256_hex(pretty))
-    with pytest.raises(ValueError, match="canonical"):
-        store.save(pred, prompt=mi.prompt, snapshot_json=pretty)
-
-
-def test_save_rejects_variant_snapshot_mismatch(world):
+def test_save_rejects_agent_only_claim_for_market_snapshot(world):
     store, _, snap, _ = world
     plus = snap.model_input("agent_plus_market")
-    # Claiming agent_only for a snapshot that contains a market quote is refused.
     with pytest.raises(ValueError, match="agent_only"):
-        store.save(
-            prediction_for(plus, snap, variant="agent_only"), prompt=plus.prompt, snapshot_json=plus.snapshot_json
-        )
-    only = snap.model_input("agent_only")
-    with pytest.raises(ValueError, match="agent_plus_market"):
-        store.save(
-            prediction_for(only, snap, variant="agent_plus_market"),
-            prompt=only.prompt,
-            snapshot_json=only.snapshot_json,
-        )
+        store.save(prediction_for(plus, snap, variant="agent_only"), plus)
+
+
+@pytest.mark.parametrize(
+    ("source", "claimed"), [("agent_plus_market", "agent_only"), ("agent_only", "agent_plus_market")]
+)
+def test_save_checks_snapshot_contents_against_variant_even_if_model_input_is_relabeled(world, source, claimed):
+    store, _, snap, _ = world
+    mi = snap.model_input(source)
+    object.__setattr__(mi, "variant", claimed)  # hashes still match the text; only the label lies
+    with pytest.raises(ValueError, match="market quote"):
+        store.save(prediction_for(mi, snap, variant=claimed), mi)
+
+
+def test_save_rejects_model_input_tampered_after_creation(world):
+    store, _, snap, _ = world
+    mi = snap.model_input("agent_only")
+    pred = prediction_for(mi, snap)
+    object.__setattr__(mi, "snapshot_json", FORGED_SNAPSHOT)
+    with pytest.raises(HashMismatch):
+        store.save(pred, mi)
 
 
 def test_save_rejects_citations_outside_the_snapshot(world):
     store, _, snap, _ = world
     mi = snap.model_input("agent_only")
     with pytest.raises(ValueError, match="evid_future"):
-        store.save(
-            prediction_for(mi, snap, evidence_ids=["evid_ok", "evid_future"]),
-            prompt=mi.prompt,
-            snapshot_json=mi.snapshot_json,
-        )
+        store.save(prediction_for(mi, snap, evidence_ids=["evid_ok", "evid_future"]), mi)
 
 
-def test_predictions_are_append_only(world):
-    store, _, snap, _ = world
+@pytest.mark.parametrize(
+    "sql",
+    [
+        "UPDATE predictions SET p_yes = 0.99 WHERE prediction_id = 'pred_001'",
+        "DELETE FROM predictions WHERE prediction_id = 'pred_001'",
+        "INSERT OR REPLACE INTO predictions SELECT prediction_id, event_id, as_of, agent_model, model_digest, variant, "
+        "0.99, decision, rationale, evidence_ids, prompt_sha256, snapshot_sha256, temperature, seed, recorded_at, "
+        "provenance, prompt_text, snapshot_json, persisted_at, persist_seq, market_baseline_p_yes, "
+        "market_baseline_ref, contamination_flag, synthetic, case_sha256, record_sha256 FROM predictions",
+        "UPDATE audit_log SET seq = seq + 100",
+        "DELETE FROM audit_log",
+        "INSERT OR REPLACE INTO audit_log (seq, kind, prediction_id, event_id, at) "
+        "SELECT seq, 'persist', prediction_id, event_id, at FROM audit_log WHERE kind = 'reveal'",
+        # Audit round 2: a caller-chosen seq could backdate a persist or plant an early fake reveal.
+        "INSERT INTO audit_log (seq, kind, prediction_id, event_id, at) "
+        "VALUES (0, 'persist', 'forged', 'synthetic_fed_001', '2025-01-01T00:00:00+00:00')",
+        "INSERT INTO audit_log (seq, kind, prediction_id, event_id, at) "
+        "VALUES (-7, 'reveal', 'pred_001', 'synthetic_fed_001', 'now')",
+        "INSERT INTO audit_log (seq, kind, prediction_id, event_id, at) "
+        "VALUES (-1, 'persist', 'forged', 'synthetic_fed_001', 'now')",
+        "INSERT INTO audit_log (seq, kind, prediction_id, event_id, at) "
+        "VALUES (1000, 'persist', 'forged', 'synthetic_fed_001', 'now')",
+        "INSERT INTO audit_log (kind, prediction_id, event_id, at) VALUES ('reveal', 'ghost', 'other_event', 'now')",
+        "INSERT INTO predictions SELECT 'forged', event_id, as_of, agent_model, model_digest, variant, p_yes, "
+        "decision, rationale, evidence_ids, prompt_sha256, snapshot_sha256, temperature, seed, recorded_at, "
+        "provenance, prompt_text, snapshot_json, persisted_at, 0, market_baseline_p_yes, market_baseline_ref, "
+        "contamination_flag, synthetic, case_sha256, record_sha256 FROM predictions",
+    ],
+    ids=[
+        "update",
+        "delete",
+        "insert-or-replace",
+        "log-update",
+        "log-delete",
+        "log-replace",
+        "log-seq-zero",
+        "log-negative-reveal",
+        "log-explicit-minus-one",
+        "log-explicit-high",
+        "log-reveal-without-prediction",
+        "prediction-without-log-entry",
+    ],
+)
+def test_predictions_and_audit_log_are_append_only(world, sql):
+    store, vault, snap, _ = world
     mi = snap.model_input("agent_only")
-    store.save(prediction_for(mi, snap), prompt=mi.prompt, snapshot_json=mi.snapshot_json)
+    store.save(prediction_for(mi, snap), mi)
+    vault.reveal("pred_001")
     with pytest.raises(PredictionExists):
-        store.save(prediction_for(mi, snap, p_yes=0.9), prompt=mi.prompt, snapshot_json=mi.snapshot_json)
-    with sqlite3.connect(store.path) as conn:
-        with pytest.raises(sqlite3.DatabaseError):
-            conn.execute("UPDATE predictions SET p_yes = 0.99 WHERE prediction_id = 'pred_001'")
-        with pytest.raises(sqlite3.DatabaseError):
-            conn.execute("DELETE FROM predictions WHERE prediction_id = 'pred_001'")
+        store.save(prediction_for(mi, snap, p_yes=0.9), mi)
+    with sqlite3.connect(store.path) as conn, pytest.raises(sqlite3.DatabaseError, match="append-only"):
+        conn.execute(sql)
     assert store.get("pred_001").p_yes == 0.6
+    assert store.verify("pred_001") == []
+    assert len(store.reveal_times("pred_001")) == 1
 
 
-def test_store_round_trips_audit_fields_and_hashes_recompute(world, tmp_path):
+def test_store_round_trips_audit_fields_and_hashes_recompute(world):
     store, _, snap, _ = world
     mi = snap.model_input("agent_plus_market")
     pred = prediction_for(mi, snap, pid="pred_plus", model_digest="sha256:" + "d" * 64, seed=42)
-    store.save(pred, prompt=mi.prompt, snapshot_json=mi.snapshot_json)
+    store.save(pred, mi)
 
     reopened = PredictionStore(store.path)  # a fresh connection sees the same row
     rec = reopened.get_record("pred_plus")
     assert rec.prediction == pred
     assert rec.prediction.agent_model == "ollama/test-model"
     assert (rec.prediction.temperature, rec.prediction.seed, rec.prediction.variant) == (0.0, 42, "agent_plus_market")
-    # RECORDED RUN audit: recompute both hashes from what was stored.
+    # RECORDED RUN audit: recompute every hash from what was stored.
     assert provenance.prompt_sha256(rec.prompt) == rec.prediction.prompt_sha256
     assert provenance.sha256_hex(rec.snapshot_json) == rec.prediction.snapshot_sha256
+    assert record_sha256(rec.prediction, rec.context, rec.persisted_at, rec.persist_seq) == rec.record_sha256
+    assert (rec.context.market_baseline_p_yes, rec.context.market_baseline_ref) == (0.56, "kalshi:SYNTH-FED-H25")
+    assert (rec.context.contamination_flag, rec.context.synthetic) == ("unlikely", True)
     assert reopened.verify("pred_plus") == []
     assert [p.prediction_id for p in reopened.list_predictions(event_id=EVENT)] == ["pred_plus"]
 
 
-def test_reveal_refuses_when_stored_audit_was_tampered(world):
+def _drop_triggers(conn: sqlite3.Connection) -> None:
+    for (name,) in conn.execute("SELECT name FROM sqlite_master WHERE type = 'trigger'").fetchall():
+        conn.execute(f"DROP TRIGGER {name}")
+
+
+@pytest.mark.parametrize(
+    ("sql", "problem"),
+    [
+        ("UPDATE predictions SET prompt_text = 'edited'", "prompt_sha256"),
+        ("UPDATE predictions SET p_yes = 0.99", "record_sha256"),
+        ("UPDATE predictions SET decision = 'act'", "record_sha256"),
+        ("UPDATE predictions SET persisted_at = '2025-01-01T00:00:00+00:00'", "record_sha256"),
+        ("UPDATE predictions SET persist_seq = 999", "record_sha256"),
+        ("UPDATE predictions SET market_baseline_p_yes = 0.3", "record_sha256"),
+        ("UPDATE predictions SET contamination_flag = 'likely'", "record_sha256"),
+        ("UPDATE predictions SET synthetic = 0", "record_sha256"),
+    ],
+    ids=["prompt", "p_yes", "decision", "persisted_at", "persist_seq", "market", "contamination", "synthetic"],
+)
+def test_reveal_refuses_when_stored_record_was_tampered(world, sql, problem):
     store, vault, snap, _ = world
     mi = snap.model_input("agent_only")
-    store.save(prediction_for(mi, snap), prompt=mi.prompt, snapshot_json=mi.snapshot_json)
+    store.save(prediction_for(mi, snap), mi)
     with sqlite3.connect(store.path) as conn:
-        conn.execute("DROP TRIGGER predictions_no_update")
-        conn.execute("UPDATE predictions SET prompt_text = 'edited' WHERE prediction_id = 'pred_001'")
-    assert store.verify("pred_001") != []
+        _drop_triggers(conn)
+        conn.execute(sql)
+    assert any(problem in p for p in store.verify("pred_001"))
     with pytest.raises(NotRevealable, match="hash"):
         vault.reveal("pred_001")
 
@@ -356,7 +475,7 @@ def test_reveal_without_sealed_file_is_not_available(world):
     store, vault, snap, sealed = world
     (sealed / f"{EVENT}.json").unlink()
     mi = snap.model_input("agent_only")
-    store.save(prediction_for(mi, snap), prompt=mi.prompt, snapshot_json=mi.snapshot_json)
+    store.save(prediction_for(mi, snap), mi)
     with pytest.raises(OutcomeNotAvailable):
         vault.reveal("pred_001")
 
@@ -372,7 +491,7 @@ def test_reveal_rejects_malformed_sealed_file(world, patch):
     data.update(patch)
     (sealed / f"{EVENT}.json").write_text(json.dumps(data), encoding="utf-8")
     mi = snap.model_input("agent_only")
-    store.save(prediction_for(mi, snap), prompt=mi.prompt, snapshot_json=mi.snapshot_json)
+    store.save(prediction_for(mi, snap), mi)
     with pytest.raises(ValueError):
         vault.reveal("pred_001")
 
@@ -381,8 +500,188 @@ def test_sealed_outcome_no_maps_to_zero(world):
     store, vault, snap, sealed = world
     write_sealed(sealed, sealed_dict(outcome="NO"))
     mi = snap.model_input("agent_only")
-    store.save(prediction_for(mi, snap), prompt=mi.prompt, snapshot_json=mi.snapshot_json)
+    store.save(prediction_for(mi, snap), mi)
     assert vault.reveal("pred_001").y == 0
+
+
+# ---------------------------------------------------------------- forecast before outcome, per EVENT
+
+
+def test_peek_then_predict_is_excluded(world):
+    """Audit attack 1: reveal a throwaway forecast at an earlier as_of, then predict p_yes = y."""
+    store, vault, _, _ = world
+    gate = EvidenceStore([standard_record()])
+    probe_snap = gate.get_as_of(EVENT, AS_OF - timedelta(seconds=1))
+    probe_mi = probe_snap.model_input("agent_only")
+    store.save(prediction_for(probe_mi, probe_snap, pid="probe", p_yes=0.5), probe_mi)
+    y = vault.reveal("probe").y
+
+    snap = gate.get_as_of(EVENT, AS_OF)
+    mi = snap.model_input("agent_only")
+    store.save(prediction_for(mi, snap, pid="after_peek", p_yes=float(y)), mi)
+    late = vault.reveal("after_peek")  # revealing is allowed, but it is marked as post-outcome
+    assert not late.persisted_before_outcome_revealed
+    assert late.event_first_reveal_seq < late.persist_seq
+
+    card = build_scorecard(vault)
+    assert card.exclusions_by_reason == {"persisted_after_outcome_revealed": 1}
+    assert card.exclusions[0].prediction_ids == ["after_peek"]
+    assert [(p.prediction_id, p.reason) for p in card.ignored_predictions] == [
+        ("after_peek", "persisted_after_outcome_revealed")
+    ]
+    # The probe itself was saved before any reveal, so it is a legitimate forecast at its own as_of; the
+    # peeked prediction contributes nothing.
+    assert [e.prediction_ids for e in card.per_event] == [["probe"]]
+
+
+def test_peek_through_another_variant_is_excluded(world):
+    store, vault, snap, _ = world
+    plus = snap.model_input("agent_plus_market")
+    store.save(prediction_for(plus, snap, pid="plus_first"), plus)
+    vault.reveal("plus_first")
+    only = snap.model_input("agent_only")
+    store.save(prediction_for(only, snap, pid="only_after"), only)
+    card = build_scorecard(vault, agent_variant="agent_only")
+    assert card.exclusions_by_reason == {"persisted_after_outcome_revealed": 1}
+    assert card.n_events == 0
+
+
+def test_cherry_picking_runs_is_impossible(world):
+    """Audit attack 2: save several runs for one snapshot, reveal all, try to score only the best."""
+    store, vault, snap, _ = world
+    mi = snap.model_input("agent_only")
+    reveals = []
+    for i, p in enumerate([0.2, 0.5, 0.9]):
+        store.save(prediction_for(mi, snap, pid=f"run{i}", p_yes=p), mi)
+    for i in range(3):
+        reveals.append(vault.reveal(f"run{i}"))
+    with pytest.raises(TypeError):
+        build_scorecard([max(reveals, key=lambda r: r.prediction.p_yes)])  # type: ignore[arg-type]
+    card = build_scorecard(vault)
+    assert card.n_events == 0
+    assert card.exclusions_by_reason == {"multiple_predictions": 1}
+    assert card.exclusions[0].prediction_ids == ["run0", "run1", "run2"]
+
+
+def test_saved_but_unrevealed_prediction_is_scored_via_the_vault(world):
+    store, vault, snap, _ = world
+    mi = snap.model_input("agent_only")
+    store.save(prediction_for(mi, snap, p_yes=0.7), mi)
+    assert store.reveal_times("pred_001") == []
+    card = build_scorecard(vault)
+    assert card.exclusions == [] and card.n_events == 1
+    assert card.per_event[0].prediction_ids == ["pred_001"]
+    assert card.per_event[0].brier["agent_only"] == pytest.approx(0.09)
+    assert len(store.reveal_times("pred_001")) == 1  # the scorecard's reveal is logged
+
+
+def test_pre_reveal_prediction_kept_and_post_reveal_one_ignored(world):
+    store, vault, snap, _ = world
+    gate = EvidenceStore([standard_record()])
+    mi = snap.model_input("agent_only")
+    store.save(prediction_for(mi, snap, pid="honest", p_yes=0.6), mi)
+    probe_snap = gate.get_as_of(EVENT, AS_OF - timedelta(hours=1))
+    probe_mi = probe_snap.model_input("agent_only")
+    store.save(prediction_for(probe_mi, probe_snap, pid="probe"), probe_mi)
+    vault.reveal("probe")
+    store.save(prediction_for(mi, snap, pid="after_peek", p_yes=1.0), mi)
+    card = build_scorecard(vault)
+    assert card.per_event[0].prediction_ids == ["probe", "honest"]  # one event, two horizons
+    assert [p.prediction_id for p in card.ignored_predictions] == ["after_peek"]
+    assert card.exclusions == []
+
+
+def test_configured_sealed_folder_only_reveals_into_the_configured_store(tmp_path, monkeypatch):
+    """Audit round 2: a scratch store must not be able to peek at the real sealed folder without a trace."""
+    from core import store as store_module
+
+    data = tmp_path / "data"
+    write_sealed(data / "sealed_outcomes", sealed_dict())
+    monkeypatch.setenv("FAULTLINE_DATA_DIR", str(data))
+    official_db = tmp_path / "var" / "predictions.sqlite3"
+    monkeypatch.setattr(store_module, "DEFAULT_DB_PATH", official_db)
+
+    scratch = PredictionStore(tmp_path / "scratch.sqlite3")
+    with pytest.raises(ValueError, match="configured prediction store"):
+        OutcomeVault(scratch)  # default sealed folder = the configured one
+    with pytest.raises(ValueError, match="configured prediction store"):
+        OutcomeVault(scratch, sealed_dir=data / "sealed_outcomes")
+    with pytest.raises(ValueError, match="configured prediction store"):
+        OutcomeVault(scratch, sealed_dir=data / "demo_cases" / ".." / "sealed_outcomes")
+
+    official = PredictionStore(official_db, clock=Clock(RECORDED))
+    vault = OutcomeVault(official, clock=Clock(RECORDED + timedelta(hours=1)))
+    snap = EvidenceStore([standard_record()]).get_as_of(EVENT, AS_OF)
+    mi = snap.model_input("agent_only")
+    official.save(prediction_for(mi, snap), mi)
+    assert vault.reveal("pred_001").y == 1
+
+
+def test_scorecard_takes_no_caller_contexts(world):
+    import core.evaluator as evaluator
+
+    store, vault, snap, _ = world
+    mi = snap.model_input("agent_only")
+    store.save(prediction_for(mi, snap), mi)
+    assert not hasattr(evaluator, "EventContext")
+    with pytest.raises(TypeError):
+        build_scorecard(vault, [])  # type: ignore[misc]
+    with pytest.raises(TypeError):
+        build_scorecard(vault, contexts=[])  # type: ignore[call-arg]
+    card = build_scorecard(vault)
+    assert card.per_event[0].market_refs == ["kalshi:SYNTH-FED-H25"]
+    assert card.per_event[0].brier["market"] == pytest.approx((0.56 - 1) ** 2)
+
+
+def test_reserved_low_seq_cannot_backdate_a_later_prediction(world):
+    """round3_b: reserve an orphan persist seq before any reveal, peek, then insert a forecast on that seq."""
+    store, vault, _snap, _ = world
+    gate = EvidenceStore([standard_record()])
+    with sqlite3.connect(store.path) as conn:
+        conn.execute(
+            "INSERT INTO audit_log (kind, prediction_id, event_id, at) VALUES ('persist', 'forged', ?, ?)",
+            (EVENT, RECORDED.isoformat()),
+        )
+        reserved = conn.execute("SELECT max(seq) FROM audit_log").fetchone()[0]
+    psnap = gate.get_as_of(EVENT, AS_OF - timedelta(hours=1))
+    pmi = psnap.model_input("agent_only")
+    store.save(prediction_for(pmi, psnap, pid="probe"), pmi)
+    vault.reveal("probe")
+    snap = gate.get_as_of(EVENT, AS_OF)
+    mi = snap.model_input("agent_only")
+    rec = store.save(prediction_for(mi, snap, pid="template"), mi)  # a valid row to copy, then forge its seq
+    with sqlite3.connect(store.path) as conn, pytest.raises(sqlite3.DatabaseError, match="newest audit log entry"):
+        conn.execute(
+            "INSERT INTO predictions SELECT 'forged', event_id, as_of, agent_model, model_digest, variant, 1.0, "
+            "decision, rationale, evidence_ids, prompt_sha256, snapshot_sha256, temperature, seed, recorded_at, "
+            "provenance, prompt_text, snapshot_json, persisted_at, ?, market_baseline_p_yes, market_baseline_ref, "
+            "contamination_flag, synthetic, case_sha256, record_sha256 FROM predictions WHERE prediction_id = ?",
+            (reserved, rec.prediction.prediction_id),
+        )
+    assert store.get("forged") is None
+
+
+def test_replacing_a_prediction_with_a_fresh_persist_entry_is_refused(world):
+    """Even with a newest, own persist entry (which satisfies the persist_seq trigger), an existing id is never
+    replaced: INSERT OR REPLACE on a raw connection (recursive triggers off) is refused by the reuse trigger."""
+    store, _, snap, _ = world
+    mi = snap.model_input("agent_only")
+    store.save(prediction_for(mi, snap), mi)
+    with sqlite3.connect(store.path) as conn:
+        conn.execute(
+            "INSERT INTO audit_log (kind, prediction_id, event_id, at) VALUES ('persist', 'pred_001', ?, ?)",
+            (EVENT, RECORDED.isoformat()),
+        )
+        newest = conn.execute("SELECT max(seq) FROM audit_log").fetchone()[0]
+        with pytest.raises(sqlite3.DatabaseError, match="already persisted"):
+            conn.execute(
+                "INSERT OR REPLACE INTO predictions SELECT prediction_id, event_id, as_of, agent_model, model_digest, "
+                "variant, 0.99, decision, rationale, evidence_ids, prompt_sha256, snapshot_sha256, temperature, seed, "
+                "recorded_at, provenance, prompt_text, snapshot_json, persisted_at, ?, market_baseline_p_yes, "
+                "market_baseline_ref, contamination_flag, synthetic, case_sha256, record_sha256 FROM predictions",
+                (newest,),
+            )
+    assert store.get("pred_001").p_yes == 0.6
 
 
 # ---------------------------------------------------------------- pre-reveal payloads
@@ -392,7 +691,7 @@ def test_pre_reveal_payloads_walk_clean(world):
     store, _, snap, _ = world
     mi = snap.model_input("agent_plus_market")
     pred = prediction_for(mi, snap)
-    store.save(pred, prompt=mi.prompt, snapshot_json=mi.snapshot_json)
+    store.save(pred, mi)
     outcome_like = re.compile(r"outcome|resolution|resolved|settle|result|winner|final_price", re.IGNORECASE)
     for payload in (pred.model_dump(mode="json"), store.get("pred_001").model_dump(mode="json")):
         assert [p for p, k, _ in walk_keys(payload) if outcome_like.search(k)] == []
