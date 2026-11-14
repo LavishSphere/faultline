@@ -202,39 +202,39 @@ def test_case_variant_guard_does_not_depend_on_the_file_system(curate, tmp_path)
     assert curate._within(other / "notes", data)
 
 
-def test_refuses_symlinked_directory_into_data(curate, tmp_path, monkeypatch):
+def test_refuses_symlinked_directory_into_data(curate, tmp_path, monkeypatch, make_symlink):
     monkeypatch.setenv("TAVILY_API_KEY", KEY)
     data = tmp_path / "data"
     data.mkdir()
     monkeypatch.setenv("FAULTLINE_DATA_DIR", str(data))
-    (tmp_path / "innocent").symlink_to(data, target_is_directory=True)
+    make_symlink(tmp_path / "innocent", data, target_is_directory=True)
     t_transport, t_seen = _tavily(RESULTS)
     assert curate.run(_argv(tmp_path / "innocent", "--no-wayback"), tavily_transport=t_transport) == curate.EXIT_USAGE
     assert list(data.iterdir()) == [] and t_seen == []
 
 
 @pytest.mark.parametrize("force", [False, True])
-def test_refuses_symlinked_output_file(curate, tmp_path, monkeypatch, force):
+def test_refuses_symlinked_output_file(curate, tmp_path, monkeypatch, force, make_symlink):
     monkeypatch.setenv("TAVILY_API_KEY", KEY)
     out = tmp_path / "out"
     out.mkdir()
     victim = tmp_path / "victim.json"
     victim.write_text("{}", encoding="utf-8")
-    (out / "fed-march-2025.md").symlink_to(victim)
+    make_symlink(out / "fed-march-2025.md", victim)
     t_transport, t_seen = _tavily(RESULTS)
     extra = ["--no-wayback", "--force"] if force else ["--no-wayback"]
     assert curate.run(_argv(out, *extra), tavily_transport=t_transport) == curate.EXIT_USAGE
     assert victim.read_text(encoding="utf-8") == "{}" and t_seen == []
 
 
-def test_symlink_pointing_into_data_is_refused_even_with_force(curate, tmp_path, monkeypatch):
+def test_symlink_pointing_into_data_is_refused_even_with_force(curate, tmp_path, monkeypatch, make_symlink):
     monkeypatch.setenv("TAVILY_API_KEY", KEY)
     data = tmp_path / "data" / "demo_cases"
     data.mkdir(parents=True)
     monkeypatch.setenv("FAULTLINE_DATA_DIR", str(tmp_path / "data"))
     out = tmp_path / "out"
     out.mkdir()
-    (out / "fed-march-2025.md").symlink_to(data / "case.json")
+    make_symlink(out / "fed-march-2025.md", data / "case.json")
     t_transport, _ = _tavily(RESULTS)
     assert curate.run(_argv(out, "--no-wayback", "--force"), tavily_transport=t_transport) == curate.EXIT_USAGE
     assert list(data.iterdir()) == []

@@ -695,7 +695,7 @@ export const GLOSSARY = {
     uiLabels: ["INSUFFICIENT DATA"],
     short: "Too few valid cases to compare forecasters at all.",
     long: "Shown when fewer than 5 events can be scored (MATH_MODEL §6). Per-event scores may still be listed, but no average comparison and no winner is claimed.",
-    example: "n < 5. Main has no real replay cases yet (#20), so the scorecard reads INSUFFICIENT DATA today.",
+    example: "n < 5: a recorded scorecard with fewer than five scored events. Today no scorecard is recorded, so the screen reads NOT AVAILABLE instead.",
     source: "MATH_MODEL §6; docs/EVALUATION_PROTOCOL.md status line; apps/web/components/Scorecard.tsx.",
     screens: ["REVEAL"],
     mathModel: "§6",

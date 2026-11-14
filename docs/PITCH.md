@@ -1,7 +1,7 @@
 # FAULTLINE: pitch slide content
 
 **Presenter:** Yaseen (finance owner). **For:** Demo Day, Sun Nov 15 (docs/HACKATHON.md). **Issue:** #84.
-**Written:** 2026-11-14 against `main` at `4a1f2c2`.
+**Written:** 2026-11-14 against `main` at `4a1f2c2`; updated against `80deee2`.
 
 How to use this file: each `## Slide` heading is one slide. The quoted block under **On the slide** is the slide text
 (30 words or fewer, counted by script, labels included). **Speaker notes** are for the presenter, not the slide.
@@ -76,6 +76,12 @@ recurrence) and §4 (optimizer, Protect payroll bound). No figures on this slide
 - **Read the screen, not this slide.** If the on-screen figure differs, say the on-screen figure and tell the lead.
 - The business is `SYNTHETIC` (invented, assumptions in MATH_MODEL §10). The calculations are real and can be
   checked by hand: 6,000 (rates) + 26,250 (demand) + 16,800 (outage) = 49,050.
+- Two merged features worth showing if a judge asks, both from the demo flow, not extra spoken words:
+  - **Judge's Challenge on CASCADE** (#135): a judge picks a named surprise shock (ILLUSTRATIVE inputs, from
+    `GET /api/judge-challenges`) or presses "Surprise me"; the engine reruns it on the spot (SIMULATED), and Protect
+    payroll still applies. "Surprise me" follows a fixed order: no hidden randomness.
+  - **ACT / WAIT / HEDGE split view on DECISION** (#134): each pre-declared plan costed by the engine in both outcomes,
+    V(a, YES) and V(a, NO), with the recommendation at the model's probability.
 - If a screen shows `NOT AVAILABLE` or `Local model unavailable`, use the "Say instead" line from the demo script.
   Never fill a gap with a number from memory.
 
@@ -223,16 +229,16 @@ Ventures** is one of our four research lenses.
 |---|---|
 | Demo and pitch | Slide 2 (one-line product), slide 3 (live demo, docs/DEMO_SCRIPT.md), slide 7 (ask) |
 | Investability | Slide 5 (who pays, market counts, pricing hypothesis, no traction yet), slide 7 (design partners) |
-| Product | Slides 2 and 3: CASCADE stress test, Protect payroll, blind replay, research lens, LIVE EXPLORE |
+| Product | Slides 2 and 3: CASCADE stress test, Protect payroll, Judge's Challenge on CASCADE (ILLUSTRATIVE shocks, #135), ACT/WAIT/HEDGE split view on DECISION (#134), blind replay, research lens, LIVE EXPLORE |
 | Societal impact | Slide 1 (cited small-business facts), slide 2 (Protect payroll is a hard solver constraint) |
 | +2 AI alignment | Slide 4 (sealed evidence, code does the maths, humans decide, INTEGRITY panel), slide 6 (a scorecard that can say "no") |
 
 ## Before going on stage
 
-- [ ] Re-check slides 3, 4 and 6 against `docs/DEMO_SCRIPT.md` once PR #72 is merged.
+- [ ] Re-check slides 3, 4 and 6 against docs/DEMO_SCRIPT.md on the demo laptop.
 - [ ] On the demo laptop, check that the CASCADE screen still shows $63,000, $13,950 and −$49,050 (demo script
       dry-run checklist). If not, change slide 3 to the on-screen figures and tell the lead.
 - [ ] Check whether a recorded scorecard has been committed (`services/api/data/recorded_runs/`). If it has, rewrite
       slide 6 from what the REVEAL screen shows.
-- [ ] IMPACT and INVESTABILITY each have an unticked finance-owner review box: tick only after checking each figure
-      used on slides 1 and 5 against its source.
+- [ ] INVESTABILITY still has an unticked finance-owner review box: tick only after checking each figure used on
+      slide 5 against its source. (IMPACT's box, behind slide 1, was ticked on 2026-11-14 in #137.)

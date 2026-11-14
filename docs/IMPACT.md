@@ -5,7 +5,7 @@ businesses and cash-flow shocks, and say plainly what FAULTLINE does and does no
 **Written:** 2026-11-13 for issue #77. Every figure below was read by the author on the source page on the access date
 shown, and is quoted as printed. Provenance of the facts: `REAL HISTORICAL` (published statistics). Nothing in this
 brief is FAULTLINE output.
-**Review:** ☐ Yaseen (finance owner) has checked each figure and its wording against the source.
+**Review:** ☑ Yaseen (finance owner) has checked each figure and its wording against the source (2026-11-14; the BLS figures S1, S2 were checked in a browser, since BLS blocks automated tools).
 
 ## How to read the numbers
 - **All facts are US-only.**
@@ -71,7 +71,7 @@ financial advice, lend, trade, or change anyone's employment. It shows consequen
 ## Three pitch-ready sentences (for the demo script, #46)
 
 1. "Firms with fewer than 250 employees account for slightly less than half of America's private-sector jobs, according
-   to the Bureau of Labor Statistics, and in JPMorgan Chase Institute's 2016 study the median small business held enough
+   to the Bureau of Labor Statistics, and, in a separate JPMorgan Chase Institute study of its small-business customers, the median held enough
    cash to cover only 27 days of its typical outflows if money stopped coming in."
 2. "FAULTLINE lets an operator run a rate shock, a demand drop or a supplier outage through the business before it
    happens and see the exact week cash hits its low point, computed by a deterministic engine on a synthetic business
