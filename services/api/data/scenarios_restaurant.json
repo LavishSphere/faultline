@@ -1,0 +1,40 @@
+{
+  "provenance": "SYNTHETIC",
+  "description": "Named stress scenarios for the fictional restaurant in restaurant_business.json (issue #109). SYNTHETIC / ILLUSTRATIVE: invented deterministic stress paths that use only the MATH_MODEL §1 shock channels (demand, rate, supplier outage). Not forecasts and not based on any real company or real event. Hand checks: docs/MATH_MODEL.md §10b.",
+  "scenarios": [
+    {
+      "id": "road-closure-9wk",
+      "name": "Road closure: -30% covers for 9 weeks, 3-week recovery",
+      "rationale": "Street works close the road and parking outside the restaurant in weeks 4-12, so covers fall by 30%, then return over 3 weeks; each lost sales dollar costs the 66% gross margin.",
+      "provenance": "SYNTHETIC",
+      "shock": {
+        "name": "Road closure: -30% covers for 9 weeks, 3-week recovery",
+        "demand": {"delta": 0.3, "start_week": 4, "end_week": 12, "recovery_weeks": 3}
+      }
+    },
+    {
+      "id": "distributor-loss-4wk",
+      "name": "Distributor loss: main protein/produce distributor out for 4 weeks",
+      "rationale": "The main broadline distributor stops delivering in weeks 6-9, so the 60% of menu sales that need its proteins and produce are lost unless the restaurant buys from a backup supplier at a 15% premium.",
+      "provenance": "SYNTHETIC",
+      "shock": {
+        "name": "Distributor loss: main protein/produce distributor out for 4 weeks",
+        "supplier": {
+          "availability": [1.0, 1.0, 1.0, 1.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0],
+          "dependent_share": 0.6
+        }
+      }
+    },
+    {
+      "id": "slow-season-plus-300bp",
+      "name": "Slow season + rate rise: -30% covers in weeks 2-9, +300bp from week 1",
+      "rationale": "A seasonal lull cuts covers by 30% for 8 weeks while the lender reprices the floating loan by 3 points (156,000 x 3% / 52 = 90 more interest per week); the dip is deep but cash recovers slowly afterwards.",
+      "provenance": "SYNTHETIC",
+      "shock": {
+        "name": "Slow season + rate rise: -30% covers in weeks 2-9, +300bp from week 1",
+        "rate": {"delta_rate": 0.03, "start_week": 1},
+        "demand": {"delta": 0.3, "start_week": 2, "end_week": 9, "recovery_weeks": 0}
+      }
+    }
+  ]
+}

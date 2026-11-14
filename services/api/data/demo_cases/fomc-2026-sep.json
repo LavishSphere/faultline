@@ -1,0 +1,98 @@
+{
+  "case": {
+    "event_id": "fomc-2026-sep",
+    "title": "Will the FOMC leave the target range for the federal funds rate unchanged at its September 15-16, 2026 meeting?",
+    "as_of": "2026-09-09T00:00:00Z",
+    "horizon_days": 7,
+    "resolution_rule": "YES if the policy statement released by the Federal Open Market Committee (FOMC) at the end of its scheduled meeting of September 15-16, 2026, as published on federalreserve.gov, keeps both the lower bound and the upper bound of the target range for the federal funds rate equal to the target range in effect immediately before that meeting. NO if either bound is changed (a cut or an increase of any size). Cut, hold and increase are mutually exclusive outcomes of one decision; they are scored as this single yes/no question, not as separate events.",
+    "evidence_ids": [
+      "fomc-2026-sep.statement",
+      "fomc-2026-sep.minutes",
+      "fomc-2026-sep.cpi",
+      "fomc-2026-sep.jobs"
+    ],
+    "market_quote_id": null,
+    "snapshot_hash": "sha256:3ff3811a839209fc3fd550e279ada01e11873beded80383cf27e464beadb2c81",
+    "synthetic": false,
+    "contamination_flag": "unlikely",
+    "provenance": "REAL_HISTORICAL"
+  },
+  "evidence": [
+    {
+      "evidence_id": "fomc-2026-sep.statement",
+      "event_id": "fomc-2026-sep",
+      "title": "Federal Reserve issues FOMC statement (July 29, 2026; full statement text)",
+      "source_url": "https://www.federalreserve.gov/newsevents/pressreleases/monetary20260729a.htm",
+      "archive_url": "https://web.archive.org/web/20260907235008/https://www.federalreserve.gov/newsevents/pressreleases/monetary20260729a.htm",
+      "published_at": "2026-07-29T18:00:00Z",
+      "observed_at": "2026-11-13T17:35:57Z",
+      "available_at": "2026-07-29T18:00:00Z",
+      "content_sha256": "9c83532679a711fbcdcf06781eb0d79522e6a33302433b209fa5cb83f7f1608a",
+      "content": "The Federal Open Market Committee approved the following statement for release by a 9 – 3 vote:\n\nThe Committee decided to maintain the target range for the federal funds rate at 3-1/2 to 3-3/4 percent, in support of the Federal Reserve's dual mandate. The Committee is continuing its policy of maintaining ample reserves in the banking system.\n\nEconomic activity is expanding at a solid pace despite elevated uncertainty that owes, in part, to the conflict in the Middle East. Productivity growth and capital investment are strong. Job gains have kept pace with the workforce, and the unemployment rate has changed little.\n\nInflation remains elevated relative to the Committee's 2 percent goal, in part reflecting supply shocks that have driven price increases in certain sectors, including energy. The Committee will deliver price stability.\n\nVoting against the monetary policy action were Beth M. Hammack, Neel Kashkari, and Lorie K. Logan, who preferred to raise the target range for the federal funds rate by 1/4 percentage point at this meeting.",
+      "retrospective_unverified": false,
+      "provenance": "REAL_HISTORICAL"
+    },
+    {
+      "evidence_id": "fomc-2026-sep.minutes",
+      "event_id": "fomc-2026-sep",
+      "title": "Minutes of the Federal Open Market Committee, July 28-29, 2026 (verbatim excerpt: paragraphs containing 'outlook for monetary policy')",
+      "source_url": "https://www.federalreserve.gov/monetarypolicy/fomcminutes20260729.htm",
+      "archive_url": "https://web.archive.org/web/20260908122955/https://www.federalreserve.gov/monetarypolicy/fomcminutes20260729.htm",
+      "published_at": "2026-08-19T18:00:00Z",
+      "observed_at": "2026-11-13T17:35:59Z",
+      "available_at": "2026-08-19T18:00:00Z",
+      "content_sha256": "233fe01f6457714407058121e16194223b93607375ea96fc17c67b5f65ebd960",
+      "content": "With regard to the outlook for monetary policy, participants reiterated that their interpretations of incoming information would be a key component of their deliberations. Many participants assessed that policy tightening would likely be necessary if inflation did not decline. Some participants commented that financial conditions might not currently be sufficiently restrictive to facilitate a return of inflation to 2 percent. Various participants suggested that financial conditions had tightened over the intermeeting period and that this development was partly a reflection of strong economic growth and market expectations that the Committee would adopt a more restrictive policy stance before long. A few of the participants who favored raising the target range for the federal funds rate at this meeting judged that doing so would likely help forestall the need for a steeper and potentially more costly sequence of tightening moves at a later stage.",
+      "retrospective_unverified": false,
+      "provenance": "REAL_HISTORICAL"
+    },
+    {
+      "evidence_id": "fomc-2026-sep.cpi",
+      "event_id": "fomc-2026-sep",
+      "title": "BLS news release: Consumer Price Index - July 2026 (verbatim excerpt: opening summary paragraphs)",
+      "source_url": "https://www.bls.gov/news.release/archives/cpi_08122026.htm",
+      "archive_url": "https://web.archive.org/web/20260819191816/https://www.bls.gov/news.release/archives/cpi_08122026.htm",
+      "published_at": "2026-08-12T12:30:00Z",
+      "observed_at": "2026-11-13T17:36:08Z",
+      "available_at": "2026-08-12T12:30:00Z",
+      "content_sha256": "1ca22df1552ad0eb5e3dcacb6f49147cb7db00a84b46bb8f8031da352cc83526",
+      "content": "CONSUMER PRICE INDEX - JULY 2026\n\nThe Consumer Price Index for All Urban Consumers (CPI-U) increased 0.1 percent on a seasonally adjusted basis in July after falling 0.4 percent in June, the U.S. Bureau of Labor Statistics reported today. Over the last 12 months, the all items index increased 3.4 percent before seasonal adjustment.\n\nThe index for shelter rose 0.1 percent in July, accounting for roughly two-thirds of the monthly all items increase. The index for food also increased 0.1 percent over the month, as the index for food away from home increased 0.3 percent. In contrast, the energy index declined 1.5 percent in July.\n\nThe index for all items less food and energy rose 0.2 percent after being unchanged in June. Indexes that increased over the month include medical care, airline fares, communication, education, and recreation. Conversely, the index for motor vehicle insurance was among the major indexes that decreased in July.\n\nThe all items index rose 3.4 percent for the 12 months ending July after rising 3.5 percent for the 12 months ending June. The all items less food and energy index rose 2.5 percent over the year, following a 2.6-percent increase over the 12 months ending June. The energy index increased 14.7 percent for the 12 months ending July. The food index increased 3.0 percent over the last year.",
+      "retrospective_unverified": false,
+      "provenance": "REAL_HISTORICAL"
+    },
+    {
+      "evidence_id": "fomc-2026-sep.jobs",
+      "event_id": "fomc-2026-sep",
+      "title": "BLS news release: The Employment Situation - August 2026 (verbatim excerpt: opening summary paragraph)",
+      "source_url": "https://www.bls.gov/news.release/archives/empsit_09042026.htm",
+      "archive_url": "https://web.archive.org/web/20260908034938/https://www.bls.gov/news.release/archives/empsit_09042026.htm",
+      "published_at": "2026-09-04T12:30:00Z",
+      "observed_at": "2026-11-13T17:36:16Z",
+      "available_at": "2026-09-04T12:30:00Z",
+      "content_sha256": "4a8cd0a13d2afe4bf98874ed83c2543df92e8c77fba30d633fc796a3396cba6e",
+      "content": "THE EMPLOYMENT SITUATION - AUGUST 2026\n\nTotal nonfarm payroll employment increased by 162,000 in August, and the unemployment rate was unchanged at 4.1 percent, the U.S. Bureau of Labor Statistics reported today. Employment increased in food services and drinking places and in local government education. The information industry lost jobs.",
+      "retrospective_unverified": false,
+      "provenance": "REAL_HISTORICAL"
+    }
+  ],
+  "market_quotes": [],
+  "curation_notes": {
+    "selection": "docs/CASES.md Part 1, rules 1-9 (pre-registered before this file was built)",
+    "as_of_rule": "00:00:00 UTC, 7 calendar days before the statement release date",
+    "contamination": "Default replay model llama3.1:8b: knowledge cutoff December 2023 (Meta model card). This 2026 event is after that cutoff, so contamination_flag = unlikely (never 'none'). Check any other model's card first. The curator (Claude, training data to about mid-2026) may itself know the answer; the mechanical rule is what stops that from steering case or evidence choice.",
+    "evidence_classification": {
+      "fomc-2026-sep.statement": "Official FOMC policy statement. documentary_fact: the policy action and vote it records; analyst_interpretation: the Committee's own description of the economy and its forward guidance (official guidance, not a numeric forecast).",
+      "fomc-2026-sep.minutes": "Official minutes, verbatim excerpt. analyst_interpretation: summarized views of FOMC participants on the outlook for policy, as written by the FOMC Secretariat (not individual quotes, not a numeric forecast).",
+      "fomc-2026-sep.cpi": "Official BLS statistical release, verbatim excerpt. documentary_fact: measured price changes as first published (later revisions are not reflected).",
+      "fomc-2026-sep.jobs": "Official BLS statistical release, verbatim excerpt. documentary_fact: survey estimates as first published (subject to later revision)."
+    },
+    "excerpt_method": "Verbatim. Fed pages fetched live on observed_at; HTML tags removed, entities decoded, runs of whitespace collapsed to one space, paragraphs joined with a blank line; non-breaking hyphens kept. Each paragraph was also found verbatim (whitespace-normalized) in the archive_url capture, which is dated before as_of. BLS pages refuse automated requests (HTTP 403), so BLS text is taken from the archive_url capture (before as_of) of the permanent BLS archive URL; each excerpt paragraph was also found in a second pre-as_of capture of the BLS current-release page. Preformatted line breaks were joined with spaces.",
+    "release_times": "FOMC statements and minutes: 'For release at 2:00 p.m. EDT' on the press release (18:00 UTC). BLS: 'embargoed until 8:30 a.m. (ET)' on the release (12:30 UTC, daylight time). published_at = available_at = that release time.",
+    "market": {
+      "status": "NOT AVAILABLE",
+      "why": "No #12 raw snapshot covers this as_of (the only saved Fed snapshots are for the July 2026 meeting) and issue #20 may not add files under data/raw. No price was typed, estimated or interpolated.",
+      "follow_up": "Collect Kalshi KXFEDDECISION and Polymarket snapshots for September 15-16, 2026 (needs data/raw scope)."
+    },
+    "snapshot_hash": "sha256 of canonical JSON of the gated payload at as_of: evidence plus selected market quotes (empty list when NOT AVAILABLE), computed with PR #29 core.provenance"
+  }
+}

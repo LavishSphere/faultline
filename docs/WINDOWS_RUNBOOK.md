@@ -9,6 +9,19 @@ Dry run for issue #107, done on Friday 2026-11-13 (evening, US Eastern) against 
   (19:39:06 → 19:52:52), most of it `pip install` (2 min) and `npm ci` (5 min). Backend tests:
   1144 passed, 5 failed (Windows symlink privilege, see Snag 6), 7 skipped. Web typecheck, lint, unit test and the
   Playwright e2e smoke test (3/3) all passed, the e2e only after a Windows workaround (Snag 5).
+
+## Since this run (main has moved)
+
+Checked on 2026-11-14 against `main` at `38c595a`. The steps and timings below are unchanged; they record the
+Friday run.
+- REWIND, DECISION and REVEAL are now wired to the API (#65, #64), and `GET /api/benchmark` is served (#91).
+- Follow-up 6 is done. The two parts that were still missing when the lead reviewed this have also merged since:
+  `POST /api/optimize` with the live Protect payroll switch (#127, built on #69) and the real demo cases (#54).
+- On current main, 11 backend tests create symlinks, so on a Windows laptop without symlink rights expect **11**
+  WinError 1314 failures, not 5. I ran those four files on this machine: 11 failed, 207 passed. New ones are in
+  `tests/test_explore_curate.py` (4) and `tests/test_routes_integrity.py` (2); the other 5 are the ones in Snag 6.
+  The fix is task #122.
+
 - Times below are wall-clock, from `time` or timestamps in the logs. Commands are the ones I typed in Git Bash.
   I worked in a scratch folder; below, `~/faultline-fresh` stands for "any new empty folder".
 

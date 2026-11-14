@@ -1,0 +1,116 @@
+{
+  "case": {
+    "event_id": "synthetic_distributor-depot",
+    "title": "SYNTHETIC: Will the demo grocer's primary distributor (the fictional Brindlewick Provisions) stop deliveries from its North depot for 5 or more consecutive days within 21 days after the cutoff?",
+    "as_of": "2026-09-14T12:00:00Z",
+    "horizon_days": 21,
+    "resolution_rule": "SYNTHETIC case in a fictional world. YES if, within the 21 days after the cutoff, the fictional Brindlewick Provisions North depot makes no deliveries of the demo grocer's chilled, deli and fresh lines (about 40% of the grocer's base-store sales) to any of its three stores on at least 5 consecutive calendar days, for any reason (strike, lockout, site access or other). NO otherwise. Decision context, not part of the YES/NO criteria: act = move those lines to the backup supplier now; hedge = arrange a partial response now; wait = make no change yet.",
+    "evidence_ids": [
+      "synthetic_distributor-depot.contract-bulletin",
+      "synthetic_distributor-depot.account-manager-letter",
+      "synthetic_distributor-depot.local-paper-vote",
+      "synthetic_distributor-depot.road-notice",
+      "synthetic_distributor-depot.backup-supplier-quote"
+    ],
+    "market_quote_id": null,
+    "snapshot_hash": "sha256:125e3b56522511a3c13ffe0420cf373b696edfc6f68f52bf039e3e989134d974",
+    "synthetic": true,
+    "contamination_flag": "unlikely",
+    "provenance": "SYNTHETIC"
+  },
+  "evidence": [
+    {
+      "evidence_id": "synthetic_distributor-depot.contract-bulletin",
+      "event_id": "synthetic_distributor-depot",
+      "title": "SYNTHETIC: Brindlewick Provisions customer bulletin - North depot labour contract talks",
+      "source_url": "https://synthetic.invalid/faultline/synthetic_distributor-depot/contract-bulletin",
+      "archive_url": null,
+      "published_at": "2026-08-25T15:00:00Z",
+      "observed_at": "2026-11-13T20:00:00Z",
+      "available_at": "2026-08-25T15:00:00Z",
+      "content_sha256": "5526cab7f282bc7d717669ff58310733160bb84caa540052f179d764ae04f2e7",
+      "content": "SYNTHETIC DOCUMENT: fictional, written for the FAULTLINE demo. No real company, person, place or event. Brindlewick Provisions (fictional) informs customers served from its North depot that the collective agreement covering depot warehouse staff and drivers expires on 20 September 2026. Negotiations with the Brindlewick North Depot Workers' Association (fictional) began on 18 August. Deliveries continue on the normal schedule. We will update customers if the timetable for an agreement changes.",
+      "retrospective_unverified": false,
+      "provenance": "SYNTHETIC"
+    },
+    {
+      "evidence_id": "synthetic_distributor-depot.account-manager-letter",
+      "event_id": "synthetic_distributor-depot",
+      "title": "SYNTHETIC: Letter from Brindlewick account manager to the demo grocer on contingency plans",
+      "source_url": "https://synthetic.invalid/faultline/synthetic_distributor-depot/account-manager-letter",
+      "archive_url": null,
+      "published_at": "2026-09-04T14:00:00Z",
+      "observed_at": "2026-11-13T20:00:00Z",
+      "available_at": "2026-09-04T14:00:00Z",
+      "content_sha256": "a9f31b0557fba47b71c0351d21f7e0289eeada4fb35d115c812023cb1024b118",
+      "content": "SYNTHETIC DOCUMENT: fictional, written for the FAULTLINE demo. No real company, person, place or event. To the demo grocer (FAULTLINE's fictional three-store food retailer): you asked what would happen to your chilled, deli and fresh lines if talks at North depot fail. If there is industrial action, Brindlewick would suspend outbound deliveries from North depot until it can run a reduced schedule with salaried staff. We expect an agreement and are not planning for a stoppage, but we cannot commit to a restart date if one happens. These lines are about 40% of your stores' sales with us.",
+      "retrospective_unverified": false,
+      "provenance": "SYNTHETIC"
+    },
+    {
+      "evidence_id": "synthetic_distributor-depot.local-paper-vote",
+      "event_id": "synthetic_distributor-depot",
+      "title": "SYNTHETIC: The Harrowmere Ledger - depot workers vote to authorise strike if no deal",
+      "source_url": "https://synthetic.invalid/faultline/synthetic_distributor-depot/local-paper-vote",
+      "archive_url": null,
+      "published_at": "2026-09-10T18:30:00Z",
+      "observed_at": "2026-11-13T20:00:00Z",
+      "available_at": "2026-09-10T18:30:00Z",
+      "content_sha256": "42a0908b64575400efb95f769c27531bbf30d13d124f9e68a7237573984f102e",
+      "content": "SYNTHETIC DOCUMENT: fictional, written for the FAULTLINE demo. No real company, person, place or event. Members of the Brindlewick North Depot Workers' Association voted 71% in favour of authorising a strike if no agreement is reached by the contract expiry on 20 September, the association said on Thursday. Turnout was 64%. Both the association and Brindlewick management described the talks as constructive, and a session with an independent mediator is scheduled for 17 September. The main open issue is pay for night shifts. (The Harrowmere Ledger, Harrowmere and Brindlewick are fictional.)",
+      "retrospective_unverified": false,
+      "provenance": "SYNTHETIC"
+    },
+    {
+      "evidence_id": "synthetic_distributor-depot.road-notice",
+      "event_id": "synthetic_distributor-depot",
+      "title": "SYNTHETIC: Harrowmere County roads notice - Mill Lane resurfacing near North depot",
+      "source_url": "https://synthetic.invalid/faultline/synthetic_distributor-depot/road-notice",
+      "archive_url": null,
+      "published_at": "2026-09-12T09:00:00Z",
+      "observed_at": "2026-11-13T20:00:00Z",
+      "available_at": "2026-09-12T09:00:00Z",
+      "content_sha256": "132fb4fa9a517433bd4d7b3eb43492d0e044d856fbd4851e0e0efbb2f59f9a1d",
+      "content": "SYNTHETIC DOCUMENT: fictional, written for the FAULTLINE demo. No real company, person, place or event. Harrowmere County (fictional) will resurface Mill Lane, the access road to the Brindlewick North depot, from 15 September for about three weeks. One lane stays open under temporary traffic lights at all times and access to the depot is maintained. Expect delays of up to 30 minutes at peak times.",
+      "retrospective_unverified": false,
+      "provenance": "SYNTHETIC"
+    },
+    {
+      "evidence_id": "synthetic_distributor-depot.backup-supplier-quote",
+      "event_id": "synthetic_distributor-depot",
+      "title": "SYNTHETIC: Corran Valley Foods quote to the demo grocer for backup supply",
+      "source_url": "https://synthetic.invalid/faultline/synthetic_distributor-depot/backup-supplier-quote",
+      "archive_url": null,
+      "published_at": "2026-09-13T16:00:00Z",
+      "observed_at": "2026-11-13T20:00:00Z",
+      "available_at": "2026-09-13T16:00:00Z",
+      "content_sha256": "b4328e9a432d5133b3593da86b504a1e402eaf4d5709f3f28fd6fca21cb901ed",
+      "content": "SYNTHETIC DOCUMENT: fictional, written for the FAULTLINE demo. No real company, person, place or event. Corran Valley Foods (fictional) confirms it can supply the demo grocer's chilled, deli and fresh lines to all three stores within 48 hours of an order, at prices 12% above the grocer's current Brindlewick list prices, plus a one-time account set-up and switching fee of 2,000. The quote is valid for 30 days. Volumes can be split between suppliers.",
+      "retrospective_unverified": false,
+      "provenance": "SYNTHETIC"
+    }
+  ],
+  "market_quotes": [],
+  "curation_notes": {
+    "synthetic": "Everything in this file is SYNTHETIC: an invented question, invented documents and invented names (Brindlewick Provisions, the Brindlewick North Depot Workers' Association, Corran Valley Foods, Harrowmere, The Harrowmere Ledger, Mill Lane). The demo grocer is FAULTLINE's fictional business in data/demo_business.json. Dates are a synthetic timeline, not real events. source_url values use the reserved .invalid domain (RFC 2606), which cannot resolve, so no real site is presented as a source.",
+    "fair_draw": {
+      "scheme": "Commit-then-reveal. A secret 32-byte random seed was generated with Python secrets.token_bytes(32) at 2026-11-13T20:00:29Z, after this rule was written down (the author's statement; git cannot prove that order). Only its SHA-256 commitment is published here; the seed and the drawn answer are in the sealed file, which only core/evaluator.py reads.",
+      "commitment_sha256": "583b87ea7ab1261948541f56ca5a38703efb6cdeef6307a254ab7d3d40d60f38",
+      "commitment_input": "the 32 raw seed bytes (bytes.fromhex(seed_hex)), not the hex text",
+      "draw_input": "the 32 raw seed bytes followed by the ASCII bytes 'faultline-synthetic-draw:synthetic_distributor-depot'",
+      "draw_rule": "h = SHA-256(draw_input) read as a 256-bit big-endian integer (int(hexdigest, 16)). YES if 100 * h < 35 * 2**256, otherwise NO. Exact integer arithmetic, so P(YES) = 0.35 exactly.",
+      "p_draw": 0.35,
+      "seed_location": "data/sealed_outcomes/synthetic_distributor-depot.json, field notes (seed_hex=...)",
+      "why_p_draw": "0.35 is part of the draw rule, written down before the seed was generated (the author's statement; git cannot prove that order). The documents were written to describe a real but minority risk (strike authorised, talks constructive, mediator booked). The draw does not depend on the text, so no forecaster can beat 0.35 in expectation on this case.",
+      "limitation": "The person who generated the seed saw the drawn answer at that moment. The commitment proves the answer was fixed before any forecast and cannot be changed afterwards; it cannot prove that the seed was drawn only once. The author states it was drawn once; nothing in the repository can prove that. The case file, evidence included, was committed about 38 minutes after the seed was generated, so this scheme does not prove the evidence was frozen before the draw."
+    },
+    "market": {
+      "status": "NOT AVAILABLE",
+      "why": "markets.base.NormalizedQuote accepts only venue 'kalshi' or 'polymarket' and a fixed 'market-implied probability' label, and has no provenance field. A synthetic price in that shape would be presented as a real venue's price, so none is included. With no quote the gate reports the market baseline NOT AVAILABLE and the agent_plus_market variant does not run for this case.",
+      "intended_synthetic_price": "If the quote contract gains a clearly SYNTHETIC venue and label, the intended SYNTHETIC price is p_draw = 0.35 (calibrated by construction). No price was typed into this file."
+    },
+    "contamination": "unlikely (never 'none'): the question and documents are invented and the answer is a fresh random draw, so no model can have learned it in pretraining.",
+    "snapshot_hash": "sha256 of the canonical JSON of the gated payload at as_of (evidence plus market_quotes = [], since the market is NOT AVAILABLE), computed with core.temporal_gate and core.provenance",
+    "scoring": "Synthetic. Never pooled with real historical cases (core/evaluator.py refuses a mix) and never counted in the real-case n. See docs/CASES.md, 'Synthetic fallback case'."
+  }
+}

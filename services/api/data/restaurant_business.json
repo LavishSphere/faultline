@@ -1,0 +1,88 @@
+{
+  "provenance": "SYNTHETIC",
+  "description": "Fictional 12-person, single-location, full-service restaurant (\"Demo Bistro\") used as a second FAULTLINE stress-test business (issue #109). Not a real company; no real financial data. Same engine and formulas as the grocer in demo_business.json; only the parameter values differ.",
+  "status": "Proposal for finance-owner review (issue #109). Not signed off. Every value is justified in docs/MATH_MODEL.md §10b, with a fetched public source or the word 'assumption'. Industry ratios are used only to make the shape realistic; the business itself is invented.",
+  "parameter_sources": {
+    "from_MATH_MODEL_section_10b": [
+      "horizon_weeks",
+      "cash_0",
+      "sales_0",
+      "prior_purchases",
+      "inventory_0",
+      "term_loan_principal_1",
+      "revolver_balance_0",
+      "stores[].base_sales",
+      "gross_margin",
+      "same_week_collection",
+      "supplier_lag_weeks",
+      "payroll",
+      "opex",
+      "capex",
+      "expansion_outflow",
+      "expansion_sales",
+      "base_rate",
+      "amortization",
+      "revolver_limit",
+      "revolver_spread",
+      "backup_premium",
+      "backup_switch_fee",
+      "min_cash",
+      "min_inventory",
+      "scenario_parameters.supplier_outage_dependent_share",
+      "optimizer_parameters.purchase_cut_cap_per_week",
+      "optimizer_parameters.payroll_cut_cap",
+      "optimizer_parameters.tie_break_epsilon",
+      "optimizer_parameters.disruption_costs"
+    ],
+    "pre_horizon": {
+      "sales_0": "S_0 = base weekly sales = 20,000 (steady state before week 1)",
+      "prior_purchases": "P_0 = (1 - g) * S_0 = 0.34 * 20,000 = 6,800 (L_p = 1 needs one value)"
+    }
+  },
+  "business": {
+    "provenance": "SYNTHETIC",
+    "horizon_weeks": 26,
+    "cash_0": 45000.0,
+    "sales_0": 20000.0,
+    "prior_purchases": [6800.0],
+    "inventory_0": 6800.0,
+    "term_loan_principal_1": 156000.0,
+    "revolver_balance_0": 0.0,
+    "stores": [
+      {"name": "Demo Bistro", "base_sales": 20000.0}
+    ],
+    "gross_margin": 0.66,
+    "same_week_collection": 0.9,
+    "supplier_lag_weeks": 1,
+    "payroll": 7300.0,
+    "opex": 5400.0,
+    "capex": 0.0,
+    "expansion_outflow": 0.0,
+    "expansion_sales": 0.0,
+    "base_rate": 0.10,
+    "amortization": 0.0,
+    "revolver_limit": 30000.0,
+    "revolver_spread": 0.02,
+    "backup_premium": 0.15,
+    "backup_switch_fee": 500.0,
+    "min_cash": 15000.0,
+    "min_inventory": 4000.0
+  },
+  "scenario_parameters": {
+    "supplier_outage_dependent_share": 0.6
+  },
+  "optimizer_parameters": {
+    "note": "MATH_MODEL §4 inputs for the recovery optimizer (PR #69, not on main yet). BusinessParams has no fields for these, so the simulator does not read this section. Disruption costs reuse the grocer's §10 values unchanged, pending finance-owner review.",
+    "purchase_cut_cap_per_week": 1400.0,
+    "payroll_cut_cap": 0.1,
+    "tie_break_epsilon": 0.0001,
+    "disruption_costs": {
+      "revolver_draw_per_dollar": 0.01,
+      "purchase_cut_per_dollar": 0.05,
+      "defer_capex_per_decision": 1000.0,
+      "backup_supplier_per_decision": 2500.0,
+      "delay_expansion_per_decision": 5000.0,
+      "payroll_cut_per_dollar": 5.0
+    }
+  }
+}

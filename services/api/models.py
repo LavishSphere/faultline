@@ -86,9 +86,14 @@ class ErrorCode(StrEnum):
     MODEL_OUTPUT_INVALID = "MODEL_OUTPUT_INVALID"  # answer failed output validation on every attempt
     PROMPT_TOO_LONG = "PROMPT_TOO_LONG"  # prompt + answer budget exceeds the context window; refused, not truncated
     PROMPT_NOT_VERIFIED = "PROMPT_NOT_VERIFIED"  # cannot confirm the model saw the whole prompt; answer discarded
-    # public mode: replay run / reveal need FAULTLINE_ADMIN_TOKEN (401 none presented, 403 wrong or not configured)
+    # public mode: admin-only routes (replay run / reveal; Live Explore search, #60) need FAULTLINE_ADMIN_TOKEN
     ADMIN_TOKEN_REQUIRED = "ADMIN_TOKEN_REQUIRED"
     PREDICTION_EXISTS = "PREDICTION_EXISTS"  # a forecast with this id is already persisted (append-only store)
+    # Live Explore (routes/explore.py, #60)
+    RATE_LIMITED = "RATE_LIMITED"  # too many requests from this address, or from us upstream (429, Retry-After)
+    LIVE_EXPLORE_UNAVAILABLE = "LIVE_EXPLORE_UNAVAILABLE"  # TAVILY_API_KEY unset, rejected, or over quota (503)
+    LIVE_EXPLORE_UPSTREAM_ERROR = "LIVE_EXPLORE_UPSTREAM_ERROR"  # Tavily unreachable or unexpected answer (502)
+    LIVE_EXPLORE_TIMEOUT = "LIVE_EXPLORE_TIMEOUT"  # Tavily did not answer within the timeout (504)
 
 
 class ApiError(BaseModel):

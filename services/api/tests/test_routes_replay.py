@@ -39,6 +39,7 @@ from core.evaluator import OutcomeVault, build_scorecard
 from core.store import PredictionStore, record_sha256
 from core.temporal_gate import EvidenceStore
 from main import create_app
+from markets.base import MARKET_LABEL
 from routes import replay
 
 OUTCOME_LIKE = re.compile(r"outcome|resolution|resolved|settle|result|winner|final_price", re.IGNORECASE)
@@ -53,9 +54,35 @@ ANSWER = {
     "evidence_ids": ["evid_ok", "evid_edge"],
 }
 
-PRE_REVEAL = {("get", "/api/cases"), ("get", "/api/cases/{case_id}/evidence"), ("post", "/api/replay/run")}
+# /api/integrity (#81) is pre-reveal too: it reports checks about a case and run, never the outcome.
+PRE_REVEAL = {
+    ("get", "/api/cases"),
+    ("get", "/api/cases/{case_id}/evidence"),
+    ("post", "/api/replay/run"),
+    ("get", "/api/integrity"),
+}
 POST_REVEAL = {("post", "/api/replay/{prediction_id}/reveal")}
-NOT_REPLAY = {"/api/health", "/api/simulate", "/api/scenarios", "/api/vc-lenses"}
+# /api/explore/search and /api/explore/analyze are LIVE EXPLORE (#60, #61): current web search and a local-model
+# reading of it, walled off from the replay by tests/test_explore_separation.py (no replay module may reference
+# them, and they serve no case or outcome data).
+# /api/judge-challenges (#123) serves ILLUSTRATIVE shocks for the demo business; no case or outcome data.
+NOT_REPLAY = {
+    "/api/health",
+    "/api/simulate",
+    "/api/optimize",
+    "/api/scenarios",
+    "/api/vc-lenses",
+    # routes/decision.py (#55): SYNTHETIC business payoffs from decision_frames.json; never reads cases or outcomes.
+    "/api/decision",
+    "/api/decision/frames",
+    "/api/explore/search",
+    "/api/explore/analyze",
+    "/api/judge-challenges",
+}
+# routes/benchmark.py (tests/test_routes_benchmark*.py): GET serves recorded post-reveal scorecards, read-only (it
+# never reveals and never opens the store or sealed folder); compute reveals and is admin-only in public mode.
+BENCHMARK_POST_REVEAL_READ_ONLY = {("get", "/api/benchmark")}
+BENCHMARK_ADMIN_REVEALS = {("post", "/api/benchmark/compute")}
 
 RUN_KEYS = {
     "prediction", "skeptic", "market_at_cutoff", "persisted_at", "persist_seq", "record_sha256",
@@ -479,8 +506,12 @@ def test_reveal_contract_and_scores(world):
     assert body["scores"]["accuracy_at_0_5"] == 1.0
     assert set(body["baselines"]) == {"market", "naive"}
     market, naive = body["baselines"]["market"], body["baselines"]["naive"]
-    assert set(market) == {"p_yes", "brier", "log_loss"} and set(naive) == {"brier", "log_loss"}
+    assert set(market) == {"p_yes", "brier", "log_loss", "label", "ref"} and set(naive) == {"brier", "log_loss"}
     assert market["p_yes"] == 0.56  # the gate's pre-reveal baseline, not anything chosen now
+    # The ref frozen in the prediction context before reveal, and the label that ref implies (#117).
+    frozen = PredictionStore(world.db).get_record(pred["prediction_id"]).context.market_baseline_ref
+    assert market["ref"] == frozen == MARKET_REF
+    assert market["label"] == MARKET_LABEL
     assert market["brier"] == pytest.approx((0.56 - 1) ** 2) and market["log_loss"] == pytest.approx(-math.log(0.56))
     assert naive["brier"] == pytest.approx(0.25) and naive["log_loss"] == pytest.approx(math.log(2))
     assert len(PredictionStore(world.db).reveal_times(pred["prediction_id"])) == 1
@@ -559,9 +590,11 @@ def _paths(client: TestClient) -> dict:
 
 def test_every_case_and_replay_route_is_classified(world):
     ops = {(m, path) for path, item in _paths(world.client()).items() for m in item}
-    replay_ops = {op for op in ops if op[1].startswith(("/api/cases", "/api/replay"))}
+    replay_ops = {op for op in ops if op[1].startswith(("/api/cases", "/api/replay", "/api/integrity"))}
     assert replay_ops == PRE_REVEAL | POST_REVEAL, "classify new case/replay routes as pre- or post-reveal"
-    unclassified = {op for op in ops - replay_ops if op[1] not in NOT_REPLAY}
+    benchmark_ops = {op for op in ops if op[1].startswith("/api/benchmark")}
+    assert benchmark_ops == BENCHMARK_POST_REVEAL_READ_ONLY | BENCHMARK_ADMIN_REVEALS, "classify new benchmark routes"
+    unclassified = {op for op in ops - replay_ops - benchmark_ops if op[1] not in NOT_REPLAY}
     assert not unclassified, f"new routes must be classified in this test: {sorted(unclassified)}"
 
 
@@ -600,6 +633,14 @@ def test_pre_reveal_response_schemas_have_no_outcome_fields(world):
     assert "outcome" in _schema_property_names(reveal, components)
 
 
+def _run_pid(responses: list) -> str:
+    """prediction_id of the agent_plus_market run among the pre-reveal responses."""
+    runs = [r for r in responses if r.status_code == 200 and "prediction" in r.json()]
+    return next(r for r in runs if r.json()["prediction"]["variant"] == "agent_plus_market").json()["prediction"][
+        "prediction_id"
+    ]
+
+
 def _pre_reveal_calls(world: World, client: TestClient) -> list:
     """At least one request (success and failure) per pre-reveal route."""
     calls = {
@@ -616,6 +657,13 @@ def _pre_reveal_calls(world: World, client: TestClient) -> list:
             run(client, "agent_only", case_id="no_such_case"),
         ],
     }
+    pid = _run_pid(calls[("post", "/api/replay/run")])
+    calls[("get", "/api/integrity")] = [
+        client.get("/api/integrity"),
+        client.get("/api/integrity", params={"case_id": EVENT}),
+        client.get("/api/integrity", params={"prediction_id": pid}),
+        client.get("/api/integrity", params={"case_id": "no_such_case"}),
+    ]
     assert set(calls) == PRE_REVEAL
     return [resp for group in calls.values() for resp in group]
 
@@ -626,7 +674,7 @@ def test_pre_reveal_endpoints_never_return_sealed_values_before_or_after_a_revea
     assert {r.status_code for r in before} >= {200, 404, 422}
     for resp in before:
         assert_pre_reveal_clean(resp)
-    pid = before[-2].json()["prediction"]["prediction_id"]
+    pid = _run_pid(before)
     revealed = client.post(f"/api/replay/{pid}/reveal")
     assert revealed.status_code == 200 and CANARY in revealed.text  # the canary IS in the sealed file
     for resp in _pre_reveal_calls(world, client):
@@ -653,7 +701,7 @@ def test_pre_reveal_routes_never_open_the_sealed_directory(world, monkeypatch):
     assert any("demo_cases" in p for p in opened)  # the probe sees the case reads
     assert not [p for p in opened if "sealed_outcomes" in p.casefold()]
 
-    pid = responses[-2].json()["prediction"]["prediction_id"]
+    pid = _run_pid(responses)
     assert client.post(f"/api/replay/{pid}/reveal").status_code == 200
     assert [p for p in opened if "sealed_outcomes" in p]  # ... and would have caught a sealed read
 
