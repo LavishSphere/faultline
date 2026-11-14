@@ -25,6 +25,13 @@ Decisions (one variable vector, §4):
     5. protect payroll: z_t <= 0    6. mu <= C_t    7. B_T <= B_0
     8. purchases non-negative: P_t >= 0, i.e. v_t <= (1 - g) S_t + pi (1 - g) S^core_t lambda_t x_b
   (8 and the 0 in 3 are the §3 physical rules simulate() enforces: no negative purchases or stock.)
+    9. optional DSCR covenant (issue #85; off unless covenant_dscr_min is given): for every rolling window of w weeks
+       a..b inside the horizon (b = w..T, a = b - w + 1) whose term-loan debt service is positive,
+           sum_{t=a..b} OCF_t >= DSCR_min * sum_{t=a..b} DS_t
+       with OCF_t = R_t - P_{t-L_p} - (1 - z_t) W_t - O_t - F_b x_b 1[t=1]   (operating cash flow: before debt
+       service, revolver flows, capex K_t and expansion E_t) and DS_t = J_t + A_t + J^R_t (term-loan interest,
+       scheduled amortization and revolver interest). DSCR_min is a constant, so the row is linear even though J^R_t
+       depends on the revolver balance. It is in the shared constraint set, so it holds in both tie-break stages.
 
 Objective (minimize disruption, tie-break toward more cash):
     J = c_b x_b + c_c x_c + c_e x_e + c_v sum_t v_t + c_y sum_t y_t + c_z sum_t z_t W_t - epsilon mu
@@ -120,6 +127,11 @@ class OptimizerSettings(_Model):
         The fixture's documentation keys ("note", "symbols") are dropped; any other unknown key is an error.
         """
         return cls.model_validate({k: v for k, v in data.items() if k not in _SETTINGS_DOC_KEYS})
+
+
+# §4.9 DSCR covenant: default rolling window w in weeks (about a month, so a breach shows up while the shock is still
+# happening; a quarterly test would be 13). Override with optimize(..., covenant_window_weeks=w).
+DSCR_WINDOW_WEEKS = 4
 
 
 # Documentation-only keys in the ``optimizer_parameters`` section of data/demo_business.json.
@@ -220,14 +232,30 @@ class _Index:
 
 
 class _Problem:
-    """The §4 MILP for one (params, shock, protect_payroll, settings) in scipy.optimize.milp form."""
+    """The §4 MILP for one (params, shock, protect_payroll, settings, covenant) in scipy.optimize.milp form."""
 
     def __init__(
-        self, params: BusinessParams, shock: ScenarioShock, protect_payroll: bool, settings: OptimizerSettings
+        self,
+        params: BusinessParams,
+        shock: ScenarioShock,
+        protect_payroll: bool,
+        settings: OptimizerSettings,
+        covenant_dscr_min: float | None = None,
+        covenant_window_weeks: int = DSCR_WINDOW_WEEKS,
     ) -> None:
         if params.min_cash is None or params.min_inventory is None:
             raise ValueError("optimize() needs params.min_cash (C_min) and params.min_inventory (I_min)")
         T = params.horizon_weeks
+        if covenant_dscr_min is not None and not (np.isfinite(covenant_dscr_min) and covenant_dscr_min > 0.0):
+            raise ValueError(f"covenant_dscr_min must be a finite number > 0 or None, got {covenant_dscr_min!r}")
+        # The window must be a whole number >= 1 even when the covenant is off, so a bad value never passes silently;
+        # the upper bound T applies only when the covenant is on (a short test horizon keeps the default 4).
+        if isinstance(covenant_window_weeks, bool) or not isinstance(covenant_window_weeks, int):
+            raise ValueError(f"covenant_window_weeks must be a whole number, got {covenant_window_weeks!r}")
+        if covenant_window_weeks < 1:
+            raise ValueError(f"covenant_window_weeks must be at least 1, got {covenant_window_weeks}")
+        if covenant_dscr_min is not None and covenant_window_weeks > T:
+            raise ValueError(f"covenant_window_weeks must be between 1 and T = {T}, got {covenant_window_weeks}")
         ix = _Index(T)
         self.params, self.ix, self.T = params, ix, T
         g, a, Lp = params.gross_margin, params.same_week_collection, params.supplier_lag_weeks
@@ -271,6 +299,9 @@ class _Problem:
             hi.append(upper - expr.const)
 
         D = params.term_loan_principal_1
+        ocf: list[_Affine] = []  # §4.9 OCF_t for t = 1..T (list index t - 1)
+        ds: list[_Affine] = []  # §4.9 DS_t = J_t + A_t + J^R_t
+        term_ds: list[float] = []  # J_t + A_t: fixed, does not depend on the decisions
         for t in range(1, T + 1):
             i = t - 1
             C_prev = _var(ix("C", t - 1)) if t > 1 else _Affine(params.cash_0)
@@ -290,17 +321,39 @@ class _Problem:
                 - fee + _var(ix("y", t)) - _var(ix("q", t))
             )
             add_row(_var(ix("C", t)) - rhs, 0.0, 0.0)  # §3 boxed cash recurrence
+            ocf.append(R_t - paid - payroll_paid - _Affine(opex[i]) - fee)  # §4.9 operating cash flow
+            ds.append(_Affine(J + A[i]) + JR)  # §4.9 debt service
+            term_ds.append(J + A[i])
             add_row(_var(ix("B", t)) - B_prev - _var(ix("y", t)) + _var(ix("q", t)), 0.0, 0.0)  # §3 revolver
             add_row(_var(ix("I", t)) - I_prev + _var(ix("v", t)), 0.0, 0.0)  # §3 inventory I_t = I_{t-1} - v_t
             add_row(_var(ix.mu) - _var(ix("C", t)), -np.inf, 0.0)  # §4.6 mu <= C_t
             add_row(P[t], 0.0, np.inf)  # §4.8 P_t >= 0: purchases cannot be negative (MATH_MODEL §3/§4)
             D -= A[i]  # D_{t+1} = D_t - A_t
 
-        A_mat = np.zeros((len(rows), ix.n))
-        for row, coefs in enumerate(rows):
-            for j, c in coefs.items():
-                A_mat[row, j] = c
-        self.constraints = LinearConstraint(A_mat, np.array(lo), np.array(hi))
+        self.constraints = _matrix(rows, lo, hi, ix.n)
+
+        # §4.9 optional DSCR covenant: sum OCF_t - DSCR_min * sum DS_t >= 0 over each rolling window a..b.
+        # A window with no term-loan debt service is not tested: a drawn revolver could still make DS > 0, but the
+        # multiplied-out row would then demand OCF >= DSCR_min * (revolver interest), which is a different covenant.
+        self.covenant_dscr_min = covenant_dscr_min
+        self.covenant_windows: list[tuple[int, int, _Affine]] = []
+        self.covenant: tuple[LinearConstraint, ...] = ()
+        if covenant_dscr_min is not None:
+            w = covenant_window_weeks
+            cov_rows: list[dict[int, float]] = []
+            cov_lo: list[float] = []
+            for last in range(w, T + 1):
+                first = last - w + 1
+                if sum(term_ds[first - 1 : last]) <= 0.0:
+                    continue
+                expr = _Affine()
+                for t in range(first, last + 1):
+                    expr = expr + ocf[t - 1] - ds[t - 1].scale(covenant_dscr_min)
+                self.covenant_windows.append((first, last, expr))
+                cov_rows.append({j: c for j, c in expr.coef.items() if c != 0.0})
+                cov_lo.append(-expr.const)
+            if cov_rows:
+                self.covenant = (_matrix(cov_rows, cov_lo, [np.inf] * len(cov_rows), ix.n),)
 
         # Bounds: §4 decision ranges and hard constraints 1, 2, 3, 5, 7.
         # §4.3 with the §3 physical rule I_t >= 0: a negative I_min can never allow negative stock.
@@ -357,10 +410,12 @@ class _Problem:
         integrality: np.ndarray,
         extra: tuple[LinearConstraint, ...] = (),
         options: dict[str, Any] | None = None,
+        with_covenant: bool = True,
     ):
-        return milp(
-            c, integrality=integrality, bounds=Bounds(lb, ub), constraints=[self.constraints, *extra], options=options
-        )
+        """One milp call over the §3-§4 rows, the §4.9 covenant rows if any (dropped only by the infeasibility
+        diagnostic, with_covenant=False) and ``extra``."""
+        shared = [self.constraints, *(self.covenant if with_covenant else ())]
+        return milp(c, integrality=integrality, bounds=Bounds(lb, ub), constraints=[*shared, *extra], options=options)
 
     def objective(self, sol: np.ndarray) -> float:
         """The §4 objective J of a solution, with mu at its value for the plan, min_t C_t."""
@@ -373,6 +428,15 @@ class _Problem:
         for j in (self.ix.xb, self.ix.xc, self.ix.xe):
             lb[j] = ub[j] = float(round(sol[j]))
         return lb, ub
+
+
+def _matrix(rows: list[dict[int, float]], lo: list[float], hi: list[float], n: int) -> LinearConstraint:
+    """lo <= A x <= hi from sparse rows {column: coefficient}."""
+    A_mat = np.zeros((len(rows), n))
+    for row, coefs in enumerate(rows):
+        for j, c in coefs.items():
+            A_mat[row, j] = c
+    return LinearConstraint(A_mat, np.array(lo), np.array(hi))
 
 
 # --------------------------------------------------------------------------- reading the solution
@@ -409,6 +473,12 @@ def _binding(prob: _Problem, sol: np.ndarray) -> list[str]:
     drew = sum(sol[ix("y", t)] for t in range(1, T + 1)) > BINDING_TOL
     if drew and p.revolver_balance_0 - sol[ix("B", T)] < BINDING_TOL:
         names.append("terminal revolver")
+    # §4.9: the slack is window OCF minus DSCR_min times window debt service, in dollars.
+    names += [
+        f"DSCR covenant, weeks {a}–{b}" if a < b else f"DSCR covenant, week {a}"
+        for a, b, expr in prob.covenant_windows
+        if _value(expr, sol) < BINDING_TOL
+    ]
     return names
 
 
@@ -451,6 +521,8 @@ def optimize(
     settings: OptimizerSettings | None = None,
     *,
     tie_break: bool = True,
+    covenant_dscr_min: float | None = None,
+    covenant_window_weeks: int = DSCR_WINDOW_WEEKS,
 ) -> OptimizationResult:
     """Solve the §4 MILP for this scenario.
 
@@ -460,9 +532,13 @@ def optimize(
     ``settings`` defaults to the MATH_MODEL §10 values (see OptimizerSettings).
     ``tie_break`` (default True) runs the §4 stage-2 tie-break, so equally cheap plans resolve to one fixed plan.
     False returns whichever stage-1 optimum the solver found (same cost; used by tests to check the cost is unchanged).
+    ``covenant_dscr_min`` (default None: no covenant, the model exactly as before) adds the §4.9 DSCR covenant as a
+    hard constraint in both stages: operating cash flow over every rolling ``covenant_window_weeks``-week window must
+    be at least covenant_dscr_min times that window's debt service. Binding windows are reported as
+    "DSCR covenant, weeks a–b".
     """
     settings = settings if settings is not None else OptimizerSettings()
-    prob = _Problem(params, shock, protect_payroll, settings)
+    prob = _Problem(params, shock, protect_payroll, settings, covenant_dscr_min, covenant_window_weeks)
     ix, T = prob.ix, prob.T
     common = dict(scenario_name=shock.name, protect_payroll=protect_payroll)
 
@@ -482,28 +558,40 @@ def optimize(
             solver_message=f"re-solve with fixed yes/no actions failed: {polished.message}",
             **common,
         )
-    sol = polished.x
+    stage1 = polished.x
     message = str(res.message)
+    sol = stage1
     if tie_break:
-        sol, note = _tie_break(prob, sol)
+        sol, note = _tie_break(prob, stage1)
         if note:
             message = f"{message}; {note}"
 
-    plan, actions = _plan_and_actions(prob, sol)
-    cash = [float(sol[ix("C", t)]) for t in range(1, T + 1)]
-    try:
-        check = simulate(params, shock, plan)
-    except ValueError as exc:  # simulate() rejects physically impossible plans (§3); never report one as OPTIMAL
-        return OptimizationResult(
-            status=SOLVER_ERROR, solver_message=f"simulate() rejected the solver's plan: {exc}; plan withheld", **common
-        )
-    gap = max(abs(s - c) for s, c in zip(check.cash, cash, strict=True))
-    if gap > AGREEMENT_TOL:
-        return OptimizationResult(
-            status=SOLVER_ERROR,
-            solver_message=f"solver cash path differs from simulate() by ${gap:.3g} (> {AGREEMENT_TOL}); plan withheld",
-            **common,
-        )
+    def verify(x: np.ndarray):
+        """(plan, actions, cash, problem): problem is None when simulate() reproduces the solver's cash path."""
+        plan, actions = _plan_and_actions(prob, x)
+        cash = [float(x[ix("C", t)]) for t in range(1, T + 1)]
+        try:
+            check = simulate(params, shock, plan)
+        except ValueError as exc:  # simulate() rejects physically impossible plans (§3); never report one as OPTIMAL
+            return plan, actions, cash, f"simulate() rejected the solver's plan: {exc}"
+        gap = max(abs(s - c) for s, c in zip(check.cash, cash, strict=True))
+        if gap > AGREEMENT_TOL:
+            return plan, actions, cash, f"solver cash path differs from simulate() by ${gap:.3g} (> {AGREEMENT_TOL})"
+        return plan, actions, cash, None
+
+    plan, actions, cash, problem = verify(sol)
+    if problem is not None and sol is not stage1:
+        # §4 tie-break guarantee: if the stage-2 plan fails any check, report the (equally cheap) stage-1 plan instead.
+        sol = stage1
+        plan, actions, cash, stage1_problem = verify(sol)
+        if stage1_problem is None:
+            message = (
+                f"{res.message}; tie-break not applied (stage-2 plan failed the simulate() check: {problem}); "
+                "an equally cheap stage-1 plan is reported"
+            )
+        problem = stage1_problem
+    if problem is not None:
+        return OptimizationResult(status=SOLVER_ERROR, solver_message=f"{problem}; plan withheld", **common)
 
     min_cash = min(cash)
     disruption_cost = float(prob.c_disruption @ sol)
@@ -555,8 +643,23 @@ def _tie_break(prob: _Problem, sol1: np.ndarray) -> tuple[np.ndarray, str | None
 
 
 def _infeasible(prob: _Problem, message: str, common: dict[str, Any]) -> OptimizationResult:
-    """NO FEASIBLE PLAN, plus the diagnostic: maximize mu with the liquidity floor removed (all else unchanged)."""
+    """NO FEASIBLE PLAN, plus the diagnostic: maximize mu with the liquidity floor removed (all else unchanged).
+
+    With the §4.9 covenant on, the diagnostic keeps it, and the text also says whether a plan would exist without it.
+    """
     ix, T = prob.ix, prob.T
+    covenant_note = ""
+    if prob.covenant:
+        alone = prob.solve(prob.c, prob.lb, prob.ub, prob.integrality, with_covenant=False)
+        if alone.status == 0:
+            covenant_note = (
+                f" Without the DSCR covenant (DSCR_min = {prob.covenant_dscr_min:g}) a plan would exist: the covenant"
+                " is what makes this scenario infeasible."
+            )
+        elif alone.status == 2:
+            covenant_note = " The scenario is infeasible even without the DSCR covenant."
+        else:
+            covenant_note = f" Whether a plan exists without the DSCR covenant: NOT AVAILABLE ({alone.message})."
     lb = prob.lb.copy()
     for t in range(1, T + 1):
         lb[ix("C", t)] = -np.inf
@@ -569,7 +672,7 @@ def _infeasible(prob: _Problem, message: str, common: dict[str, Any]) -> Optimiz
             f"No plan keeps cash at or above C_min = ${prob.params.min_cash:,.2f} in every week. The highest minimum "
             f"cash any plan can reach is ${best:,.2f}: the floor would have to be lowered to that value for a plan "
             "to exist."
-        )
+        ) + covenant_note
         return OptimizationResult(
             status=NO_FEASIBLE_PLAN,
             solver_message=str(message),
@@ -577,8 +680,11 @@ def _infeasible(prob: _Problem, message: str, common: dict[str, Any]) -> Optimiz
             diagnostic=text,
             **common,
         )
+    blockers = "facility limit or terminal revolver condition"
+    if prob.covenant:
+        blockers = "facility limit, terminal revolver condition or DSCR covenant"
     text = (
-        "NOT AVAILABLE: no plan is feasible even without the liquidity floor (the inventory floor, facility limit or "
-        f"terminal revolver condition cannot be met). Solver: {diag.message}"
+        f"NOT AVAILABLE: no plan is feasible even without the liquidity floor (the inventory floor, {blockers} cannot "
+        f"be met). Solver: {diag.message}" + covenant_note
     )
     return OptimizationResult(status=NO_FEASIBLE_PLAN, solver_message=str(message), diagnostic=text, **common)
