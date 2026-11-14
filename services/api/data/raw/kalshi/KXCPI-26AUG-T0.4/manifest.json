@@ -1,0 +1,32 @@
+{
+  "entries": [
+    {
+      "bytes": 15788,
+      "collected_at": "2026-11-13T17:58:54.579935+00:00",
+      "endpoint": "kalshi.historical_candlesticks",
+      "http_status": 200,
+      "notes": {
+        "collector": "scripts/collect_market_snapshots.py",
+        "data_tier": "historical",
+        "kalshi_market_settled_cutoff": "2026-09-13T00:00:00+00:00",
+        "plan_group": "CPI MoM 2026-08 (august-inflation-us-monthly-1786474662954)",
+        "plan_leg": "\u22650.5% == Kalshi Above 0.4%",
+        "points_in_response_set": 49,
+        "reference_close": "2026-09-11T12:25:00+00:00",
+        "venue_scheduled_close": "2026-09-11T12:25:00+00:00",
+        "window_end": "2026-09-04T00:00:00+00:00",
+        "window_rule": "T-7d: end = 00:00Z of (reference_close - 7d), lookback 3d",
+        "window_start": "2026-09-01T00:00:00+00:00"
+      },
+      "params": {
+        "end_ts": 1788480000,
+        "period_interval": 60,
+        "start_ts": 1788220800
+      },
+      "path": "kalshi/KXCPI-26AUG-T0.4/20261113T175854579935Z.json",
+      "provenance": "REAL HISTORICAL",
+      "sha256": "84d38adeeb31feef5104faecfaa107a2f2d1082c8e3c44b586874575f886f09a",
+      "url": "https://external-api.kalshi.com/trade-api/v2/historical/markets/KXCPI-26AUG-T0.4/candlesticks"
+    }
+  ]
+}

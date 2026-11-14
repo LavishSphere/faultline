@@ -17,6 +17,7 @@ from __future__ import annotations
 
 import dataclasses
 import json
+import re
 from pathlib import Path
 
 import pytest
@@ -246,3 +247,111 @@ def test_supply_disruption_liquidity_hedge_only_costs_carry():
         assert ev["WAIT"].value_if_yes - ev["HEDGE"].value_if_yes == pytest.approx(REVOLVER_CARRY, abs=1e-6)
         assert ev["WAIT"].value_if_no - ev["HEDGE"].value_if_no == pytest.approx(REVOLVER_CARRY, abs=1e-6)
         assert evaluate(FRAMES["supply-disruption"], p).recommendation != "HEDGE"
+
+
+# ---------------------------------------------------------------- which NO outcome a frame models (review of PR #71)
+
+
+@pytest.mark.parametrize("frame_id", list(FRAMES))
+def test_every_frame_says_which_no_outcome_it_models(frame_id):
+    frame = FRAMES[frame_id]
+    assert frame["no_state_models"].strip()
+    if "not_modelled_note" in frame:
+        assert frame["not_modelled_note"].startswith("NOT AVAILABLE: ")
+
+
+def test_fomc_no_is_a_cut_or_a_hike_but_only_the_cut_is_modelled():
+    """The real FOMC cases (#20) resolve NO if EITHER bound changes, so a NO can be a hike. The frame models only the
+    planned 25bp cut; a hike must show NOT AVAILABLE at reveal, never a regret for a cut that did not happen."""
+    fomc = FRAMES["fomc-rate-decision"]
+    assert "cut or a hike" in fomc["no_means"]
+    assert fomc["no_state_models"] == "cut"
+    assert fomc["not_modelled_note"] == "NOT AVAILABLE: this frame does not model a hike"
+
+
+# ---------------------------------------------------------------- forecast_sensitive flag (review of PR #71)
+
+P_GRID = [k / 20 for k in range(21)]
+
+
+@pytest.mark.parametrize("frame_id", list(FRAMES))
+def test_forecast_sensitive_flag_matches_the_engine(frame_id):
+    """forecast_sensitive is true exactly when the recommended policy changes somewhere on p = 0, 0.05, ..., 1,
+    i.e. when the frame has a break-even p* (test_supply_disruption_break_even_probability,
+    test_rate_and_cpi_frames_have_no_break_even). A frame whose answer ignores the forecast must say so."""
+    frame = FRAMES[frame_id]
+    recommendations = {evaluate(frame, p).recommendation for p in P_GRID}
+    assert frame["forecast_sensitive"] is (len(recommendations) > 1)
+    if not frame["forecast_sensitive"]:
+        assert "does not depend on the forecast" in frame["caveat"]
+
+
+# ---------------------------------------------------------------- typed fee amounts match the engine (review of PR #71)
+
+NUMBER = re.compile(r"\d[\d,]*(?:\.\d+)?")
+
+
+def final_number(text: str) -> float:
+    return float(NUMBER.findall(text)[-1].replace(",", ""))
+
+
+def value(frame_id: str, policy: str, shock: dict) -> float:
+    """V(a, y) = min_t C_t from the engine, for one policy under one shock (MATH_MODEL §8)."""
+    plan = next(p["plan"] for p in FRAMES[frame_id]["policies"] if p["name"] == policy)
+    res = simulate(BUSINESS, ScenarioShock.model_validate(shock), ActionPlan.model_validate(plan))
+    return min(res.cash)
+
+
+def yes_channels(frame_id: str, channels: tuple[str, ...]) -> dict:
+    """shock_if_yes with only the named channels (rate / demand / supplier) switched on."""
+    return {k: v for k, v in FRAMES[frame_id]["shock_if_yes"].items() if k == "name" or k in channels}
+
+
+def engine_amount(frame_id: str, policy: str, check: tuple) -> float:
+    no = FRAMES[frame_id]["shock_if_no"]
+    if check[0] == "yes":  # cost that only hits in YES: V(a, NO) - V(a, YES restricted to the channel)
+        return value(frame_id, policy, no) - value(frame_id, policy, yes_channels(frame_id, check[1]))
+    # cost paid in both states: V(WAIT, NO) - V(a, NO)
+    return value(frame_id, "WAIT", no) - value(frame_id, policy, no)
+
+
+FEE_CHECKS = {
+    **{("fomc-rate-decision", a, "Extra term-loan interest if the Fed holds"): ("yes", ("rate",))
+       for a in POLICY_NAMES},
+    **{("cpi-surprise", a, "Extra term-loan interest if the print is hot"): ("yes", ("rate",)) for a in POLICY_NAMES},
+    **{("cpi-surprise", a, "Lost gross margin on lower demand if the print is hot"): ("yes", ("demand",))
+       for a in POLICY_NAMES},
+    ("supply-disruption", "ACT", "Backup-supplier switching fee F_b (MATH_MODEL §10)"): ("both",),
+    ("supply-disruption", "ACT", "Backup premium pi on outage-share purchases (MATH_MODEL §10)"):
+        ("yes", ("supplier",)),
+    ("supply-disruption", "WAIT", "Lost gross margin on outage-share sales"): ("yes", ("supplier",)),
+    ("supply-disruption", "HEDGE", "Revolver interest J^R_t at r + s_R = 10.0%"): ("both",),
+    ("supply-disruption", "HEDGE", "Lost gross margin on outage-share sales"): ("yes", ("supplier",)),
+}
+
+
+def test_every_in_payoff_fee_has_an_engine_check():
+    in_payoff = {(f["id"], p["name"], fee["item"])
+                 for f in FRAMES_DOC["frames"] for p in f["policies"] for fee in p["fees"] if fee["in_payoff"]}
+    assert in_payoff == set(FEE_CHECKS)
+
+
+@pytest.mark.parametrize(("frame_id", "policy", "item"), list(FEE_CHECKS))
+def test_typed_fee_amount_matches_engine_difference(frame_id, policy, item):
+    """The last number typed in each in_payoff fee (e.g. '... = 721.15') equals the engine's cash difference to 0.01."""
+    fee = next(fee for p in FRAMES[frame_id]["policies"] if p["name"] == policy for fee in p["fees"]
+               if fee["item"] == item)
+    expected = engine_amount(frame_id, policy, FEE_CHECKS[(frame_id, policy, item)])
+    assert final_number(fee["amount"]) == pytest.approx(expected, abs=0.01)
+
+
+@pytest.mark.parametrize("frame_id", list(FRAMES))
+def test_typed_shock_total_matches_engine(frame_id):
+    """shock_rationale.if_yes ends with the total cash hit ('... 721.15 lower cash by week 26'): it must equal
+    V(WAIT, NO) - V(WAIT, YES) from the engine to 0.01."""
+    text = FRAMES[frame_id]["shock_rationale"]["if_yes"]
+    typed = re.search(r"([\d,]+(?:\.\d+)?) lower cash by week 26", text)
+    assert typed, text
+    frame = FRAMES[frame_id]
+    expected = value(frame_id, "WAIT", frame["shock_if_no"]) - value(frame_id, "WAIT", frame["shock_if_yes"])
+    assert float(typed.group(1).replace(",", "")) == pytest.approx(expected, abs=0.01)

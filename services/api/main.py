@@ -7,7 +7,7 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from config import get_settings
 from errors import FaultlineError, faultline_error_handler
-from routes import cases, health, research, scenarios, simulate
+from routes import cases, health, replay, research, scenarios, simulate
 
 
 def create_app() -> FastAPI:
@@ -29,6 +29,7 @@ def create_app() -> FastAPI:
     app.include_router(scenarios.router, prefix="/api")
     app.include_router(research.router, prefix="/api")
     app.include_router(cases.router, prefix="/api")
+    app.include_router(replay.router, prefix="/api")
     return app
 
 
