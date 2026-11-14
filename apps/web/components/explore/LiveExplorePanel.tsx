@@ -41,7 +41,7 @@ function LiveExploreBadge() {
   );
 }
 
-function ExternalLink({ href, children }: { href: string; children: ReactNode }) {
+export function ExternalLink({ href, children }: { href: string; children: ReactNode }) {
   return (
     <a
       href={href}
@@ -56,7 +56,7 @@ function ExternalLink({ href, children }: { href: string; children: ReactNode })
   );
 }
 
-function host(url: string): string {
+export function host(url: string): string {
   try {
     return new URL(url).host;
   } catch {
@@ -107,7 +107,7 @@ function ResultCard({ item, index }: { item: ExploreSearchItem; index: number })
   );
 }
 
-function failureHeading(f: ExploreFailure): string {
+export function failureHeading(f: ExploreFailure): string {
   switch (f.kind) {
     case "unavailable":
       return "Live Explore unavailable";
@@ -160,7 +160,7 @@ function failureNote(f: ExploreFailure): string | null {
   }
 }
 
-function FailureReport({ failure }: { failure: ExploreFailure }) {
+export function FailureReport({ failure }: { failure: ExploreFailure }) {
   const soft = failure.kind === "unavailable" || failure.kind === "admin_only" || failure.kind === "validation";
   const note = failureNote(failure);
   return (

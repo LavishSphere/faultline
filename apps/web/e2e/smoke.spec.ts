@@ -288,3 +288,197 @@ test.describe("DECISION · ACT / WAIT / HEDGE", () => {
     expect(overflow).toBeLessThanOrEqual(0);
   });
 });
+
+test.describe("LIVE EXPLORE", () => {
+  const ANALYZE_URL = `${E2E_API_BASE}/api/explore/analyze`;
+  const HEALTH_URL = `${E2E_API_BASE}/api/health`;
+
+  test("phone width: the screen fits 390 px with no horizontal scroll", async ({ page }) => {
+    await page.setViewportSize({ width: 390, height: 844 });
+    await page.goto("/explore/");
+    await expect(page.locator("#explore-decision")).toBeVisible();
+    await expect(page.getByText("Search powered by Tavily", { exact: true })).toBeVisible();
+    const overflow = await page.evaluate(() => document.documentElement.scrollWidth - window.innerWidth);
+    expect(overflow, "horizontal overflow in px").toBeLessThanOrEqual(0);
+  });
+
+  test("without TAVILY_API_KEY the analysis is honestly unavailable and nothing is simulated", async ({ page }) => {
+    const health = (await (await page.request.get(HEALTH_URL)).json()) as { optional_keys: { tavily_api_key: boolean } };
+    test.skip(health.optional_keys.tavily_api_key, "a Tavily key is configured on the e2e API; this case needs none");
+
+    const posts: string[] = [];
+    page.on("request", (r) => {
+      if (r.method() === "POST" && r.url().startsWith(E2E_API_BASE)) posts.push(new URL(r.url()).pathname);
+    });
+    await page.goto("/explore/");
+    await expect(page.getByText("No decision analyzed yet")).toBeVisible();
+    await page.waitForTimeout(300);
+    expect(posts, "nothing is sent on page load").toEqual([]);
+
+    await page.locator("#explore-decision").fill("Should we open a third store while our loan resets?");
+    const answered = page.waitForResponse((r) => r.url() === ANALYZE_URL);
+    await page.getByRole("button", { name: "Research and analyze" }).click();
+    const res = await answered;
+    expect(res.status()).toBe(503);
+    expect(((await res.json()) as { code: string }).code).toBe("LIVE_EXPLORE_UNAVAILABLE");
+
+    await expect(page.getByText("Live Explore unavailable", { exact: true })).toBeVisible();
+    await expect(page.getByText(/Set a valid TAVILY_API_KEY/)).toBeVisible();
+    await expect(page.getByRole("button", { name: /Confirm inputs/ })).toHaveCount(0);
+    expect(posts).toEqual(["/api/explore/analyze"]);
+  });
+
+  /**
+   * A filled analysis, served by intercepting the analyze request (no Tavily key or model in e2e). TEST FIXTURE:
+   * shaped like routes/explore.py `ExploreAnalysis`, with unbreakable URLs and hashes to provoke overflow. Its
+   * numbers are scenario INPUTS; no result figure is asserted and Confirm is never clicked.
+   */
+  function filledAnalysis(fromModel: boolean) {
+    const at = "2026-11-14T15:00:00Z";
+    const long = (i: number) => `https://news${i}.example.test/${"averyveryverylongpathsegmentwithoutanybreaks".repeat(4)}`;
+    const sources = [1, 2].map((i) => ({
+      source_id: `S${i}`, title: `TEST FIXTURE headline ${"x".repeat(80)}`, url: long(i),
+      snippet: `TEST FIXTURE snippet ${"y".repeat(150)}`, score: 0.5, published_at: null, published_at_raw: null,
+      retrieved_at: at,
+    }));
+    const params = [
+      { block: "rate", param: "delta_rate", unit: "Δr", integer: false, min: 0.0025, default: 0.005, max: 0.01, worse_when: "higher" },
+      { block: "rate", param: "start_week", unit: "t", integer: true, min: 1, default: 1, max: 7, worse_when: "lower" },
+    ];
+    const suggested = params.map((p, i) => ({
+      ...p,
+      value: p.default,
+      source: fromModel && i === 0 ? "model" : "guidance_default",
+      model_value: fromModel && i === 0 ? p.default : null,
+      rationale: fromModel && i === 0 ? `TEST FIXTURE rationale ${"z".repeat(120)}` : null,
+      note: null,
+    }));
+    return {
+      mode: "live_explore", label: "LIVE EXPLORE: current, not point-in-time", provider: "tavily",
+      attribution: "Search powered by Tavily", decision_text: "TEST FIXTURE decision", retrieved_at: at, cached: false,
+      status: "ok", status_message: null, sources,
+      evidence: sources.map((s) => ({
+        claim: `TEST FIXTURE claim ${"w".repeat(90)}`, source_id: s.source_id, source_url: s.url, source_title: s.title,
+        snippet: s.snippet, published_at: null, published_at_raw: null, retrieved_at: at,
+      })),
+      rejected_claims: [{ claim: "TEST FIXTURE rejected", source_url: long(9), reason: "unknown_url", message: "not returned" }],
+      suggestion: {
+        label: fromModel ? "MODEL-SUGGESTED, HUMAN TO CONFIRM" : "GUIDANCE DEFAULTS, HUMAN TO CONFIRM",
+        values_from_model: fromModel ? 1 : 0,
+        category_id: "central-bank-rate-surprise", category_name: "Central-bank rate surprise", parameters: suggested,
+        shock: { name: "fixture", rate: { delta_rate: 0.005, start_week: 1 }, demand: null, supplier: null },
+        notes: fromModel ? [] : ["The model gave no usable numbers; these are guidance defaults."],
+      },
+      model: {
+        agent_model: "ollama/fixture", model_tag: "fixture", model_digest: "d".repeat(64), temperature: 0, seed: 1,
+        attempts: 1, prompt_sha256: "a".repeat(64), sources_sha256: "b".repeat(64), raw_output_sha256: "c".repeat(64),
+        latency_ms: 1,
+      },
+      guidance: {
+        provenance: "ILLUSTRATIVE", label: "ILLUSTRATIVE: modelling guidance, not forecasts", horizon_weeks: 26,
+        categories: [{ id: "central-bank-rate-surprise", name: "Central-bank rate surprise", news_trigger: "t",
+          timing_guidance: "g", rationale: "r", basis: "b", params }],
+      },
+      notes: [],
+    };
+  }
+
+  test("Confirm sends exactly one simulate and one optimize; the plan shown is the API's; an edit withholds it", async ({ page }) => {
+    const OPTIMIZE_URL = `${E2E_API_BASE}/api/optimize`;
+    const sent: string[] = [];
+    page.on("request", (r) => {
+      if (r.method() === "POST" && (r.url() === SIMULATE_URL || r.url() === OPTIMIZE_URL)) sent.push(new URL(r.url()).pathname);
+    });
+    await page.route(ANALYZE_URL, (route) =>
+      route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        headers: { "access-control-allow-origin": "*" },
+        body: JSON.stringify(filledAnalysis(true)),
+      }),
+    );
+    await page.goto("/explore/");
+    await page.locator("#explore-decision").fill("TEST FIXTURE decision");
+    await page.getByRole("button", { name: "Research and analyze" }).click();
+    await expect(page.locator("#explore-rate-delta_rate")).toBeVisible();
+
+    // Every evidence card leads with its source host and the not-verified note.
+    const hosts = page.getByTestId("evidence-host");
+    await expect(hosts).toHaveCount(2);
+    await expect(hosts.first()).toContainText("news1.example.test");
+    await expect(page.getByText("Web source, not verified by FAULTLINE: check it before relying on it.")).toHaveCount(2);
+
+    await page.waitForTimeout(300);
+    expect(sent, "nothing is simulated or solved before Confirm").toEqual([]);
+    await expect(page.getByTestId("explore-recovery-plan")).toHaveAttribute("data-status", "NOT AVAILABLE");
+
+    const simDone = page.waitForResponse((r) => r.url() === SIMULATE_URL);
+    const optDone = page.waitForResponse((r) => r.url() === OPTIMIZE_URL);
+    await page.getByRole("button", { name: "Confirm inputs and run the engine" }).click();
+    const [sim, opt] = await Promise.all([simDone, optDone]);
+    expect(sim.status()).toBe(200);
+    expect(opt.status()).toBe(200);
+    const optBody = opt.request().postDataJSON() as { shock: unknown; protect_payroll: boolean };
+    expect(optBody.shock, "the optimizer gets exactly the simulated shock").toEqual((sim.request().postDataJSON() as { shock: unknown }).shock);
+    expect(optBody.protect_payroll).toBe(false);
+
+    // The plan shown is what a direct call with the same body returns.
+    const direct = (await (await page.request.post(OPTIMIZE_URL, { data: optBody })).json()) as {
+      status: string;
+      min_cash: number | null;
+      max_feasible_cash_floor: number | null;
+    };
+    const plan = page.getByTestId("explore-recovery-plan");
+    await expect(plan).toHaveAttribute("data-status", direct.status);
+    if (direct.status === "OPTIMAL" && direct.min_cash !== null) {
+      await expect(page.getByTestId("explore-plan-min-cash")).toHaveText(usd(direct.min_cash));
+    } else if (direct.status === "NO FEASIBLE PLAN") {
+      await expect(page.getByTestId("explore-max-feasible-floor")).toHaveText(
+        direct.max_feasible_cash_floor === null ? "NOT AVAILABLE" : usd(direct.max_feasible_cash_floor),
+      );
+    }
+
+    await page.waitForTimeout(500);
+    expect(sent.sort(), "exactly one simulate and one optimize per Confirm").toEqual(["/api/optimize", "/api/simulate"]);
+
+    // Flipping Protect payroll after Confirm withholds the plan and sends nothing until the next Confirm.
+    await page.getByRole("switch", { name: "Protect payroll" }).click();
+    await expect(plan).toHaveAttribute("data-status", "PENDING");
+    await page.waitForTimeout(500);
+    expect(sent.length, "no request after an edit").toBe(2);
+  });
+
+  for (const width of [390, 1920]) {
+    for (const fromModel of [true, false]) {
+      test(`filled analysis at ${width} px (${fromModel ? "model numbers" : "guidance defaults"}): no overflow, honest label`, async ({ page }) => {
+        await page.setViewportSize({ width, height: 900 });
+        await page.route(ANALYZE_URL, (route) =>
+          route.fulfill({
+            status: 200,
+            contentType: "application/json",
+            headers: { "access-control-allow-origin": "*" },
+            body: JSON.stringify(filledAnalysis(fromModel)),
+          }),
+        );
+        await page.goto("/explore/");
+        await page.locator("#explore-decision").fill("TEST FIXTURE decision");
+        await page.getByRole("button", { name: "Research and analyze" }).click();
+        await expect(page.getByText("Scenario inputs · confirm before the engine runs")).toBeVisible();
+        await expect(page.locator("#explore-rate-delta_rate")).toBeVisible();
+
+        const overflow = await page.evaluate(() => document.documentElement.scrollWidth - window.innerWidth);
+        expect(overflow, "horizontal overflow in px").toBeLessThanOrEqual(0);
+
+        const scenario = page.locator("section").filter({ hasText: "Scenario inputs · confirm before the engine runs" });
+        if (fromModel) {
+          await expect(scenario.locator('[data-provenance="MODEL-SUGGESTED"]')).toHaveCount(1);
+          await expect(scenario.getByText(/The local model proposed 1 of these 2 numbers/)).toBeVisible();
+        } else {
+          await expect(scenario.locator('[data-provenance="MODEL-SUGGESTED"]')).toHaveCount(0);
+          await expect(scenario.getByText(/MODEL-SUGGESTED/)).toHaveCount(0);
+          await expect(scenario.getByText(/The model gave no usable numbers; these are guidance defaults\./).first()).toBeVisible();
+        }
+      });
+    }
+  }
+});
