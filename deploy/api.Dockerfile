@@ -3,11 +3,14 @@
 FROM python:3.12.16-slim
 
 # FAULTLINE_MODE=public is the fail-safe default: an image started without it still runs in public mode.
+# FORWARDED_ALLOW_IPS (read by uvicorn): which peers may set the client IP via X-Forwarded-For. The image trusts
+# loopback only; deploy/docker-compose.yml sets it to the pinned `edge` subnet (Caddy). Never a wildcard.
 ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
     PIP_NO_CACHE_DIR=1 \
     PIP_DISABLE_PIP_VERSION_CHECK=1 \
-    FAULTLINE_MODE=public
+    FAULTLINE_MODE=public \
+    FORWARDED_ALLOW_IPS=127.0.0.1
 
 RUN groupadd --system --gid 10001 faultline \
     && useradd --system --uid 10001 --gid 10001 --home-dir /nonexistent --shell /usr/sbin/nologin faultline
@@ -25,6 +28,7 @@ HEALTHCHECK --interval=30s --timeout=5s --start-period=15s --retries=3 \
   CMD ["python", "-c", "import sys, urllib.request; sys.exit(0 if urllib.request.urlopen('http://127.0.0.1:8000/api/health', timeout=4).status == 200 else 1)"]
 
 # One worker: the in-process rate limiter is per worker (docs/DEPLOY.md). --proxy-headers takes the client IP
-# from Caddy's X-Forwarded-For; port 8000 is reachable only from Caddy on the internal `edge` network.
+# from Caddy's X-Forwarded-For, trusted only from FORWARDED_ALLOW_IPS (the `edge` subnet in compose); port 8000
+# is reachable only on the internal networks.
 CMD ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8000", "--workers", "1", \
-     "--proxy-headers", "--forwarded-allow-ips", "*", "--no-server-header"]
+     "--proxy-headers", "--no-server-header"]

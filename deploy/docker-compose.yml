@@ -8,7 +8,14 @@
 #   internet --80/443--> caddy --edge (internal)--> api --models (internal)--> ollama (optional)
 # `edge` and `models` are internal networks: api and ollama have no route to the internet at runtime,
 # so replay inference runs with outbound network disabled (replay-integrity rule).
+#
+# Client IPs: Caddy overwrites X-Forwarded-For with the TCP peer; uvicorn trusts that header ONLY from the `edge`
+# subnet below (FORWARDED_ALLOW_IPS), so no other container (e.g. ollama on `models`) can spoof a client address.
+# The subnet is pinned once here (&edge_subnet) and used twice. If `up` fails with "Pool overlaps", pick another
+# private /28 for this one value (docs/DEPLOY.md).
 name: faultline
+
+x-edge-subnet: &edge_subnet 10.231.80.0/28
 
 services:
   api:
@@ -22,7 +29,7 @@ services:
       FAULTLINE_PUBLIC_ORIGIN: ${FAULTLINE_PUBLIC_ORIGIN:?set FAULTLINE_PUBLIC_ORIGIN in deploy/.env}
       FAULTLINE_CORS_ORIGINS: ${FAULTLINE_CORS_ORIGINS:-}
       FAULTLINE_ADMIN_TOKEN: ${FAULTLINE_ADMIN_TOKEN:-}
-      FAULTLINE_RATE_LIMIT_PER_MIN: ${FAULTLINE_RATE_LIMIT_PER_MIN:-120}
+      FAULTLINE_RATE_LIMIT_PER_MIN: ${FAULTLINE_RATE_LIMIT_PER_MIN:-600}
       FAULTLINE_MAX_BODY_BYTES: ${FAULTLINE_MAX_BODY_BYTES:-65536}
       # The server never writes the OFFICIAL store (lead policy, #57/#130): admin runs and reveals go to a server
       # scratch store in the api-var volume, and FAULTLINE_DEMO_STORE marks it so no computed scorecard served
@@ -30,6 +37,8 @@ services:
       FAULTLINE_PREDICTIONS_DB: /app/var/server/predictions.sqlite3
       FAULTLINE_DEMO_STORE: /app/var/server/predictions.sqlite3
       OLLAMA_BASE_URL: http://ollama:11434
+      # uvicorn --proxy-headers trusts X-Forwarded-For only from Caddy's network (never "*").
+      FORWARDED_ALLOW_IPS: *edge_subnet
       FAULTLINE_OLLAMA_MODEL: ${FAULTLINE_OLLAMA_MODEL:-llama3.1:8b}
     user: "10001:10001"
     read_only: true
@@ -101,6 +110,9 @@ networks:
   public: {}
   edge:
     internal: true
+    ipam:
+      config:
+        - subnet: *edge_subnet
   models:
     internal: true
 
