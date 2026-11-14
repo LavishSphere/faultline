@@ -30,7 +30,7 @@ from routes.benchmark import canon_sha
 
 CANARY = f"CANARY-{uuid.uuid4()}"
 CASE = "synthetic_evt_000"
-TOKEN = "t" * 40
+TOKEN = "9c" * 32  # `openssl rand -hex 32` shape (public mode requires it), not key-shaped
 
 
 def _world(tmp_path, monkeypatch, *, dry_run: bool = False, score: bool = True):

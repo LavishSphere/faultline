@@ -94,6 +94,8 @@ class ErrorCode(StrEnum):
     LIVE_EXPLORE_UNAVAILABLE = "LIVE_EXPLORE_UNAVAILABLE"  # TAVILY_API_KEY unset, rejected, or over quota (503)
     LIVE_EXPLORE_UPSTREAM_ERROR = "LIVE_EXPLORE_UPSTREAM_ERROR"  # Tavily unreachable or unexpected answer (502)
     LIVE_EXPLORE_TIMEOUT = "LIVE_EXPLORE_TIMEOUT"  # Tavily did not answer within the timeout (504)
+    # POST /api/optimize: every solver slot is busy (routes/optimize.py MAX_CONCURRENT_SOLVES); 503 with Retry-After
+    BUSY = "BUSY"
 
 
 class ApiError(BaseModel):

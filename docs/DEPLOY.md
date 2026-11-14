@@ -19,9 +19,35 @@ those live only in the lead's `~/.ssh/config`, Cloudflare, GitHub settings, and 
 | Admin-only routes (table below: model inference, Tavily search, reveals, benchmark compute) | **refused (401/403 `ADMIN_TOKEN_REQUIRED`)** unless `Authorization: Bearer <FAULTLINE_ADMIN_TOKEN>` | open |
 | What the audience sees | the deterministic routes live (simulate, optimize, decision, judge challenges), cases and evidence, recorded scorecards; **no live forecast** (see "The public demo needs recorded data") | everything live, against the laptop's Ollama |
 | CORS allowlist | `FAULTLINE_CORS_ORIGINS`, else `FAULTLINE_PUBLIC_ORIGIN`; https origins only | the same, plus `http://localhost:3000` and `http://127.0.0.1:3000` |
-| Rate limit | 120 requests/min per client IPv4 address, or per IPv6 /64 (`FAULTLINE_RATE_LIMIT_PER_MIN`) | off |
+| Rate limit | 600 requests/min per client IPv4 address, or per IPv6 /64 (`FAULTLINE_RATE_LIMIT_PER_MIN`); `0` is refused (`ConfigError`), so it cannot be switched off | off |
+| `POST /api/optimize` | at most 2 solves at once; a request over the cap waits up to 2 s, then `503 BUSY` with `Retry-After: 2` | same |
+| `GET /api/health` | readiness booleans only (see "Health" below) | full detail (model tags, notices, manifest hash) |
 | Body limit | 64 KiB = 65,536 bytes (`FAULTLINE_MAX_BODY_BYTES`, and Caddy `request_body max_size 64KiB`) | 64 KiB |
 | `/docs`, `/redoc`, `/openapi.json` | **off** (404) | on (generate web types locally) |
+
+Why 600/min: the CASCADE screen sends `POST /api/simulate` and `POST /api/optimize` on every slider change, and
+judges in one room usually reach the API from one NAT address, so they share a single bucket. 120/min ran out
+within a minute of normal use by a few people. 600/min (10/s sustained, burst 600) still stops a single scripted
+client. The limit is per client IP as Caddy saw it (see "Client address" below); a forged `X-Forwarded-For` does
+not move a client to another bucket.
+
+### Health
+
+`GET /api/health` answers 200 even when Ollama is down. Two shapes:
+
+- **public:** booleans only, nothing about which models are installed, no error text, no key details:
+
+  ```json
+  {"status": "ok", "model_ready": false, "ollama_reachable": false, "tavily_configured": false}
+  ```
+
+  `model_ready` = Ollama reachable and `FAULTLINE_OLLAMA_MODEL` installed. `ollama_reachable` = Ollama answered
+  `GET /api/tags`. `tavily_configured` = `TAVILY_API_KEY` is set (Live Explore still needs the admin token, and
+  the api container has no internet route, so it cannot work on the server).
+- **local:** unchanged (`ollama`, `model_ready`, `ollama_status` with `models` / `required_model` / `error`,
+  `optional_keys`, `data_dir_present`, `data_manifest_sha256`, `notices`).
+
+`model_ready` is in both shapes and means the same; the web app reads it (and `ollama_status.models` when present).
 
 ### Public mode: every route
 
@@ -31,7 +57,7 @@ disagree with it, or if this table and the code differ. A new route therefore ca
 
 - **admin**: runs the model, spends paid API credits, writes the prediction store, or reveals sealed outcomes. In
   public mode it needs `Authorization: Bearer <FAULTLINE_ADMIN_TOKEN>`: 401 when no bearer token is presented, 403
-  when it is wrong or none (or a too-short one) is configured, code `ADMIN_TOKEN_REQUIRED`. It is checked twice:
+  when it is wrong or none is configured, code `ADMIN_TOKEN_REQUIRED`. It is checked twice:
   by the edge middleware before routing and body parsing (prefixes `/api/replay`, `/api/explore`,
   `/api/benchmark/compute`, so any new route under `/api/replay` or `/api/explore` starts admin-only; the one exact
   exception is the read-only `GET /api/replay/recorded`), and inside the
@@ -168,6 +194,30 @@ Let's Encrypt). That combination has not been exercised on this server yet, so c
    `x-faultline-mode: public`; `curl -s -o /dev/null -w '%{http_code}\n' -X POST https://api.faultline.khayrul.com/api/replay/run`
    prints `401` (no token presented); `curl -s -o /dev/null -w '%{http_code}\n' https://api.faultline.khayrul.com/docs` prints `404`.
 5. The api has no internet: `docker compose -f deploy/docker-compose.yml exec api python -c "import urllib.request; urllib.request.urlopen('https://example.com', timeout=5)"` must fail.
+6. A forged `X-Forwarded-For` does not dodge the rate limit. From your laptop, 700 requests that each claim a
+   different address must still hit your one bucket, so the counts must include `429`s:
+
+   ```bash
+   for i in $(seq 700); do curl -s -o /dev/null -w "%{http_code}\n" -H "X-Forwarded-For: 10.0.0.$((i%250))" https://api.faultline.khayrul.com/api/scenarios; done | sort | uniq -c
+   ```
+
+   Expect about 600 `200` and the rest `429`. The bucket refills at 10 requests/s, so if each round trip takes
+   longer than about 0.1 s the loop above may see no `429` at all, which proves nothing. Then run it in parallel:
+
+   ```bash
+   seq 700 | xargs -P 25 -I{} sh -c 'curl -s -o /dev/null -w "%{http_code}\n" -H "X-Forwarded-For: 10.0.0.$(({}%250))" https://api.faultline.khayrul.com/api/scenarios' | sort | uniq -c
+   ```
+
+   No `429` in the parallel run means the API is trusting the forged header: check `FORWARDED_ALLOW_IPS` in
+   `docker compose -f deploy/docker-compose.yml config` (must be the `edge` subnet) and that Caddy still has
+   `header_up X-Forwarded-For {remote_host}`. Wait a minute afterwards for your bucket to refill.
+7. Caddy sees the real client address: `docker compose -f deploy/docker-compose.yml logs caddy | grep -oE '"(remote_ip|client_ip)": ?"[^"]+"' | sort | uniq -c`
+   lists your laptop's public IPv4 address (not a Docker address, not a `10.0.0.x` value from step 6). A Docker
+   bridge address there means port publishing is hiding client IPs and every visitor shares one bucket.
+
+If `up` fails with `Pool overlaps with other one on this address space`, another Docker network on the server
+already uses the pinned `edge` subnet. Change the one `x-edge-subnet` value in `deploy/docker-compose.yml` to a
+free private `/28` (it feeds both the network and `FORWARDED_ALLOW_IPS`) in a normal PR.
 
 If step 2 or 3 fails because Caddy has no outbound route or its ports are not reachable, Docker may have picked
 the internal network as Caddy's default gateway. Docker Engine 28+ / Compose 2.33+ let you pin it: in
@@ -186,12 +236,16 @@ Docker writes its own iptables rules, so a port published by a container bypasse
 publishes ports (80/443) and the API and Ollama publish none; do not add `ports:` to them.
 
 For live inference on the server, set a token: `openssl rand -hex 32`, paste the output after
-`FAULTLINE_ADMIN_TOKEN=` in `deploy/.env` (at least 32 characters; a shorter value stops the API at startup), then
+`FAULTLINE_ADMIN_TOKEN=` in `deploy/.env` (public mode accepts exactly that shape, 64 lower-case hex characters;
+anything else stops the API at startup with a `ConfigError`), then
 `docker compose -f deploy/docker-compose.yml up -d`. Note that `docker compose config` prints it.
 
 ## Deploying
 
-Web: merge to `main`. The `pages` workflow builds and deploys; watch it under **Actions > pages**.
+Web: merge to `main`. The `pages` workflow builds and deploys; watch it under **Actions > pages**. Every action in
+it is pinned to a full commit SHA with a `# vX.Y.Z` comment, and checkout runs with `persist-credentials: false`.
+To bump one, resolve the tag with `gh api repos/<owner>/<action>/git/ref/tags/<tag>` (if `object.type` is `tag`,
+follow `gh api repos/<owner>/<action>/git/tags/<sha>` to the commit), and change the SHA and comment together.
 
 API, from the lead's laptop after the merge:
 
@@ -218,12 +272,23 @@ in the remote home) and `FAULTLINE_API_HOST` (otherwise read from the server's `
   allowed header, so a browser page cannot send the admin token cross-origin; use it from a terminal.
 - **Client address:** Caddy overwrites `X-Forwarded-For` with the TCP peer (`header_up X-Forwarded-For
   {remote_host}`), so it carries exactly one, unspoofable entry; uvicorn (`--proxy-headers`) uses it as the client IP.
+  uvicorn trusts that header only from the `edge` network: `deploy/docker-compose.yml` pins the `edge` subnet once
+  (`x-edge-subnet: &edge_subnet`) and passes the same value as `FORWARDED_ALLOW_IPS` (never `*`; the image alone
+  trusts only 127.0.0.1). A request from any other peer, e.g. the Ollama container on `models`, keeps its own
+  address whatever `X-Forwarded-For` it sends. Needs uvicorn 0.31+ (CIDR support), which `pyproject.toml` requires.
+- **Optimizer concurrency:** at most 2 MILP solves run at once (`routes/optimize.py`); a third request waits up to
+  2 s for a slot, then gets `503` with code `BUSY` and `Retry-After: 2`. No plan is invented for it. Waiting
+  requests hold no worker thread.
 - **Beyond CORS** (CORS only binds browsers): per-IP token-bucket rate limit (429 with `Retry-After`), body limit
   (413), and the public-mode admin gate on every admin route in the table above (edge prefixes plus the route-level
   gate), all at the ASGI layer and covered by `services/api/tests/test_deploy_config.py` and
   `services/api/tests/test_public_mode_routes.py`. The limiter is in-process; the image runs one uvicorn
   worker, so the configured number is the real limit (with N workers it would be N times higher).
 - **No API explorer in public:** `/docs`, `/redoc` and `/openapi.json` return 404 in public mode.
+- **Cheap case list:** `GET /api/cases` is cached per process, keyed on the data directory plus file metadata
+  (mtime, ctime, size, inode) of everything under `demo_cases/` and the identity of `sealed_outcomes/`. Building
+  the key opens no file and never lists `sealed_outcomes/`; a changed case file is re-read and re-checked on the
+  next request, and a refused file is never served from the cache.
 
 Admin call (lead's terminal):
 
@@ -301,4 +366,7 @@ internet and `TAVILY_API_KEY`). If Ollama is not running, replay shows `MODEL_UN
   origin must be in the CORS allowlist (`FAULTLINE_PUBLIC_ORIGIN` / `FAULTLINE_CORS_ORIGINS` in `deploy/.env`).
 - Caddy cannot get a certificate: DNS must be DNS only and point at the server; ports 80 and 443 must be open.
 - The API refuses to start with a `ConfigError`: a value in `deploy/.env` is malformed (e.g. an `http://` CORS
-  origin in public mode, a wildcard, a non-numeric port, a non-integer limit, or an admin token under 32 chars). `docker compose -f deploy/docker-compose.yml logs api`.
+  origin in public mode, a wildcard, a non-numeric port, a non-integer limit, `FAULTLINE_RATE_LIMIT_PER_MIN=0`, or an
+  admin token that is not 64 lower-case hex characters). `docker compose -f deploy/docker-compose.yml logs api`.
+- The CASCADE screen shows the optimizer as busy (`503 BUSY`): more than two plans were being solved at that moment.
+  It clears on the next change; nothing is cached or invented in the meantime.

@@ -55,3 +55,14 @@ def _scratch_predictions_db(tmp_path_factory, monkeypatch):
     )
     # A demo shell's FAULTLINE_DEMO_STORE would block every OFFICIAL label (#155); tests that need it set it.
     monkeypatch.delenv("FAULTLINE_DEMO_STORE", raising=False)
+
+
+@pytest.fixture(autouse=True)
+def _fresh_cases_cache():
+    """GET /api/cases keeps a per-process cache (routes.cases.CASES_CACHE); each test starts with it empty, so a
+    test that monkeypatches the loader never sees an answer another test cached."""
+    from routes.cases import CASES_CACHE
+
+    CASES_CACHE.clear()
+    yield
+    CASES_CACHE.clear()

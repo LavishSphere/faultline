@@ -23,7 +23,7 @@ from core.store import PredictionStore
 from core.temporal_gate import EvidenceStore
 from main import create_app
 
-TOKEN = "t" * 40  # test-only admin token (>= 32 chars)
+TOKEN = "c3" * 32  # test-only admin token, `openssl rand -hex 32` shape (public mode requires it)
 
 
 class _Recorder:

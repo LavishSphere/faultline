@@ -51,16 +51,20 @@ class RouteError(Exception):
         message: str,
         status_code: int = 422,
         errors: list[FieldIssue] | None = None,
+        headers: Mapping[str, str] | None = None,
     ) -> None:
         super().__init__(message)
         self.code = code
         self.message = message
         self.status_code = status_code
         self.errors = errors or []
+        self.headers = dict(headers or {})  # e.g. Retry-After on a 503 BUSY
 
     def response(self) -> JSONResponse:
         body = RouteErrorBody(code=self.code, message=self.message, errors=self.errors)
-        return JSONResponse(status_code=self.status_code, content=body.model_dump(mode="json"))
+        return JSONResponse(
+            status_code=self.status_code, content=body.model_dump(mode="json"), headers=self.headers or None
+        )
 
 
 def issues_from(errors: Iterable[Mapping[str, Any]], prefix: tuple[str | int, ...] = ()) -> list[FieldIssue]:

@@ -23,8 +23,8 @@ REPO = Path(__file__).resolve().parents[3]
 PUBLIC_ORIGIN = "https://faultline.example.org"
 OTHER_ORIGIN = "https://evil.example"
 LOCAL_ORIGIN = "http://localhost:3000"
-# Deliberately not key-shaped (CI secrets scan); long enough to pass MIN_ADMIN_TOKEN_LEN.
-ADMIN_TOKEN = "test-admin-token-not-a-real-secret-0123456789"
+# Deliberately not key-shaped (CI secrets scan); the `openssl rand -hex 32` shape public mode requires.
+ADMIN_TOKEN = "e5" * 32
 
 ENV_VARS = (
     "FAULTLINE_MODE",
@@ -275,6 +275,34 @@ def test_public_mode_weak_token_fails_loudly(monkeypatch):
     assert not config.admin_token_matches("short-token")  # and it would never match anyway
 
 
+@pytest.mark.parametrize(
+    "token",
+    [
+        "x" * 64,  # long enough, not hex
+        "E5" * 32,  # upper case
+        "e5" * 31,  # 62 hex characters
+        "e5" * 33,  # 66 hex characters
+        "test-admin-token-not-a-real-secret-0123456789",  # passphrase-like
+    ],
+)
+def test_public_mode_requires_openssl_hex_token(monkeypatch, token):
+    monkeypatch.setenv("FAULTLINE_MODE", "public")
+    monkeypatch.setenv("FAULTLINE_ADMIN_TOKEN", token)
+    with pytest.raises(config.ConfigError, match="hex"):
+        create_app()
+    assert not config.admin_token_matches(token)  # fail closed even without the startup check
+    monkeypatch.setenv("FAULTLINE_MODE", "local")
+    assert config.admin_token_matches(token)  # local mode keeps the length-only rule (the gate is open anyway)
+
+
+def test_public_mode_accepts_openssl_hex_token(monkeypatch):
+    monkeypatch.setenv("FAULTLINE_MODE", "public")
+    monkeypatch.setenv("FAULTLINE_ADMIN_TOKEN", ADMIN_TOKEN)
+    assert config.PUBLIC_ADMIN_TOKEN_PATTERN.fullmatch(ADMIN_TOKEN)
+    assert config.get_settings().admin_token_configured
+    assert config.admin_token_matches(ADMIN_TOKEN)
+
+
 def test_public_mode_disables_api_docs(monkeypatch):
     client = _public_client(monkeypatch)
     for path in ("/docs", "/redoc", "/openapi.json", "/docs/oauth2-redirect"):
@@ -314,9 +342,40 @@ def test_admin_token_never_echoed(monkeypatch):
 
 def test_rate_limit_defaults(monkeypatch):
     monkeypatch.setenv("FAULTLINE_MODE", "public")
-    assert config.get_settings().rate_limit_per_min == config.DEFAULT_PUBLIC_RATE_LIMIT_PER_MIN > 0
+    # 600/min: CASCADE sends simulate + optimize per change and judges share one NAT address (docs/DEPLOY.md).
+    assert config.DEFAULT_PUBLIC_RATE_LIMIT_PER_MIN == 600
+    assert config.get_settings().rate_limit_per_min == config.DEFAULT_PUBLIC_RATE_LIMIT_PER_MIN
     monkeypatch.setenv("FAULTLINE_MODE", "local")
     assert config.get_settings().rate_limit_per_min == 0  # off for the laptop demo
+
+
+def test_public_mode_refuses_to_switch_the_rate_limit_off(monkeypatch):
+    """Fail closed: `FAULTLINE_RATE_LIMIT_PER_MIN=0` in public mode stops the app instead of disabling the limit."""
+    monkeypatch.setenv("FAULTLINE_MODE", "public")
+    monkeypatch.setenv("FAULTLINE_RATE_LIMIT_PER_MIN", "0")
+    with pytest.raises(config.ConfigError, match="FAULTLINE_RATE_LIMIT_PER_MIN=0"):
+        config.get_settings()
+    with pytest.raises(config.ConfigError):
+        create_app()
+    monkeypatch.setenv("FAULTLINE_RATE_LIMIT_PER_MIN", "")  # blank = the default, not 0
+    assert config.get_settings().rate_limit_per_min == config.DEFAULT_PUBLIC_RATE_LIMIT_PER_MIN
+    monkeypatch.setenv("FAULTLINE_RATE_LIMIT_PER_MIN", "1")
+    assert config.get_settings().rate_limit_per_min == 1
+
+
+def test_local_mode_rate_limit_zero_is_still_off(monkeypatch):
+    monkeypatch.setenv("FAULTLINE_MODE", "local")
+    monkeypatch.setenv("FAULTLINE_RATE_LIMIT_PER_MIN", "0")
+    assert config.get_settings().rate_limit_per_min == 0
+    client = TestClient(create_app())
+    assert {client.get("/api/health").status_code for _ in range(5)} == {200}
+
+
+def test_deploy_env_example_uses_the_public_default():
+    env = _read("deploy/.env.example")
+    assert re.search(rf"^FAULTLINE_RATE_LIMIT_PER_MIN={config.DEFAULT_PUBLIC_RATE_LIMIT_PER_MIN}$", env, re.M)
+    compose = _read("deploy/docker-compose.yml")
+    assert f"FAULTLINE_RATE_LIMIT_PER_MIN:-{config.DEFAULT_PUBLIC_RATE_LIMIT_PER_MIN}}}" in compose
 
 
 def test_rate_limit_returns_429_per_ip(monkeypatch):
@@ -476,8 +535,71 @@ def test_api_image_runs_as_non_root_in_public_mode():
     assert "FAULTLINE_MODE=public" in dockerfile
 
 
+def _edge_subnet() -> str:
+    compose = _read("deploy/docker-compose.yml")
+    match = re.search(r"^x-edge-subnet: &edge_subnet (\S+)$", compose, re.M)
+    assert match, "deploy/docker-compose.yml must pin the edge subnet once (x-edge-subnet: &edge_subnet ...)"
+    return match.group(1)
+
+
+def test_forwarded_ips_are_trusted_only_from_the_pinned_edge_subnet():
+    compose = _read("deploy/docker-compose.yml")
+    subnet = ipaddress.ip_network(_edge_subnet())
+    assert subnet.is_private and subnet.prefixlen >= 24
+    edge = compose.split("\n  edge:\n", 1)[1].split("\n  models:", 1)[0]
+    assert "internal: true" in edge and re.search(r"ipam:\s*\n\s*config:\s*\n\s*- subnet: \*edge_subnet", edge)
+    api = compose.split("\n  api:\n", 1)[1].split("\n  caddy:\n", 1)[0]
+    assert "FORWARDED_ALLOW_IPS: *edge_subnet" in api
+    dockerfile = _read("deploy/api.Dockerfile")
+    assert "--forwarded-allow-ips" not in dockerfile and '"*"' not in dockerfile
+    assert "FORWARDED_ALLOW_IPS=127.0.0.1" in dockerfile  # image alone trusts loopback only
+    assert "--proxy-headers" in dockerfile
+
+
+@pytest.mark.parametrize(
+    ("peer", "trusted"),
+    [("caddy", True), ("10.231.81.2", False), ("172.20.0.5", False), ("127.0.0.2", False)],
+)
+def test_uvicorn_honours_x_forwarded_for_only_from_the_edge_subnet(peer, trusted):
+    """The installed uvicorn's own ProxyHeadersMiddleware, with the compose value: an Ollama-network peer cannot
+    choose the client address the rate limiter sees."""
+    import asyncio
+
+    from uvicorn.middleware.proxy_headers import ProxyHeadersMiddleware
+
+    subnet = ipaddress.ip_network(_edge_subnet())
+    host = str(next(subnet.hosts()) + 1) if peer == "caddy" else peer
+    seen: list[tuple[str, int]] = []
+
+    async def app(scope, receive, send):
+        seen.append(scope["client"])
+
+    scope = {
+        "type": "http",
+        "scheme": "http",
+        "client": (host, 40000),
+        "headers": [(b"x-forwarded-for", b"198.51.100.7")],
+    }
+    asyncio.run(ProxyHeadersMiddleware(app, trusted_hosts=_edge_subnet())(scope, None, None))
+    assert seen[0][0] == ("198.51.100.7" if trusted else host)
+
+
+def test_pages_workflow_pins_actions_and_drops_credentials():
+    wf = _read(".github/workflows/pages.yml")
+    uses = re.findall(r"^\s*(?:-\s+)?uses:\s*(\S+)(.*)$", wf, re.M)
+    assert uses
+    for ref, rest in uses:
+        assert re.fullmatch(r"[\w.-]+/[\w.-]+@[0-9a-f]{40}", ref), f"not pinned to a commit SHA: {ref}"
+        assert re.fullmatch(r"\s*# v\d+\.\d+\.\d+", rest), f"missing `# vX.Y.Z` comment: {ref}"
+    checkout = re.search(r"uses: actions/checkout@\S+.*\n\s+with:\s*\n\s+persist-credentials: false", wf)
+    assert checkout, "actions/checkout must set persist-credentials: false"
+
+
+EDGE_SUBNET = ipaddress.ip_network(_edge_subnet())
 ALLOWED_IPS = {"127.0.0.1", "0.0.0.0"}
+# Documentation ranges, plus the private Docker subnet pinned for the internal `edge` network (not a server address).
 DOCUMENTATION_NETS = [ipaddress.ip_network(n) for n in ("192.0.2.0/24", "198.51.100.0/24", "203.0.113.0/24")]
+DOCUMENTATION_NETS.append(EDGE_SUBNET)
 DEPLOY_FILES = [
     "deploy/docker-compose.yml",
     "deploy/Caddyfile",

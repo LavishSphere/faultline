@@ -8,13 +8,14 @@ Modes (docs/DEPLOY.md):
 - `local` (default for `make api` / `make demo`): live replay enabled, CORS also allows the localhost web app,
   no rate limit.
 - `public` (baked into the deploy image): model inference (`/api/replay/run`) requires FAULTLINE_ADMIN_TOKEN,
-  CORS allows only https origins, per-IP rate limiting is on.
+  CORS allows only https origins, per-IP rate limiting is on and cannot be switched off (0 is a ConfigError).
 """
 
 from __future__ import annotations
 
 import hmac
 import os
+import re
 from collections.abc import Mapping
 from dataclasses import dataclass
 from pathlib import Path
@@ -37,11 +38,16 @@ Mode = Literal["public", "local"]
 MODES: tuple[Mode, ...] = ("public", "local")
 DEFAULT_MODE: Mode = "local"
 
-DEFAULT_PUBLIC_RATE_LIMIT_PER_MIN = 120
+# 600/min per client IP (10/s, burst 600). CASCADE sends POST /api/simulate plus POST /api/optimize on every
+# slider change, and judges in one room usually share one NAT address, so 120/min ran out mid-demo (docs/DEPLOY.md).
+DEFAULT_PUBLIC_RATE_LIMIT_PER_MIN = 600
 DEFAULT_MAX_BODY_BYTES = 64 * 1024
 # Shorter tokens never match (fail closed); in public mode a set-but-short token is a ConfigError.
 # Generate with `openssl rand -hex 32`.
 MIN_ADMIN_TOKEN_LEN = 32
+# Public mode also requires exactly the `openssl rand -hex 32` shape: 64 lower-case hex characters. Anything else
+# (a passphrase, a pasted-with-quotes value, upper case) is a ConfigError at startup and never matches.
+PUBLIC_ADMIN_TOKEN_PATTERN = re.compile(r"^[0-9a-f]{64}$")
 
 
 class ConfigError(ValueError):
@@ -157,18 +163,44 @@ def _non_negative_int(name: str, default: int) -> int:
 
 
 def _admin_token() -> str:
+    """The configured token if it is strong enough to compare against, else "" (nothing ever matches)."""
     token = os.environ.get("FAULTLINE_ADMIN_TOKEN", "").strip()
-    return token if len(token) >= MIN_ADMIN_TOKEN_LEN else ""
+    if len(token) < MIN_ADMIN_TOKEN_LEN:
+        return ""
+    public = os.environ.get("FAULTLINE_MODE", "").strip().lower() == "public"
+    if public and not PUBLIC_ADMIN_TOKEN_PATTERN.fullmatch(token):
+        return ""  # fail closed even if a caller skipped get_settings()
+    return token
 
 
 def _check_admin_token(mode: Mode) -> None:
     """A set-but-weak token in public mode is a mistake, not "inference off": refuse to start."""
     token = os.environ.get("FAULTLINE_ADMIN_TOKEN", "").strip()
-    if mode == "public" and token and len(token) < MIN_ADMIN_TOKEN_LEN:
+    if mode != "public" or not token:
+        return
+    if len(token) < MIN_ADMIN_TOKEN_LEN:
         raise ConfigError(
             f"FAULTLINE_ADMIN_TOKEN is set but shorter than {MIN_ADMIN_TOKEN_LEN} characters "
             "(generate one with `openssl rand -hex 32`, or leave it empty to keep inference disabled)."
         )
+    if not PUBLIC_ADMIN_TOKEN_PATTERN.fullmatch(token):
+        raise ConfigError(
+            "FAULTLINE_ADMIN_TOKEN must be 64 lower-case hex characters in public mode "
+            "(the output of `openssl rand -hex 32`), or empty to keep inference disabled."
+        )
+
+
+def _rate_limit_per_min(mode: Mode) -> int:
+    """Public: default DEFAULT_PUBLIC_RATE_LIMIT_PER_MIN, and 0 ("off") is refused (fail closed). Local: off."""
+    if mode != "public":
+        return _non_negative_int("FAULTLINE_RATE_LIMIT_PER_MIN", 0)
+    value = _non_negative_int("FAULTLINE_RATE_LIMIT_PER_MIN", DEFAULT_PUBLIC_RATE_LIMIT_PER_MIN)
+    if value == 0:
+        raise ConfigError(
+            "FAULTLINE_RATE_LIMIT_PER_MIN=0 would switch the per-IP rate limit off, which public mode does not allow. "
+            f"Leave it empty for the default ({DEFAULT_PUBLIC_RATE_LIMIT_PER_MIN}/min) or set a positive number."
+        )
+    return value
 
 
 def admin_token_matches(presented: str | None) -> bool:
@@ -183,7 +215,6 @@ def get_settings() -> Settings:
     data_dir = os.environ.get("FAULTLINE_DATA_DIR", "").strip()
     mode = _mode()
     _check_admin_token(mode)
-    default_rate = DEFAULT_PUBLIC_RATE_LIMIT_PER_MIN if mode == "public" else 0
     max_body_bytes = _non_negative_int("FAULTLINE_MAX_BODY_BYTES", DEFAULT_MAX_BODY_BYTES)
     if max_body_bytes == 0:
         raise ConfigError("FAULTLINE_MAX_BODY_BYTES must be at least 1.")
@@ -196,7 +227,7 @@ def get_settings() -> Settings:
         mode=mode,
         cors_origins=_cors_origins(mode),
         admin_token_configured=bool(_admin_token()),
-        rate_limit_per_min=_non_negative_int("FAULTLINE_RATE_LIMIT_PER_MIN", default_rate),
+        rate_limit_per_min=_rate_limit_per_min(mode),
         max_body_bytes=max_body_bytes,
         predictions_db=predictions_db_from_env(),
         demo_store_set=_is_set("FAULTLINE_DEMO_STORE"),

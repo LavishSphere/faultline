@@ -12,7 +12,7 @@ import pytest
 from starlette.requests import Request
 from test_routes_replay import CANARY, EVENT, make_world, run
 
-TOKEN = "test-admin-token-not-a-real-secret-0123456789"  # not key-shaped; >= 32 chars
+TOKEN = "d4" * 32  # not key-shaped; the `openssl rand -hex 32` shape public mode requires
 GATED = ("run", "reveal")
 
 

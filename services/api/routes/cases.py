@@ -20,14 +20,24 @@ Isolation is structural, in two layers:
 Response models have no outcome-like field at all. Error responses carry only file names, field locations and
 error types, never file contents.
 
+``GET /api/cases`` is cached per process (``_CasesCache``): the key is the data directory plus a metadata-only
+fingerprint (``cases_fingerprint``: ``os.stat`` of ``demo_cases/`` and of every entry under it, and the identity of
+``sealed_outcomes/`` the overlap and inode checks compare against). Building the key never opens a file, and never
+opens or lists ``sealed_outcomes/``. Only successful answers are cached; a refused case file is re-checked on every
+request. The cached answer is the same object the uncached path builds, so the bytes served are identical.
+
 Case file shape (docs/EVALUATION_PROTOCOL.md §7):
 ``{"case": ReplayCase, "evidence": [EvidenceItem], "market_quotes": [NormalizedQuote], "curation_notes": ...}``.
 """
 
 from __future__ import annotations
 
+import os
 import re
-from collections.abc import Mapping
+import stat
+import threading
+from collections import OrderedDict
+from collections.abc import Hashable, Mapping
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Annotated, Any, Literal
@@ -259,6 +269,94 @@ def load_public_cases(settings: Settings) -> list[ReplayCasePublic] | None:
     return [store.public_case(cid) for cid in store.case_ids()]
 
 
+def _stat_key(st: os.stat_result) -> tuple[int, ...]:
+    return (st.st_dev, st.st_ino, st.st_mode, st.st_nlink, st.st_size, st.st_mtime_ns, st.st_ctime_ns)
+
+
+def _path_key(path: Path) -> tuple[Hashable, ...]:
+    """Metadata of one path: its own lstat, and for a symlink also where it points and the target's stat."""
+    try:
+        own = os.lstat(path)
+    except OSError as exc:
+        return (str(path), "missing", type(exc).__name__)
+    if not stat.S_ISLNK(own.st_mode):
+        return (str(path), _stat_key(own))
+    try:
+        target: tuple[Hashable, ...] = (os.readlink(path), str(path.resolve()), _stat_key(os.stat(path)))
+    except OSError as exc:
+        target = ("dangling", type(exc).__name__)
+    return (str(path), _stat_key(own), target)
+
+
+def cases_fingerprint(settings: Settings) -> tuple[Hashable, ...]:
+    """Cache key for GET /api/cases. Metadata only: never opens a file, never lists ``sealed_outcomes/``.
+
+    Covers every input of ``load_evidence_store``: the data directory, ``demo_cases/`` itself (entries added or
+    removed), every entry under it at any depth (mtime_ns, ctime_ns, size, inode, link count, symlink targets), and
+    the identity of ``sealed_outcomes/`` (resolved path and inode), which the overlap and inode refusals compare
+    against. A changed case file changes its mtime/ctime/size, so the next request re-reads and re-checks it.
+    """
+    data_dir = settings.data_dir.absolute()
+    directory = data_dir / CASES_DIR
+    sealed = data_dir / SEALED_DIR
+    try:
+        sealed_id: tuple[Hashable, ...] = (str(sealed.resolve()), _stat_key(os.stat(sealed))[:2])
+    except OSError:
+        sealed_id = (str(sealed), None)
+    entries: list[tuple[Hashable, ...]] = [_path_key(data_dir), _path_key(directory)]
+    if directory.is_dir():
+        entries.append((str(directory.resolve()),))
+        for parent, dirnames, filenames in os.walk(directory, followlinks=False):
+            dirnames.sort()
+            for name in [*dirnames, *sorted(filenames)]:
+                entries.append(_path_key(Path(parent) / name))
+    return (str(data_dir), sealed_id, tuple(entries))
+
+
+class _CasesCache:
+    """Per-process LRU of successful GET /api/cases answers, keyed on ``cases_fingerprint``."""
+
+    def __init__(self, max_entries: int = 8) -> None:
+        self.max_entries = max_entries
+        self._entries: OrderedDict[tuple[Hashable, ...], CasesResponse] = OrderedDict()
+        self._lock = threading.Lock()
+
+    def get(self, key: tuple[Hashable, ...]) -> CasesResponse | None:
+        with self._lock:
+            hit = self._entries.get(key)
+            if hit is not None:
+                self._entries.move_to_end(key)
+            return hit
+
+    def put(self, key: tuple[Hashable, ...], value: CasesResponse) -> None:
+        with self._lock:
+            self._entries[key] = value
+            self._entries.move_to_end(key)
+            while len(self._entries) > self.max_entries:
+                self._entries.popitem(last=False)
+
+    def clear(self) -> None:
+        with self._lock:
+            self._entries.clear()
+
+    def __len__(self) -> int:
+        with self._lock:
+            return len(self._entries)
+
+
+CASES_CACHE = _CasesCache()
+
+
+def build_cases_response(settings: Settings) -> CasesResponse:
+    """The uncached GET /api/cases answer (every check runs)."""
+    cases = load_public_cases(settings)
+    if not cases:
+        reason = "has not been added yet (issue #20)" if cases is None else "contains no case files yet"
+        note = f"Replay cases {NOT_AVAILABLE}: {CASES_DIR}/ {reason}."
+        return CasesResponse(status=NOT_AVAILABLE, items=[], notes=[note])
+    return CasesResponse(status="AVAILABLE", items=cases, notes=[])
+
+
 @router.get(
     "/cases",
     response_model=CasesResponse,
@@ -266,12 +364,15 @@ def load_public_cases(settings: Settings) -> list[ReplayCasePublic] | None:
     summary="Blind Replay demo cases (public view, no outcomes)",
 )
 def list_cases(settings: Annotated[Settings, Depends(get_settings)]) -> CasesResponse:
-    cases = load_public_cases(settings)
-    if not cases:
-        reason = "has not been added yet (issue #20)" if cases is None else "contains no case files yet"
-        note = f"Replay cases {NOT_AVAILABLE}: {CASES_DIR}/ {reason}."
-        return CasesResponse(status=NOT_AVAILABLE, items=[], notes=[note])
-    return CasesResponse(status="AVAILABLE", items=cases, notes=[])
+    key = cases_fingerprint(settings)
+    cached = CASES_CACHE.get(key)
+    if cached is not None:
+        return cached
+    response = build_cases_response(settings)  # raises RouteError (not cached) when a file fails a check
+    # Cache only if nothing changed while it was built; otherwise serve it once and rebuild next time.
+    if cases_fingerprint(settings) == key:
+        CASES_CACHE.put(key, response)
+    return response
 
 
 # ---------------------------------------------------------------- GET /api/cases/{case_id}/evidence
