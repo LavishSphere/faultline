@@ -94,3 +94,7 @@ Full URLs, archive URLs, authors, quotes and limitations are in the JSON file.
 
 - `https://linkventures.com/news` was fetched but not used: it lists third-party press headlines about portfolio
   companies, not Link Ventures' own research or thesis.
+
+## Market quotes: synthetic venue
+
+- A quote with `venue: "synthetic"` is a fictional price written by a case author, not collected from any venue. It must carry `provenance: "SYNTHETIC"`, `quote_kind: "synthetic"`, `raw_scale: "decimal"`, the label "SYNTHETIC benchmark price written by the case author; not from any market, not a true probability" (filled in when absent) and `.invalid` URLs. Nothing was fetched, so `collected_at` is when the author wrote the price and `raw_sha256` must equal `markets.base.synthetic_quote_sha256(market_id, ts, raw_price)`. It is never stored under `data/raw/`. The temporal gate loads it only on a case with `synthetic: true` and provenance `SYNTHETIC` (24 h staleness and `market_quote_id = "synthetic:<market_id>"` apply unchanged), and labels every quote on a SYNTHETIC case `provenance: SYNTHETIC` in the prompt and the API. A scorecard that uses it is in the synthetic case set: SYNTHETIC, never OFFICIAL, never pooled with real cases (`services/api/markets/base.py`, issue #102).

@@ -86,9 +86,10 @@ class ErrorCode(StrEnum):
     MODEL_OUTPUT_INVALID = "MODEL_OUTPUT_INVALID"  # answer failed output validation on every attempt
     PROMPT_TOO_LONG = "PROMPT_TOO_LONG"  # prompt + answer budget exceeds the context window; refused, not truncated
     PROMPT_NOT_VERIFIED = "PROMPT_NOT_VERIFIED"  # cannot confirm the model saw the whole prompt; answer discarded
-    # Live Explore (routes/explore.py, #60). ADMIN_TOKEN_REQUIRED and RATE_LIMITED are the same strings as PR #28's
-    # edge-protection codes, so the web app handles both sources alike.
-    ADMIN_TOKEN_REQUIRED = "ADMIN_TOKEN_REQUIRED"  # public mode: route needs Authorization: Bearer <admin token> (403)
+    # public mode: admin-only routes (replay run / reveal; Live Explore search, #60) need FAULTLINE_ADMIN_TOKEN
+    ADMIN_TOKEN_REQUIRED = "ADMIN_TOKEN_REQUIRED"
+    PREDICTION_EXISTS = "PREDICTION_EXISTS"  # a forecast with this id is already persisted (append-only store)
+    # Live Explore (routes/explore.py, #60)
     RATE_LIMITED = "RATE_LIMITED"  # too many requests from this address, or from us upstream (429, Retry-After)
     LIVE_EXPLORE_UNAVAILABLE = "LIVE_EXPLORE_UNAVAILABLE"  # TAVILY_API_KEY unset, rejected, or over quota (503)
     LIVE_EXPLORE_UPSTREAM_ERROR = "LIVE_EXPLORE_UPSTREAM_ERROR"  # Tavily unreachable or unexpected answer (502)
@@ -237,9 +238,17 @@ class ReplayCasePublic(_Strict):
 class Prediction(_Strict):
     """A model forecast, persisted (with hashes) BEFORE any outcome is revealed (SPEC §5).
 
-    prompt_sha256 = SHA256 of the final rendered prompt string.
+    prompt_sha256 = SHA256 of the exact prompt string the model saw on the attempt that validated (#44):
+    the gated prompt itself when ``attempts == 1``, the gated prompt followed by exactly the provider's repair
+    instruction (fixed header and footer, only ``- ...`` problem lines between) when ``attempts == 2``. No other
+    value of ``attempts`` and no other suffix is accepted by ``core.store``.
+    gated_prompt_sha256 = SHA256 of the prompt rendered by the temporal gate (``ModelInput.prompt``).
     snapshot_sha256 = SHA256 of canonical JSON (sorted keys, UTF-8, no whitespace) of the exact evidence
     + quote list given to the model.
+
+    The model-run audit fields (``gated_prompt_sha256``, ``attempts``, ``transcript_sha256``, ``num_ctx``,
+    ``num_predict``) are set by ``POST /api/replay/run`` on every new forecast. ``None`` only on records made
+    without a model provider (core tests), for which the stored prompt is the gated prompt.
     """
 
     prediction_id: Identifier
@@ -258,6 +267,20 @@ class Prediction(_Strict):
     seed: int | None = None
     recorded_at: AwareDatetime
     provenance: Provenance
+    gated_prompt_sha256: Sha256Hex | None = Field(
+        default=None, description="SHA256 of the temporal gate's rendered prompt (before any repair turn)."
+    )
+    attempts: int | None = Field(
+        default=None,
+        ge=1,
+        le=2,
+        description="1 = first answer validated; 2 = validated after the one schema repair (no other value).",
+    )
+    transcript_sha256: Sha256Hex | None = Field(
+        default=None, description="SHA256 of canonical JSON of the chat messages sent on the validated attempt."
+    )
+    num_ctx: int | None = Field(default=None, gt=0, description="Context window the model ran with (tokens).")
+    num_predict: int | None = Field(default=None, gt=0, description="Answer token budget the model ran with.")
 
 
 # ---------------------------------------------------------------- health

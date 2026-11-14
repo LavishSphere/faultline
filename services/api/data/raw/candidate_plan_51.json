@@ -1,0 +1,3762 @@
+{
+ "_provenance": "Candidate collection plan for issue #51, built 2026-11-13 from public venue METADATA only (Kalshi GET /events, /markets, /historical/markets; Polymarket Gamma GET /events/slug/{slug}). Hand-checked pairing rules are in docs/CANDIDATE_MARKETS.md. This file is NOT an API response. It holds identifiers, question text and scheduled close times. It holds no prices and does not record which way any market went: that is deliberately left to the replay owner (#20).",
+ "built_at": "2026-11-13",
+ "window_rule": {
+  "t_minus_days": 7,
+  "lookback_days": 3,
+  "granularity_minutes": 60,
+  "min_lead_days": 7,
+  "reference_close": "per pair: the earlier of the two venues' scheduled closes when they are within 3 days of each other, otherwise the Kalshi close_time (flagged close_mismatch_days). The same reference is used for BOTH venues so their windows match. The collector also refuses any window that ends less than min_lead_days before a venue's own scheduled close."
+ },
+ "groups": [
+  {
+   "group": "FOMC 2025-01",
+   "kind": "fomc",
+   "kalshi_event": "KXFEDDECISION-25JAN",
+   "kalshi_event_mutually_exclusive": true,
+   "polymarket_event": {
+    "id": "14220",
+    "slug": "fed-interest-rates-january-2025",
+    "title": "Fed decision in January?",
+    "scheduled_end": "2025-01-29T12:00:00Z",
+    "neg_risk": true,
+    "neg_risk_market_id": "0x9c03abba2c2f2ee09d4af02feaa5d6e1a55f6a5505e5ebfbafd7181a29cc1700"
+   },
+   "pairs": [
+    {
+     "leg": "no change",
+     "equivalence": "direct",
+     "reference_close": "2025-01-29T12:00:00Z",
+     "kalshi": {
+      "market_id": "KXFEDDECISION-25JAN-H0",
+      "question": "No change: If the Federal Reserve does a Hike of 0bps on January 29, 2025, then the market resolves to Yes.",
+      "scheduled_close": "2025-01-29T18:55:00Z",
+      "status_at_discovery": "finalized"
+     },
+     "polymarket": {
+      "market_id": "512324",
+      "question": "No change in Fed interest rates after January 2025 meeting?",
+      "bucket": "No Change",
+      "scheduled_close": "2025-01-29T12:00:00Z",
+      "closed_at_discovery": true
+     }
+    },
+    {
+     "leg": "cut 25",
+     "equivalence": "direct",
+     "reference_close": "2025-01-29T12:00:00Z",
+     "kalshi": {
+      "market_id": "KXFEDDECISION-25JAN-C25",
+      "question": "Cut 25bps: If the Federal Reserve does a Cut of 25bps on January 29, 2025, then the market resolves to Yes.",
+      "scheduled_close": "2025-01-29T18:55:00Z",
+      "status_at_discovery": "finalized"
+     },
+     "polymarket": {
+      "market_id": "512323",
+      "question": "Fed decreases interest rates by 25 bps after January 2025 meeting?",
+      "bucket": "25 bps decrease",
+      "scheduled_close": "2025-01-29T12:00:00Z",
+      "closed_at_discovery": true
+     }
+    }
+   ],
+   "excluded_legs": [
+    {
+     "venue": "kalshi",
+     "market_id": "KXFEDDECISION-25JAN-C26",
+     "leg": "cut >25",
+     "reason": "no single Polymarket market with the same definition"
+    },
+    {
+     "venue": "kalshi",
+     "market_id": "KXFEDDECISION-25JAN-H25",
+     "leg": "hike 25",
+     "reason": "no single Polymarket market with the same definition"
+    },
+    {
+     "venue": "kalshi",
+     "market_id": "KXFEDDECISION-25JAN-H26",
+     "leg": "hike >25",
+     "reason": "no single Polymarket market with the same definition"
+    },
+    {
+     "venue": "polymarket",
+     "market_id": "512321",
+     "leg": "cut 50",
+     "reason": "no single Kalshi market with the same definition"
+    },
+    {
+     "venue": "polymarket",
+     "market_id": "512320",
+     "leg": "cut >=75",
+     "reason": "no single Kalshi market with the same definition"
+    },
+    {
+     "venue": "polymarket",
+     "market_id": "512325",
+     "leg": "hike >=25",
+     "reason": "no single Kalshi market with the same definition"
+    }
+   ],
+   "excluded_exact_value_buckets": 0
+  },
+  {
+   "group": "FOMC 2025-03",
+   "kind": "fomc",
+   "kalshi_event": "KXFEDDECISION-25MAR",
+   "kalshi_event_mutually_exclusive": true,
+   "polymarket_event": {
+    "id": "15665",
+    "slug": "fed-decision-in-march",
+    "title": "Fed decision in March?",
+    "scheduled_end": "2025-03-19T12:00:00Z",
+    "neg_risk": true,
+    "neg_risk_market_id": "0xbc21401466836b0b47d3695a995c505f8ab073596cc489bf2ea375f88da6cc00"
+   },
+   "pairs": [
+    {
+     "leg": "no change",
+     "equivalence": "direct",
+     "reference_close": "2025-03-19T12:00:00Z",
+     "kalshi": {
+      "market_id": "KXFEDDECISION-25MAR-H0",
+      "question": "No change: If the Federal Reserve does a Hike of 0bps on March 19, 2025, then the market resolves to Yes.",
+      "scheduled_close": "2025-03-19T17:55:00Z",
+      "status_at_discovery": "finalized"
+     },
+     "polymarket": {
+      "market_id": "516010",
+      "question": "No change in Fed interest rates after March 2025 meeting?",
+      "bucket": "No Change",
+      "scheduled_close": "2025-03-19T12:00:00Z",
+      "closed_at_discovery": true
+     }
+    },
+    {
+     "leg": "cut 25",
+     "equivalence": "direct",
+     "reference_close": "2025-03-19T12:00:00Z",
+     "kalshi": {
+      "market_id": "KXFEDDECISION-25MAR-C25",
+      "question": "Cut 25bps: If the Federal Reserve does a Cut of 25bps on March 19, 2025, then the market resolves to Yes.",
+      "scheduled_close": "2025-03-19T17:55:00Z",
+      "status_at_discovery": "finalized"
+     },
+     "polymarket": {
+      "market_id": "516009",
+      "question": "Fed decreases interest rates by 25 bps after March 2025 meeting?",
+      "bucket": "25 bps decrease",
+      "scheduled_close": "2025-03-19T12:00:00Z",
+      "closed_at_discovery": true
+     }
+    },
+    {
+     "leg": "cut >25",
+     "equivalence": "direct",
+     "reference_close": "2025-03-19T12:00:00Z",
+     "kalshi": {
+      "market_id": "KXFEDDECISION-25MAR-C26",
+      "question": "Cut >25bps: If the Federal Reserve does a Cut of >25bps on March 19, 2025, then the market resolves to Yes.",
+      "scheduled_close": "2025-03-19T17:55:00Z",
+      "status_at_discovery": "finalized"
+     },
+     "polymarket": {
+      "market_id": "516008",
+      "question": "Fed decreases interest rates by 50+ bps after March 2025 meeting?",
+      "bucket": "50+ bps decrease",
+      "scheduled_close": "2025-03-19T12:00:00Z",
+      "closed_at_discovery": true
+     }
+    }
+   ],
+   "excluded_legs": [
+    {
+     "venue": "kalshi",
+     "market_id": "KXFEDDECISION-25MAR-H25",
+     "leg": "hike 25",
+     "reason": "no single Polymarket market with the same definition"
+    },
+    {
+     "venue": "kalshi",
+     "market_id": "KXFEDDECISION-25MAR-H26",
+     "leg": "hike >25",
+     "reason": "no single Polymarket market with the same definition"
+    },
+    {
+     "venue": "polymarket",
+     "market_id": "516011",
+     "leg": "hike >=25",
+     "reason": "no single Kalshi market with the same definition"
+    }
+   ],
+   "excluded_exact_value_buckets": 0
+  },
+  {
+   "group": "FOMC 2025-05",
+   "kind": "fomc",
+   "kalshi_event": "KXFEDDECISION-25MAY",
+   "kalshi_event_mutually_exclusive": true,
+   "polymarket_event": {
+    "id": "17140",
+    "slug": "fed-decision-in-may-2025",
+    "title": "Fed decision in May?",
+    "scheduled_end": "2025-05-07T12:00:00Z",
+    "neg_risk": true,
+    "neg_risk_market_id": "0xedc98ec302c7bc9c256a2a924c9dab37f5aa8bc3c9e1d08d2fabc231f1b10f00"
+   },
+   "pairs": [
+    {
+     "leg": "no change",
+     "equivalence": "direct",
+     "reference_close": "2025-05-07T12:00:00Z",
+     "kalshi": {
+      "market_id": "KXFEDDECISION-25MAY-H0",
+      "question": "No change: If the Federal Reserve does a Hike of 0bps on May 07, 2025, then the market resolves to Yes.",
+      "scheduled_close": "2025-05-07T17:55:00Z",
+      "status_at_discovery": "finalized"
+     },
+     "polymarket": {
+      "market_id": "519778",
+      "question": "No change in Fed interest rates after May 2025 meeting?",
+      "bucket": "No change",
+      "scheduled_close": "2025-05-07T12:00:00Z",
+      "closed_at_discovery": true
+     }
+    },
+    {
+     "leg": "cut 25",
+     "equivalence": "direct",
+     "reference_close": "2025-05-07T12:00:00Z",
+     "kalshi": {
+      "market_id": "KXFEDDECISION-25MAY-C25",
+      "question": "Cut 25bps: If the Federal Reserve does a Cut of 25bps on May 07, 2025, then the market resolves to Yes.",
+      "scheduled_close": "2025-05-07T17:55:00Z",
+      "status_at_discovery": "finalized"
+     },
+     "polymarket": {
+      "market_id": "519777",
+      "question": "Fed decreases interest rates by 25 bps after May 2025 meeting?",
+      "bucket": "25 bps decrease",
+      "scheduled_close": "2025-05-07T12:00:00Z",
+      "closed_at_discovery": true
+     }
+    },
+    {
+     "leg": "cut >25",
+     "equivalence": "direct",
+     "reference_close": "2025-05-07T12:00:00Z",
+     "kalshi": {
+      "market_id": "KXFEDDECISION-25MAY-C26",
+      "question": "Cut >25bps: If the Federal Reserve does a Cut of >25bps on May 07, 2025, then the market resolves to Yes.",
+      "scheduled_close": "2025-05-07T17:55:00Z",
+      "status_at_discovery": "finalized"
+     },
+     "polymarket": {
+      "market_id": "519776",
+      "question": "Fed decreases interest rates by 50+ bps after May 2025 meeting?",
+      "bucket": "50+ bps decrease",
+      "scheduled_close": "2025-05-07T12:00:00Z",
+      "closed_at_discovery": true
+     }
+    }
+   ],
+   "excluded_legs": [
+    {
+     "venue": "kalshi",
+     "market_id": "KXFEDDECISION-25MAY-H25",
+     "leg": "hike 25",
+     "reason": "no single Polymarket market with the same definition"
+    },
+    {
+     "venue": "kalshi",
+     "market_id": "KXFEDDECISION-25MAY-H26",
+     "leg": "hike >25",
+     "reason": "no single Polymarket market with the same definition"
+    },
+    {
+     "venue": "polymarket",
+     "market_id": "519784",
+     "leg": "hike >=25",
+     "reason": "no single Kalshi market with the same definition"
+    }
+   ],
+   "excluded_exact_value_buckets": 0
+  },
+  {
+   "group": "FOMC 2025-06",
+   "kind": "fomc",
+   "kalshi_event": "KXFEDDECISION-25JUN",
+   "kalshi_event_mutually_exclusive": true,
+   "polymarket_event": {
+    "id": "17792",
+    "slug": "fed-decision-in-june",
+    "title": "Fed decision in June?",
+    "scheduled_end": "2025-06-18T12:00:00Z",
+    "neg_risk": true,
+    "neg_risk_market_id": "0x5c0790a07ed2ac8cea9f4f108af249bd90c416ac1d2f3331babe69fead899900"
+   },
+   "pairs": [
+    {
+     "leg": "no change",
+     "equivalence": "direct",
+     "reference_close": "2025-06-18T12:00:00Z",
+     "kalshi": {
+      "market_id": "KXFEDDECISION-25JUN-H0",
+      "question": "No change: If the Federal Reserve does a Hike of 0bps on June 18, 2025, then the market resolves to Yes.",
+      "scheduled_close": "2025-06-18T17:55:00Z",
+      "status_at_discovery": "finalized"
+     },
+     "polymarket": {
+      "market_id": "521836",
+      "question": "No change in Fed interest rates after June 2025 meeting?",
+      "bucket": "No change",
+      "scheduled_close": "2025-06-18T12:00:00Z",
+      "closed_at_discovery": true
+     }
+    },
+    {
+     "leg": "cut 25",
+     "equivalence": "direct",
+     "reference_close": "2025-06-18T12:00:00Z",
+     "kalshi": {
+      "market_id": "KXFEDDECISION-25JUN-C25",
+      "question": "Cut 25bps: If the Federal Reserve does a Cut of 25bps on June 18, 2025, then the market resolves to Yes.",
+      "scheduled_close": "2025-06-18T17:55:00Z",
+      "status_at_discovery": "finalized"
+     },
+     "polymarket": {
+      "market_id": "521835",
+      "question": "Fed decreases interest rates by 25 bps after June 2025 meeting?",
+      "bucket": "25 bps decrease",
+      "scheduled_close": "2025-06-18T12:00:00Z",
+      "closed_at_discovery": true
+     }
+    },
+    {
+     "leg": "cut >25",
+     "equivalence": "direct",
+     "reference_close": "2025-06-18T12:00:00Z",
+     "kalshi": {
+      "market_id": "KXFEDDECISION-25JUN-C26",
+      "question": "Cut >25bps: If the Federal Reserve does a Cut of >25bps on June 18, 2025, then the market resolves to Yes.",
+      "scheduled_close": "2025-06-18T17:55:00Z",
+      "status_at_discovery": "finalized"
+     },
+     "polymarket": {
+      "market_id": "521834",
+      "question": "Fed decreases interest rates by 50+ bps after June 2025 meeting?",
+      "bucket": "50+ bps decrease",
+      "scheduled_close": "2025-06-18T12:00:00Z",
+      "closed_at_discovery": true
+     }
+    }
+   ],
+   "excluded_legs": [
+    {
+     "venue": "kalshi",
+     "market_id": "KXFEDDECISION-25JUN-H25",
+     "leg": "hike 25",
+     "reason": "no single Polymarket market with the same definition"
+    },
+    {
+     "venue": "kalshi",
+     "market_id": "KXFEDDECISION-25JUN-H26",
+     "leg": "hike >25",
+     "reason": "no single Polymarket market with the same definition"
+    },
+    {
+     "venue": "polymarket",
+     "market_id": "521837",
+     "leg": "hike >=25",
+     "reason": "no single Kalshi market with the same definition"
+    }
+   ],
+   "excluded_exact_value_buckets": 0
+  },
+  {
+   "group": "FOMC 2025-07",
+   "kind": "fomc",
+   "kalshi_event": "KXFEDDECISION-25JUL",
+   "kalshi_event_mutually_exclusive": true,
+   "polymarket_event": {
+    "id": "21255",
+    "slug": "fed-decision-in-july",
+    "title": "Fed decision in July?",
+    "scheduled_end": "2025-07-30T12:00:00Z",
+    "neg_risk": true,
+    "neg_risk_market_id": "0xf0aa04835adf4beacddd933e49e6e08ffd37014751dc3f7d167f73cb64213d00"
+   },
+   "pairs": [
+    {
+     "leg": "no change",
+     "equivalence": "direct",
+     "reference_close": "2025-07-30T12:00:00Z",
+     "kalshi": {
+      "market_id": "KXFEDDECISION-25JUL-H0",
+      "question": "Fed maintains rate: If the Federal Reserve does a Hike of 0bps on July 30, 2025, then the market resolves to Yes.",
+      "scheduled_close": "2025-07-30T17:55:00Z",
+      "status_at_discovery": "finalized"
+     },
+     "polymarket": {
+      "market_id": "528974",
+      "question": "No change in Fed interest rates after July 2025 meeting?",
+      "bucket": "No change",
+      "scheduled_close": "2025-07-30T12:00:00Z",
+      "closed_at_discovery": true
+     }
+    },
+    {
+     "leg": "cut 25",
+     "equivalence": "direct",
+     "reference_close": "2025-07-30T12:00:00Z",
+     "kalshi": {
+      "market_id": "KXFEDDECISION-25JUL-C25",
+      "question": "Cut 25bps: If the Federal Reserve does a Cut of 25bps on July 30, 2025, then the market resolves to Yes.",
+      "scheduled_close": "2025-07-30T17:55:00Z",
+      "status_at_discovery": "finalized"
+     },
+     "polymarket": {
+      "market_id": "528973",
+      "question": "Fed decreases interest rates by 25 bps after July 2025 meeting?",
+      "bucket": "25 bps decrease",
+      "scheduled_close": "2025-07-30T12:00:00Z",
+      "closed_at_discovery": true
+     }
+    },
+    {
+     "leg": "cut >25",
+     "equivalence": "direct",
+     "reference_close": "2025-07-30T12:00:00Z",
+     "kalshi": {
+      "market_id": "KXFEDDECISION-25JUL-C26",
+      "question": "Cut >25bps: If the Federal Reserve does a Cut of >25bps on July 30, 2025, then the market resolves to Yes.",
+      "scheduled_close": "2025-07-30T17:55:00Z",
+      "status_at_discovery": "finalized"
+     },
+     "polymarket": {
+      "market_id": "528972",
+      "question": "Fed decreases interest rates by 50+ bps after July 2025 meeting?",
+      "bucket": "50+ bps decrease",
+      "scheduled_close": "2025-07-30T12:00:00Z",
+      "closed_at_discovery": true
+     }
+    }
+   ],
+   "excluded_legs": [
+    {
+     "venue": "kalshi",
+     "market_id": "KXFEDDECISION-25JUL-H25",
+     "leg": "hike 25",
+     "reason": "no single Polymarket market with the same definition"
+    },
+    {
+     "venue": "kalshi",
+     "market_id": "KXFEDDECISION-25JUL-H26",
+     "leg": "hike >25",
+     "reason": "no single Polymarket market with the same definition"
+    },
+    {
+     "venue": "polymarket",
+     "market_id": "528975",
+     "leg": "hike >=25",
+     "reason": "no single Kalshi market with the same definition"
+    }
+   ],
+   "excluded_exact_value_buckets": 0
+  },
+  {
+   "group": "FOMC 2025-09",
+   "kind": "fomc",
+   "kalshi_event": "KXFEDDECISION-25SEP",
+   "kalshi_event_mutually_exclusive": true,
+   "polymarket_event": {
+    "id": "24087",
+    "slug": "fed-decision-in-september",
+    "title": "Fed decision in September?",
+    "scheduled_end": "2025-09-17T12:00:00Z",
+    "neg_risk": true,
+    "neg_risk_market_id": "0x85d7c9f6da343d5a539c59944f98ba6876fb01c699e4c788ab8c7454f51d1c00"
+   },
+   "pairs": [
+    {
+     "leg": "no change",
+     "equivalence": "direct",
+     "reference_close": "2025-09-17T12:00:00Z",
+     "kalshi": {
+      "market_id": "KXFEDDECISION-25SEP-H0",
+      "question": "Fed maintains rate: If the Federal Reserve does a Hike of 0bps on September 17, 2025, then the market resolves to Yes.",
+      "scheduled_close": "2025-09-17T17:55:00Z",
+      "status_at_discovery": "finalized"
+     },
+     "polymarket": {
+      "market_id": "542539",
+      "question": "No change in Fed interest rates after September 2025 meeting?",
+      "bucket": "No change",
+      "scheduled_close": "2025-09-17T12:00:00Z",
+      "closed_at_discovery": true
+     }
+    },
+    {
+     "leg": "cut 25",
+     "equivalence": "direct",
+     "reference_close": "2025-09-17T12:00:00Z",
+     "kalshi": {
+      "market_id": "KXFEDDECISION-25SEP-C25",
+      "question": "Cut 25bps: If the Federal Reserve does a Cut of 25bps on September 17, 2025, then the market resolves to Yes.",
+      "scheduled_close": "2025-09-17T17:55:00Z",
+      "status_at_discovery": "finalized"
+     },
+     "polymarket": {
+      "market_id": "542538",
+      "question": "Fed decreases interest rates by 25 bps after September 2025 meeting?",
+      "bucket": "25 bps decrease",
+      "scheduled_close": "2025-09-17T12:00:00Z",
+      "closed_at_discovery": true
+     }
+    },
+    {
+     "leg": "cut >25",
+     "equivalence": "direct",
+     "reference_close": "2025-09-17T12:00:00Z",
+     "kalshi": {
+      "market_id": "KXFEDDECISION-25SEP-C26",
+      "question": "Cut >25bps: If the Federal Reserve does a Cut of >25bps on September 17, 2025, then the market resolves to Yes.",
+      "scheduled_close": "2025-09-17T17:55:00Z",
+      "status_at_discovery": "finalized"
+     },
+     "polymarket": {
+      "market_id": "542537",
+      "question": "Fed decreases interest rates by 50+ bps after September 2025 meeting?",
+      "bucket": "50+ bps decrease",
+      "scheduled_close": "2025-09-17T12:00:00Z",
+      "closed_at_discovery": true
+     }
+    }
+   ],
+   "excluded_legs": [
+    {
+     "venue": "kalshi",
+     "market_id": "KXFEDDECISION-25SEP-H25",
+     "leg": "hike 25",
+     "reason": "no single Polymarket market with the same definition"
+    },
+    {
+     "venue": "kalshi",
+     "market_id": "KXFEDDECISION-25SEP-H26",
+     "leg": "hike >25",
+     "reason": "no single Polymarket market with the same definition"
+    },
+    {
+     "venue": "polymarket",
+     "market_id": "542540",
+     "leg": "hike >=25",
+     "reason": "no single Kalshi market with the same definition"
+    }
+   ],
+   "excluded_exact_value_buckets": 0
+  },
+  {
+   "group": "FOMC 2025-10",
+   "kind": "fomc",
+   "kalshi_event": "KXFEDDECISION-25OCT",
+   "kalshi_event_mutually_exclusive": true,
+   "polymarket_event": {
+    "id": "27824",
+    "slug": "fed-decision-in-october",
+    "title": "Fed decision in October?",
+    "scheduled_end": "2025-10-29T12:00:00Z",
+    "neg_risk": true,
+    "neg_risk_market_id": "0x7ececd30ae105590c0076c8197e9255a0095f7c3aa2e07fd8bd02fd50dc68400"
+   },
+   "pairs": [
+    {
+     "leg": "no change",
+     "equivalence": "direct",
+     "reference_close": "2025-10-29T12:00:00Z",
+     "kalshi": {
+      "market_id": "KXFEDDECISION-25OCT-H0",
+      "question": "Fed maintains rate: If the Federal Reserve does a Hike of 0bps on October 29, 2025, then the market resolves to Yes.",
+      "scheduled_close": "2025-10-29T17:59:00Z",
+      "status_at_discovery": "finalized"
+     },
+     "polymarket": {
+      "market_id": "553812",
+      "question": "No change in Fed interest rates after October 2025 meeting?",
+      "bucket": "No change",
+      "scheduled_close": "2025-10-29T12:00:00Z",
+      "closed_at_discovery": true
+     }
+    },
+    {
+     "leg": "cut 25",
+     "equivalence": "direct",
+     "reference_close": "2025-10-29T12:00:00Z",
+     "kalshi": {
+      "market_id": "KXFEDDECISION-25OCT-C25",
+      "question": "Cut 25bps: If the Federal Reserve does a Cut of 25bps on October 29, 2025, then the market resolves to Yes.",
+      "scheduled_close": "2025-10-29T17:59:00Z",
+      "status_at_discovery": "finalized"
+     },
+     "polymarket": {
+      "market_id": "553811",
+      "question": "Fed decreases interest rates by 25 bps after October 2025 meeting?",
+      "bucket": "25 bps decrease",
+      "scheduled_close": "2025-10-29T12:00:00Z",
+      "closed_at_discovery": true
+     }
+    },
+    {
+     "leg": "cut >25",
+     "equivalence": "direct",
+     "reference_close": "2025-10-29T12:00:00Z",
+     "kalshi": {
+      "market_id": "KXFEDDECISION-25OCT-C26",
+      "question": "Cut >25bps: If the Federal Reserve does a Cut of >25bps on October 29, 2025, then the market resolves to Yes.",
+      "scheduled_close": "2025-10-29T17:59:00Z",
+      "status_at_discovery": "finalized"
+     },
+     "polymarket": {
+      "market_id": "553810",
+      "question": "Fed decreases interest rates by 50+ bps after October 2025 meeting?",
+      "bucket": "50+ bps decrease",
+      "scheduled_close": "2025-10-29T12:00:00Z",
+      "closed_at_discovery": true
+     }
+    }
+   ],
+   "excluded_legs": [
+    {
+     "venue": "kalshi",
+     "market_id": "KXFEDDECISION-25OCT-H25",
+     "leg": "hike 25",
+     "reason": "no single Polymarket market with the same definition"
+    },
+    {
+     "venue": "kalshi",
+     "market_id": "KXFEDDECISION-25OCT-H26",
+     "leg": "hike >25",
+     "reason": "no single Polymarket market with the same definition"
+    },
+    {
+     "venue": "polymarket",
+     "market_id": "553813",
+     "leg": "hike >=25",
+     "reason": "no single Kalshi market with the same definition"
+    }
+   ],
+   "excluded_exact_value_buckets": 0
+  },
+  {
+   "group": "FOMC 2025-12",
+   "kind": "fomc",
+   "kalshi_event": "KXFEDDECISION-25DEC",
+   "kalshi_event_mutually_exclusive": true,
+   "polymarket_event": {
+    "id": "35090",
+    "slug": "fed-decision-in-december",
+    "title": "Fed decision in December?",
+    "scheduled_end": "2025-12-10T00:00:00Z",
+    "neg_risk": true,
+    "neg_risk_market_id": "0x8d9540f4caef531e7065998ff291ba9038588cfe647d8f4822f892112df86f00"
+   },
+   "pairs": [
+    {
+     "leg": "no change",
+     "equivalence": "direct",
+     "reference_close": "2025-12-10T00:00:00Z",
+     "kalshi": {
+      "market_id": "KXFEDDECISION-25DEC-H0",
+      "question": "Fed maintains rate: If the Federal Reserve does a Hike of 0bps on December 10, 2025, then the market resolves to Yes.",
+      "scheduled_close": "2025-12-10T18:59:00Z",
+      "status_at_discovery": "finalized"
+     },
+     "polymarket": {
+      "market_id": "570362",
+      "question": "No change in Fed interest rates after December 2025 meeting?",
+      "bucket": "No change",
+      "scheduled_close": "2025-12-10T00:00:00Z",
+      "closed_at_discovery": true
+     }
+    },
+    {
+     "leg": "cut 25",
+     "equivalence": "direct",
+     "reference_close": "2025-12-10T00:00:00Z",
+     "kalshi": {
+      "market_id": "KXFEDDECISION-25DEC-C25",
+      "question": "Cut 25bps: If the Federal Reserve does a Cut of 25bps on December 10, 2025, then the market resolves to Yes.",
+      "scheduled_close": "2025-12-10T18:59:00Z",
+      "status_at_discovery": "finalized"
+     },
+     "polymarket": {
+      "market_id": "570361",
+      "question": "Fed decreases interest rates by 25 bps after December 2025 meeting?",
+      "bucket": "25 bps decrease",
+      "scheduled_close": "2025-12-10T00:00:00Z",
+      "closed_at_discovery": true
+     }
+    },
+    {
+     "leg": "cut >25",
+     "equivalence": "direct",
+     "reference_close": "2025-12-10T00:00:00Z",
+     "kalshi": {
+      "market_id": "KXFEDDECISION-25DEC-C26",
+      "question": "Cut >25bps: If the Federal Reserve does a Cut of >25bps on December 10, 2025, then the market resolves to Yes.",
+      "scheduled_close": "2025-12-10T18:59:00Z",
+      "status_at_discovery": "finalized"
+     },
+     "polymarket": {
+      "market_id": "570360",
+      "question": "Fed decreases interest rates by 50+ bps after December 2025 meeting?",
+      "bucket": "50+ bps decrease",
+      "scheduled_close": "2025-12-10T00:00:00Z",
+      "closed_at_discovery": true
+     }
+    }
+   ],
+   "excluded_legs": [
+    {
+     "venue": "kalshi",
+     "market_id": "KXFEDDECISION-25DEC-H25",
+     "leg": "hike 25",
+     "reason": "no single Polymarket market with the same definition"
+    },
+    {
+     "venue": "kalshi",
+     "market_id": "KXFEDDECISION-25DEC-H26",
+     "leg": "hike >25",
+     "reason": "no single Polymarket market with the same definition"
+    },
+    {
+     "venue": "polymarket",
+     "market_id": "570363",
+     "leg": "hike >=25",
+     "reason": "no single Kalshi market with the same definition"
+    }
+   ],
+   "excluded_exact_value_buckets": 0
+  },
+  {
+   "group": "FOMC 2026-01",
+   "kind": "fomc",
+   "kalshi_event": "KXFEDDECISION-26JAN",
+   "kalshi_event_mutually_exclusive": true,
+   "polymarket_event": {
+    "id": "45883",
+    "slug": "fed-decision-in-january",
+    "title": "Fed decision in January?",
+    "scheduled_end": "2026-01-28T00:00:00Z",
+    "neg_risk": true,
+    "neg_risk_market_id": "0x0d97e25f1830a3f18d5b4d43e6e1648d3b8b781e3c254a0b9d2c07a62f505100"
+   },
+   "pairs": [
+    {
+     "leg": "no change",
+     "equivalence": "direct",
+     "reference_close": "2026-01-28T00:00:00Z",
+     "kalshi": {
+      "market_id": "KXFEDDECISION-26JAN-H0",
+      "question": "Fed maintains rate: If the Federal Reserve does a Hike of 0bps on January 28, 2026, then the market resolves to Yes.",
+      "scheduled_close": "2026-01-28T18:59:00Z",
+      "status_at_discovery": "finalized"
+     },
+     "polymarket": {
+      "market_id": "601699",
+      "question": "No change in Fed interest rates after January 2026 meeting?",
+      "bucket": "No change",
+      "scheduled_close": "2026-01-28T00:00:00Z",
+      "closed_at_discovery": true
+     }
+    },
+    {
+     "leg": "cut 25",
+     "equivalence": "direct",
+     "reference_close": "2026-01-28T00:00:00Z",
+     "kalshi": {
+      "market_id": "KXFEDDECISION-26JAN-C25",
+      "question": "Cut 25bps: If the Federal Reserve does a Cut of 25bps on January 28, 2026, then the market resolves to Yes.",
+      "scheduled_close": "2026-01-28T18:59:00Z",
+      "status_at_discovery": "finalized"
+     },
+     "polymarket": {
+      "market_id": "601698",
+      "question": "Fed decreases interest rates by 25 bps after January 2026 meeting?",
+      "bucket": "25 bps decrease",
+      "scheduled_close": "2026-01-28T00:00:00Z",
+      "closed_at_discovery": true
+     }
+    },
+    {
+     "leg": "cut >25",
+     "equivalence": "direct",
+     "reference_close": "2026-01-28T00:00:00Z",
+     "kalshi": {
+      "market_id": "KXFEDDECISION-26JAN-C26",
+      "question": "Cut >25bps: If the Federal Reserve does a Cut of >25bps on January 28, 2026, then the market resolves to Yes.",
+      "scheduled_close": "2026-01-28T18:59:00Z",
+      "status_at_discovery": "finalized"
+     },
+     "polymarket": {
+      "market_id": "601697",
+      "question": "Fed decreases interest rates by 50+ bps after January 2026 meeting?",
+      "bucket": "50+ bps decrease",
+      "scheduled_close": "2026-01-28T00:00:00Z",
+      "closed_at_discovery": true
+     }
+    }
+   ],
+   "excluded_legs": [
+    {
+     "venue": "kalshi",
+     "market_id": "KXFEDDECISION-26JAN-H25",
+     "leg": "hike 25",
+     "reason": "no single Polymarket market with the same definition"
+    },
+    {
+     "venue": "kalshi",
+     "market_id": "KXFEDDECISION-26JAN-H26",
+     "leg": "hike >25",
+     "reason": "no single Polymarket market with the same definition"
+    },
+    {
+     "venue": "polymarket",
+     "market_id": "601700",
+     "leg": "hike >=25",
+     "reason": "no single Kalshi market with the same definition"
+    }
+   ],
+   "excluded_exact_value_buckets": 0
+  },
+  {
+   "group": "FOMC 2026-03",
+   "kind": "fomc",
+   "kalshi_event": "KXFEDDECISION-26MAR",
+   "kalshi_event_mutually_exclusive": true,
+   "polymarket_event": {
+    "id": "67284",
+    "slug": "fed-decision-in-march-885",
+    "title": "Fed decision in March?",
+    "scheduled_end": "2026-03-18T00:00:00Z",
+    "neg_risk": true,
+    "neg_risk_market_id": "0xfabe717b4c1799d917420cf834a4f1b76b77e90cc0cf6739b7f19b8016c20a00"
+   },
+   "pairs": [
+    {
+     "leg": "no change",
+     "equivalence": "direct",
+     "reference_close": "2026-03-18T00:00:00Z",
+     "kalshi": {
+      "market_id": "KXFEDDECISION-26MAR-H0",
+      "question": "Fed maintains rate: If the Federal Reserve does a Hike of 0bps on March 18, 2026, then the market resolves to Yes.",
+      "scheduled_close": "2026-03-18T17:59:00Z",
+      "status_at_discovery": "finalized"
+     },
+     "polymarket": {
+      "market_id": "654414",
+      "question": "Will there be no change in Fed interest rates after the March 2026 meeting?",
+      "bucket": "No change",
+      "scheduled_close": "2026-03-18T00:00:00Z",
+      "closed_at_discovery": true
+     }
+    },
+    {
+     "leg": "cut 25",
+     "equivalence": "direct",
+     "reference_close": "2026-03-18T00:00:00Z",
+     "kalshi": {
+      "market_id": "KXFEDDECISION-26MAR-C25",
+      "question": "Cut 25bps: If the Federal Reserve does a Cut of 25bps on March 18, 2026, then the market resolves to Yes.",
+      "scheduled_close": "2026-03-18T17:59:00Z",
+      "status_at_discovery": "finalized"
+     },
+     "polymarket": {
+      "market_id": "654413",
+      "question": "Will the Fed decrease interest rates by 25 bps after the March 2026 meeting?",
+      "bucket": "25 bps decrease",
+      "scheduled_close": "2026-03-18T00:00:00Z",
+      "closed_at_discovery": true
+     }
+    },
+    {
+     "leg": "cut >25",
+     "equivalence": "direct",
+     "reference_close": "2026-03-18T00:00:00Z",
+     "kalshi": {
+      "market_id": "KXFEDDECISION-26MAR-C26",
+      "question": "Cut >25bps: If the Federal Reserve does a Cut of   25bps on March 18, 2026, then the market resolves to Yes.",
+      "scheduled_close": "2026-03-18T17:59:00Z",
+      "status_at_discovery": "finalized"
+     },
+     "polymarket": {
+      "market_id": "654412",
+      "question": "Will the Fed decrease interest rates by 50+ bps after the March 2026 meeting?",
+      "bucket": "50+ bps decrease",
+      "scheduled_close": "2026-03-18T00:00:00Z",
+      "closed_at_discovery": true
+     }
+    }
+   ],
+   "excluded_legs": [
+    {
+     "venue": "kalshi",
+     "market_id": "KXFEDDECISION-26MAR-H25",
+     "leg": "hike 25",
+     "reason": "no single Polymarket market with the same definition"
+    },
+    {
+     "venue": "kalshi",
+     "market_id": "KXFEDDECISION-26MAR-H26",
+     "leg": "hike >25",
+     "reason": "no single Polymarket market with the same definition"
+    },
+    {
+     "venue": "polymarket",
+     "market_id": "654415",
+     "leg": "hike >=25",
+     "reason": "no single Kalshi market with the same definition"
+    }
+   ],
+   "excluded_exact_value_buckets": 0
+  },
+  {
+   "group": "FOMC 2026-04",
+   "kind": "fomc",
+   "kalshi_event": "KXFEDDECISION-26APR",
+   "kalshi_event_mutually_exclusive": true,
+   "polymarket_event": {
+    "id": "75478",
+    "slug": "fed-decision-in-april",
+    "title": "Fed decision in April?",
+    "scheduled_end": "2026-04-29T00:00:00Z",
+    "neg_risk": true,
+    "neg_risk_market_id": "0xec7bbee74fbfb5eea9f853295f793575a4e5e7bad06501ba880c423d6497b100"
+   },
+   "pairs": [
+    {
+     "leg": "no change",
+     "equivalence": "direct",
+     "reference_close": "2026-04-29T00:00:00Z",
+     "kalshi": {
+      "market_id": "KXFEDDECISION-26APR-H0",
+      "question": "Fed maintains rate: If the Federal Reserve does a Hike of 0bps on April 29, 2026, then the market resolves to Yes.",
+      "scheduled_close": "2026-04-29T17:59:00Z",
+      "status_at_discovery": "finalized"
+     },
+     "polymarket": {
+      "market_id": "669662",
+      "question": "Will there be no change in Fed interest rates after the April 2026 meeting?",
+      "bucket": "No change",
+      "scheduled_close": "2026-04-29T00:00:00Z",
+      "closed_at_discovery": true
+     }
+    },
+    {
+     "leg": "cut 25",
+     "equivalence": "direct",
+     "reference_close": "2026-04-29T00:00:00Z",
+     "kalshi": {
+      "market_id": "KXFEDDECISION-26APR-C25",
+      "question": "Cut 25bps: If the Federal Reserve does a Cut of 25bps on April 29, 2026, then the market resolves to Yes.",
+      "scheduled_close": "2026-04-29T17:59:00Z",
+      "status_at_discovery": "finalized"
+     },
+     "polymarket": {
+      "market_id": "669661",
+      "question": "Will the Fed decrease interest rates by 25 bps after the April 2026 meeting?",
+      "bucket": "25 bps decrease",
+      "scheduled_close": "2026-04-29T00:00:00Z",
+      "closed_at_discovery": true
+     }
+    },
+    {
+     "leg": "cut >25",
+     "equivalence": "direct",
+     "reference_close": "2026-04-29T00:00:00Z",
+     "kalshi": {
+      "market_id": "KXFEDDECISION-26APR-C26",
+      "question": "Cut >25bps: If the Federal Reserve does a Cut of   25bps on April 29, 2026, then the market resolves to Yes.",
+      "scheduled_close": "2026-04-29T17:59:00Z",
+      "status_at_discovery": "finalized"
+     },
+     "polymarket": {
+      "market_id": "669660",
+      "question": "Will the Fed decrease interest rates by 50+ bps after the April 2026 meeting?",
+      "bucket": "50+ bps decrease",
+      "scheduled_close": "2026-04-29T00:00:00Z",
+      "closed_at_discovery": true
+     }
+    }
+   ],
+   "excluded_legs": [
+    {
+     "venue": "kalshi",
+     "market_id": "KXFEDDECISION-26APR-H25",
+     "leg": "hike 25",
+     "reason": "no single Polymarket market with the same definition"
+    },
+    {
+     "venue": "kalshi",
+     "market_id": "KXFEDDECISION-26APR-H26",
+     "leg": "hike >25",
+     "reason": "no single Polymarket market with the same definition"
+    },
+    {
+     "venue": "polymarket",
+     "market_id": "669663",
+     "leg": "hike >=25",
+     "reason": "no single Kalshi market with the same definition"
+    }
+   ],
+   "excluded_exact_value_buckets": 0
+  },
+  {
+   "group": "FOMC 2026-06",
+   "kind": "fomc",
+   "kalshi_event": "KXFEDDECISION-26JUN",
+   "kalshi_event_mutually_exclusive": true,
+   "polymarket_event": {
+    "id": "101772",
+    "slug": "fed-decision-in-june-825",
+    "title": "Fed Decision in June?",
+    "scheduled_end": "2026-06-17T00:00:00Z",
+    "neg_risk": true,
+    "neg_risk_market_id": "0xa8a8ccaceb3e11706b62f5bb6a040665c1ebc14312abcf7430c7114095406a00"
+   },
+   "pairs": [
+    {
+     "leg": "no change",
+     "equivalence": "direct",
+     "reference_close": "2026-06-17T00:00:00Z",
+     "kalshi": {
+      "market_id": "KXFEDDECISION-26JUN-H0",
+      "question": "Fed maintains rate: If the Federal Reserve does a Hike of 0bps on June 17, 2026, then the market resolves to Yes.",
+      "scheduled_close": "2026-06-17T17:59:00Z",
+      "status_at_discovery": "finalized"
+     },
+     "polymarket": {
+      "market_id": "906974",
+      "question": "Will there be no change in Fed interest rates after the June 2026 meeting?",
+      "bucket": "No change",
+      "scheduled_close": "2026-06-17T00:00:00Z",
+      "closed_at_discovery": true
+     }
+    },
+    {
+     "leg": "cut 25",
+     "equivalence": "direct",
+     "reference_close": "2026-06-17T00:00:00Z",
+     "kalshi": {
+      "market_id": "KXFEDDECISION-26JUN-C25",
+      "question": "Cut 25bps: If the Federal Reserve does a Cut of 25bps on June 17, 2026, then the market resolves to Yes.",
+      "scheduled_close": "2026-06-17T17:59:00Z",
+      "status_at_discovery": "finalized"
+     },
+     "polymarket": {
+      "market_id": "906973",
+      "question": "Will the Fed decrease interest rates by 25 bps after the June 2026 meeting?",
+      "bucket": "25 bps decrease",
+      "scheduled_close": "2026-06-17T00:00:00Z",
+      "closed_at_discovery": true
+     }
+    },
+    {
+     "leg": "cut >25",
+     "equivalence": "direct",
+     "reference_close": "2026-06-17T00:00:00Z",
+     "kalshi": {
+      "market_id": "KXFEDDECISION-26JUN-C26",
+      "question": "Cut >25bps: If the Federal Reserve does a Cut of   25bps on June 17, 2026, then the market resolves to Yes.",
+      "scheduled_close": "2026-06-17T17:59:00Z",
+      "status_at_discovery": "finalized"
+     },
+     "polymarket": {
+      "market_id": "906972",
+      "question": "Will the Fed decrease interest rates by 50+ bps after the June 2026 meeting?",
+      "bucket": "50+ bps decrease",
+      "scheduled_close": "2026-06-17T00:00:00Z",
+      "closed_at_discovery": true
+     }
+    },
+    {
+     "leg": "hike 25",
+     "equivalence": "direct",
+     "reference_close": "2026-06-17T00:00:00Z",
+     "kalshi": {
+      "market_id": "KXFEDDECISION-26JUN-H25",
+      "question": "Hike 25bps: If the Federal Reserve does a Hike of 25bps on June 17, 2026, then the market resolves to Yes.",
+      "scheduled_close": "2026-06-17T17:59:00Z",
+      "status_at_discovery": "finalized"
+     },
+     "polymarket": {
+      "market_id": "906975",
+      "question": "Will the Fed increase interest rates by 25 bps after the June 2026 meeting?",
+      "bucket": "25 bps increase",
+      "scheduled_close": "2026-06-17T00:00:00Z",
+      "closed_at_discovery": true
+     }
+    },
+    {
+     "leg": "hike >25",
+     "equivalence": "direct",
+     "reference_close": "2026-06-17T00:00:00Z",
+     "kalshi": {
+      "market_id": "KXFEDDECISION-26JUN-H26",
+      "question": "Hike >25bps: If the Federal Reserve does a Hike of   25bps on June 17, 2026, then the market resolves to Yes.",
+      "scheduled_close": "2026-06-17T17:59:00Z",
+      "status_at_discovery": "finalized"
+     },
+     "polymarket": {
+      "market_id": "906976",
+      "question": "Will the Fed increase interest rates by 50+ bps after the June 2026 meeting?",
+      "bucket": "50+ bps increase",
+      "scheduled_close": "2026-06-17T00:00:00Z",
+      "closed_at_discovery": true
+     }
+    }
+   ],
+   "excluded_legs": [],
+   "excluded_exact_value_buckets": 0
+  },
+  {
+   "group": "FOMC 2026-07",
+   "kind": "fomc",
+   "kalshi_event": "KXFEDDECISION-26JUL",
+   "kalshi_event_mutually_exclusive": true,
+   "polymarket_event": {
+    "id": "287395",
+    "slug": "fed-decision-in-july-181",
+    "title": "Fed Decision in July?",
+    "scheduled_end": "2026-07-29T00:00:00Z",
+    "neg_risk": true,
+    "neg_risk_market_id": "0x40fd26ada6f086ebd83f34012327c0914d56154faf3fa36d912468c2532f3400"
+   },
+   "pairs": [
+    {
+     "leg": "no change",
+     "equivalence": "direct",
+     "reference_close": "2026-07-29T00:00:00Z",
+     "kalshi": {
+      "market_id": "KXFEDDECISION-26JUL-H0",
+      "question": "Fed maintains rate: If the Federal Reserve does a Hike of 0bps on July 29, 2026, then the market resolves to Yes.",
+      "scheduled_close": "2026-07-29T17:59:00Z",
+      "status_at_discovery": "finalized"
+     },
+     "polymarket": {
+      "market_id": "1654958",
+      "question": "Will there be no change in Fed interest rates after the July 2026 meeting?",
+      "bucket": "No change",
+      "scheduled_close": "2026-07-29T00:00:00Z",
+      "closed_at_discovery": true
+     }
+    },
+    {
+     "leg": "cut 25",
+     "equivalence": "direct",
+     "reference_close": "2026-07-29T00:00:00Z",
+     "kalshi": {
+      "market_id": "KXFEDDECISION-26JUL-C25",
+      "question": "Cut 25bps: If the Federal Reserve does a Cut of 25bps on July 29, 2026, then the market resolves to Yes.",
+      "scheduled_close": "2026-07-29T17:59:00Z",
+      "status_at_discovery": "finalized"
+     },
+     "polymarket": {
+      "market_id": "1654957",
+      "question": "Will the Fed decrease interest rates by 25 bps after the July 2026 meeting?",
+      "bucket": "25 bps decrease",
+      "scheduled_close": "2026-07-29T00:00:00Z",
+      "closed_at_discovery": true
+     }
+    },
+    {
+     "leg": "cut >25",
+     "equivalence": "direct",
+     "reference_close": "2026-07-29T00:00:00Z",
+     "kalshi": {
+      "market_id": "KXFEDDECISION-26JUL-C26",
+      "question": "Cut >25bps: If the Federal Reserve does a Cut of   25bps on July 29, 2026, then the market resolves to Yes.",
+      "scheduled_close": "2026-07-29T17:59:00Z",
+      "status_at_discovery": "finalized"
+     },
+     "polymarket": {
+      "market_id": "1654956",
+      "question": "Will the Fed decrease interest rates by 50+ bps after the July 2026 meeting?",
+      "bucket": "50+ bps decrease",
+      "scheduled_close": "2026-07-29T00:00:00Z",
+      "closed_at_discovery": true
+     }
+    },
+    {
+     "leg": "hike 25",
+     "equivalence": "direct",
+     "reference_close": "2026-07-29T00:00:00Z",
+     "kalshi": {
+      "market_id": "KXFEDDECISION-26JUL-H25",
+      "question": "Hike 25bps: If the Federal Reserve does a Hike of 25bps on July 29, 2026, then the market resolves to Yes.",
+      "scheduled_close": "2026-07-29T17:59:00Z",
+      "status_at_discovery": "finalized"
+     },
+     "polymarket": {
+      "market_id": "1654959",
+      "question": "Will the Fed increase interest rates by 25 bps after the July 2026 meeting?",
+      "bucket": "25 bps increase",
+      "scheduled_close": "2026-07-29T00:00:00Z",
+      "closed_at_discovery": true
+     }
+    },
+    {
+     "leg": "hike >25",
+     "equivalence": "direct",
+     "reference_close": "2026-07-29T00:00:00Z",
+     "kalshi": {
+      "market_id": "KXFEDDECISION-26JUL-H26",
+      "question": "Hike >25bps: If the Federal Reserve does a Hike of   25bps on July 29, 2026, then the market resolves to Yes.",
+      "scheduled_close": "2026-07-29T17:59:00Z",
+      "status_at_discovery": "finalized"
+     },
+     "polymarket": {
+      "market_id": "1654960",
+      "question": "Will the Fed increase interest rates by 50+ bps after the July 2026 meeting?",
+      "bucket": "50+ bps increase",
+      "scheduled_close": "2026-07-29T00:00:00Z",
+      "closed_at_discovery": true
+     }
+    }
+   ],
+   "excluded_legs": [],
+   "excluded_exact_value_buckets": 0
+  },
+  {
+   "group": "FOMC 2026-09",
+   "kind": "fomc",
+   "kalshi_event": "KXFEDDECISION-26SEP",
+   "kalshi_event_mutually_exclusive": true,
+   "polymarket_event": {
+    "id": "481717",
+    "slug": "fed-decision-in-september-762",
+    "title": "Fed Decision in September?",
+    "scheduled_end": "2026-09-16T00:00:00Z",
+    "neg_risk": true,
+    "neg_risk_market_id": "0x128d7d75905674954c484aa559fd18435376720a91f4614a2a5c2b60aa94c900"
+   },
+   "pairs": [
+    {
+     "leg": "no change",
+     "equivalence": "direct",
+     "reference_close": "2026-09-16T00:00:00Z",
+     "kalshi": {
+      "market_id": "KXFEDDECISION-26SEP-H0",
+      "question": "Fed maintains rate: If the Federal Reserve does a Hike of 0bps on September 16, 2026, then the market resolves to Yes.",
+      "scheduled_close": "2026-09-16T17:59:00Z",
+      "status_at_discovery": "finalized"
+     },
+     "polymarket": {
+      "market_id": "2252244",
+      "question": "Will there be no change in Fed interest rates after the September 2026 meeting?",
+      "bucket": "No change",
+      "scheduled_close": "2026-09-16T00:00:00Z",
+      "closed_at_discovery": true
+     }
+    },
+    {
+     "leg": "cut 25",
+     "equivalence": "direct",
+     "reference_close": "2026-09-16T00:00:00Z",
+     "kalshi": {
+      "market_id": "KXFEDDECISION-26SEP-C25",
+      "question": "Cut 25bps: If the Federal Reserve does a Cut of 25bps on September 16, 2026, then the market resolves to Yes.",
+      "scheduled_close": "2026-09-16T17:59:00Z",
+      "status_at_discovery": "finalized"
+     },
+     "polymarket": {
+      "market_id": "2252243",
+      "question": "Will the Fed decrease interest rates by 25 bps after the September 2026 meeting?",
+      "bucket": "25 bps decrease",
+      "scheduled_close": "2026-09-16T00:00:00Z",
+      "closed_at_discovery": true
+     }
+    },
+    {
+     "leg": "cut >25",
+     "equivalence": "direct",
+     "reference_close": "2026-09-16T00:00:00Z",
+     "kalshi": {
+      "market_id": "KXFEDDECISION-26SEP-C26",
+      "question": "Cut >25bps: If the Federal Reserve does a Cut of   25bps on September 16, 2026, then the market resolves to Yes.",
+      "scheduled_close": "2026-09-16T17:59:00Z",
+      "status_at_discovery": "finalized"
+     },
+     "polymarket": {
+      "market_id": "2252242",
+      "question": "Will the Fed decrease interest rates by 50+ bps after the September 2026 meeting?",
+      "bucket": "50+ bps decrease",
+      "scheduled_close": "2026-09-16T00:00:00Z",
+      "closed_at_discovery": true
+     }
+    },
+    {
+     "leg": "hike 25",
+     "equivalence": "direct",
+     "reference_close": "2026-09-16T00:00:00Z",
+     "kalshi": {
+      "market_id": "KXFEDDECISION-26SEP-H25",
+      "question": "Hike 25bps: If the Federal Reserve does a Hike of 25bps on September 16, 2026, then the market resolves to Yes.",
+      "scheduled_close": "2026-09-16T17:59:00Z",
+      "status_at_discovery": "finalized"
+     },
+     "polymarket": {
+      "market_id": "2252245",
+      "question": "Will the Fed increase interest rates by 25 bps after the September 2026 meeting?",
+      "bucket": "25 bps increase",
+      "scheduled_close": "2026-09-16T00:00:00Z",
+      "closed_at_discovery": true
+     }
+    },
+    {
+     "leg": "hike >25",
+     "equivalence": "direct",
+     "reference_close": "2026-09-16T00:00:00Z",
+     "kalshi": {
+      "market_id": "KXFEDDECISION-26SEP-H26",
+      "question": "Hike >25bps: If the Federal Reserve does a Hike of   25bps on September 16, 2026, then the market resolves to Yes.",
+      "scheduled_close": "2026-09-16T17:59:00Z",
+      "status_at_discovery": "finalized"
+     },
+     "polymarket": {
+      "market_id": "2252246",
+      "question": "Will the Fed increase interest rates by 50+ bps after the September 2026 meeting?",
+      "bucket": "50+ bps increase",
+      "scheduled_close": "2026-09-16T00:00:00Z",
+      "closed_at_discovery": true
+     }
+    }
+   ],
+   "excluded_legs": [],
+   "excluded_exact_value_buckets": 0
+  },
+  {
+   "group": "FOMC 2026-09 (second Polymarket event)",
+   "kind": "fomc",
+   "kalshi_event": "KXFEDDECISION-26SEP",
+   "kalshi_event_mutually_exclusive": true,
+   "polymarket_event": {
+    "id": "432066",
+    "slug": "fed-decision-in-september-568",
+    "title": "Fed Decision in September?",
+    "scheduled_end": "2026-09-16T00:00:00Z",
+    "neg_risk": false,
+    "neg_risk_market_id": null
+   },
+   "pairs": [
+    {
+     "leg": "no change",
+     "equivalence": "direct",
+     "reference_close": "2026-09-16T00:00:00Z",
+     "kalshi": {
+      "market_id": "KXFEDDECISION-26SEP-H0",
+      "question": "Fed maintains rate: If the Federal Reserve does a Hike of 0bps on September 16, 2026, then the market resolves to Yes.",
+      "scheduled_close": "2026-09-16T17:59:00Z",
+      "status_at_discovery": "finalized"
+     },
+     "polymarket": {
+      "market_id": "2118744",
+      "question": "Will there be no change in Fed interest rates after the September 2026 meeting?",
+      "bucket": "No change",
+      "scheduled_close": "2026-09-16T00:00:00Z",
+      "closed_at_discovery": true
+     }
+    },
+    {
+     "leg": "cut 25",
+     "equivalence": "direct",
+     "reference_close": "2026-09-16T00:00:00Z",
+     "kalshi": {
+      "market_id": "KXFEDDECISION-26SEP-C25",
+      "question": "Cut 25bps: If the Federal Reserve does a Cut of 25bps on September 16, 2026, then the market resolves to Yes.",
+      "scheduled_close": "2026-09-16T17:59:00Z",
+      "status_at_discovery": "finalized"
+     },
+     "polymarket": {
+      "market_id": "2118743",
+      "question": "Will the Fed decrease interest rates by 25 bps after the September 2026 meeting?",
+      "bucket": "25 bps decrease",
+      "scheduled_close": "2026-09-16T00:00:00Z",
+      "closed_at_discovery": true
+     }
+    },
+    {
+     "leg": "cut >25",
+     "equivalence": "direct",
+     "reference_close": "2026-09-16T00:00:00Z",
+     "kalshi": {
+      "market_id": "KXFEDDECISION-26SEP-C26",
+      "question": "Cut >25bps: If the Federal Reserve does a Cut of   25bps on September 16, 2026, then the market resolves to Yes.",
+      "scheduled_close": "2026-09-16T17:59:00Z",
+      "status_at_discovery": "finalized"
+     },
+     "polymarket": {
+      "market_id": "2118742",
+      "question": "Will the Fed decrease interest rates by 50+ bps after the September 2026 meeting?",
+      "bucket": "50+ bps decrease",
+      "scheduled_close": "2026-09-16T00:00:00Z",
+      "closed_at_discovery": true
+     }
+    },
+    {
+     "leg": "hike 25",
+     "equivalence": "direct",
+     "reference_close": "2026-09-16T00:00:00Z",
+     "kalshi": {
+      "market_id": "KXFEDDECISION-26SEP-H25",
+      "question": "Hike 25bps: If the Federal Reserve does a Hike of 25bps on September 16, 2026, then the market resolves to Yes.",
+      "scheduled_close": "2026-09-16T17:59:00Z",
+      "status_at_discovery": "finalized"
+     },
+     "polymarket": {
+      "market_id": "2118745",
+      "question": "Will the Fed increase interest rates by 25 bps after the September 2026 meeting?",
+      "bucket": "25 bps increase",
+      "scheduled_close": "2026-09-16T00:00:00Z",
+      "closed_at_discovery": true
+     }
+    },
+    {
+     "leg": "hike >25",
+     "equivalence": "direct",
+     "reference_close": "2026-09-16T00:00:00Z",
+     "kalshi": {
+      "market_id": "KXFEDDECISION-26SEP-H26",
+      "question": "Hike >25bps: If the Federal Reserve does a Hike of   25bps on September 16, 2026, then the market resolves to Yes.",
+      "scheduled_close": "2026-09-16T17:59:00Z",
+      "status_at_discovery": "finalized"
+     },
+     "polymarket": {
+      "market_id": "2118746",
+      "question": "Will the Fed increase interest rates by 50+ bps after the September 2026 meeting?",
+      "bucket": "50+ bps increase",
+      "scheduled_close": "2026-09-16T00:00:00Z",
+      "closed_at_discovery": true
+     }
+    }
+   ],
+   "excluded_legs": [],
+   "excluded_exact_value_buckets": 0
+  },
+  {
+   "group": "FOMC 2026-10",
+   "kind": "fomc",
+   "kalshi_event": "KXFEDDECISION-26OCT",
+   "kalshi_event_mutually_exclusive": true,
+   "polymarket_event": {
+    "id": "606422",
+    "slug": "fed-decision-in-october-20260617190323537",
+    "title": "Fed Decision in October?",
+    "scheduled_end": "2026-10-29T03:59:00Z",
+    "neg_risk": true,
+    "neg_risk_market_id": "0x09ac0b2770dbcad3f2e4f5356a68af57cb8ca7502b02645a07b0290d46026a00"
+   },
+   "pairs": [
+    {
+     "leg": "no change",
+     "equivalence": "direct",
+     "reference_close": "2026-10-28T17:59:00Z",
+     "kalshi": {
+      "market_id": "KXFEDDECISION-26OCT-H0",
+      "question": "Fed maintains rate: If the Federal Reserve does a Hike of 0bps on October 28, 2026, then the market resolves to Yes.",
+      "scheduled_close": "2026-10-28T17:59:00Z",
+      "status_at_discovery": "finalized"
+     },
+     "polymarket": {
+      "market_id": "2589812",
+      "question": "Will there be no change in Fed interest rates after the October 2026 meeting?",
+      "bucket": "No change",
+      "scheduled_close": "2026-10-29T03:59:00Z",
+      "closed_at_discovery": true
+     }
+    },
+    {
+     "leg": "cut 25",
+     "equivalence": "direct",
+     "reference_close": "2026-10-28T17:59:00Z",
+     "kalshi": {
+      "market_id": "KXFEDDECISION-26OCT-C25",
+      "question": "Cut 25bps: If the Federal Reserve does a Cut of 25bps on October 28, 2026, then the market resolves to Yes.",
+      "scheduled_close": "2026-10-28T17:59:00Z",
+      "status_at_discovery": "finalized"
+     },
+     "polymarket": {
+      "market_id": "2589811",
+      "question": "Will the Fed decrease interest rates by 25 bps after the October 2026 meeting?",
+      "bucket": "25 bps decrease",
+      "scheduled_close": "2026-10-29T03:59:00Z",
+      "closed_at_discovery": true
+     }
+    },
+    {
+     "leg": "cut >25",
+     "equivalence": "direct",
+     "reference_close": "2026-10-28T17:59:00Z",
+     "kalshi": {
+      "market_id": "KXFEDDECISION-26OCT-C26",
+      "question": "Cut >25bps: If the Federal Reserve does a Cut of   25bps on October 28, 2026, then the market resolves to Yes.",
+      "scheduled_close": "2026-10-28T17:59:00Z",
+      "status_at_discovery": "finalized"
+     },
+     "polymarket": {
+      "market_id": "2589810",
+      "question": "Will the Fed decrease interest rates by 50+ bps after the October 2026 meeting?",
+      "bucket": "50+ bps decrease",
+      "scheduled_close": "2026-10-29T03:59:00Z",
+      "closed_at_discovery": true
+     }
+    },
+    {
+     "leg": "hike 25",
+     "equivalence": "direct",
+     "reference_close": "2026-10-28T17:59:00Z",
+     "kalshi": {
+      "market_id": "KXFEDDECISION-26OCT-H25",
+      "question": "Hike 25bps: If the Federal Reserve does a Hike of 25bps on October 28, 2026, then the market resolves to Yes.",
+      "scheduled_close": "2026-10-28T17:59:00Z",
+      "status_at_discovery": "finalized"
+     },
+     "polymarket": {
+      "market_id": "2589813",
+      "question": "Will the Fed increase interest rates by 25 bps after the October 2026 meeting?",
+      "bucket": "25 bps increase",
+      "scheduled_close": "2026-10-29T03:59:00Z",
+      "closed_at_discovery": true
+     }
+    },
+    {
+     "leg": "hike >25",
+     "equivalence": "direct",
+     "reference_close": "2026-10-28T17:59:00Z",
+     "kalshi": {
+      "market_id": "KXFEDDECISION-26OCT-H26",
+      "question": "Hike >25bps: If the Federal Reserve does a Hike of   25bps on October 28, 2026, then the market resolves to Yes.",
+      "scheduled_close": "2026-10-28T17:59:00Z",
+      "status_at_discovery": "finalized"
+     },
+     "polymarket": {
+      "market_id": "2589814",
+      "question": "Will the Fed increase interest rates by 50+ bps after the October 2026 meeting?",
+      "bucket": "50+ bps increase",
+      "scheduled_close": "2026-10-29T03:59:00Z",
+      "closed_at_discovery": true
+     }
+    }
+   ],
+   "excluded_legs": [],
+   "excluded_exact_value_buckets": 0
+  },
+  {
+   "group": "CPI MoM 2024-12 (december-inflation-monthly)",
+   "kind": "cpi_mom",
+   "kalshi_event": "KXCPI-24DEC",
+   "kalshi_event_mutually_exclusive": false,
+   "polymarket_event": {
+    "id": "16709",
+    "slug": "december-inflation-monthly",
+    "title": "December Inflation - Monthly",
+    "scheduled_end": "2025-01-15T12:00:00Z",
+    "neg_risk": true,
+    "neg_risk_market_id": "0xb8662667cacc9c97c2e4b718b09baa2f635f20e1ed0380a12641585e7b8e3a00"
+   },
+   "pairs": [
+    {
+     "leg": "≥0.5% == Kalshi Above 0.4%",
+     "equivalence": "direct",
+     "reference_close": "2025-01-15T12:00:00Z",
+     "kalshi": {
+      "market_id": "KXCPI-24DEC-T0.4",
+      "question": "Above 0.4%: If the Consumer Price Index (CPI) increases by more than 0.4% in December 2024, then the market resolves to Yes.",
+      "scheduled_close": "2025-01-15T13:25:00Z",
+      "status_at_discovery": "finalized"
+     },
+     "polymarket": {
+      "market_id": "518390",
+      "question": "Will monthly inflation increase by 0.5% or more in December?",
+      "bucket": "≥0.5%",
+      "scheduled_close": "2025-01-15T12:00:00Z",
+      "closed_at_discovery": true
+     },
+     "non_release_clause": {
+      "kalshi": true,
+      "polymarket": false
+     }
+    }
+   ],
+   "excluded_legs": [
+    {
+     "venue": "polymarket",
+     "market_id": "518385",
+     "leg": "≤0.3%",
+     "complement_of": "KXCPI-24DEC-T0.3",
+     "reason": "complement of Kalshi KXCPI-24DEC-T0.3 (YES here = NO there); not collected"
+    }
+   ],
+   "excluded_exact_value_buckets": 1
+  },
+  {
+   "group": "CPI YoY 2024-12 (december-inflation)",
+   "kind": "cpi_yoy",
+   "kalshi_event": "KXCPIYOY-24DEC",
+   "kalshi_event_mutually_exclusive": false,
+   "polymarket_event": {
+    "id": "15381",
+    "slug": "december-inflation",
+    "title": "December Inflation - Annual",
+    "scheduled_end": "2025-01-15T12:00:00Z",
+    "neg_risk": true,
+    "neg_risk_market_id": "0x80e69060dfe8db96537cbd90cbcf38b98e84bc82ee9bf98400022bfdc533b600"
+   },
+   "pairs": [
+    {
+     "leg": "≥2.9% == Kalshi Above 2.8%",
+     "equivalence": "direct",
+     "reference_close": "2025-01-15T12:00:00Z",
+     "kalshi": {
+      "market_id": "KXCPIYOY-24DEC-T2.8",
+      "question": "Above 2.8%: If the Consumer Price Index (CPI) increases by more than 2.8% in the twelve months ending December 2024 (as represented by the one-decimal place value reported by the Bureau of Labor Statistics), then the market resolves to Yes.",
+      "scheduled_close": "2025-01-15T13:25:00Z",
+      "status_at_discovery": "finalized"
+     },
+     "polymarket": {
+      "market_id": "515388",
+      "question": "Will US annual inflation be 2.9% or greater in December?",
+      "bucket": "≥2.9%",
+      "scheduled_close": "2025-01-15T12:00:00Z",
+      "closed_at_discovery": true
+     },
+     "non_release_clause": {
+      "kalshi": true,
+      "polymarket": false
+     }
+    }
+   ],
+   "excluded_legs": [
+    {
+     "venue": "polymarket",
+     "market_id": "515385",
+     "leg": "≤2.6%",
+     "complement_of": "KXCPIYOY-24DEC-T2.6",
+     "reason": "complement of Kalshi KXCPIYOY-24DEC-T2.6 (YES here = NO there); not collected"
+    }
+   ],
+   "excluded_exact_value_buckets": 2
+  },
+  {
+   "group": "CPI MoM 2025-01 (january-inflation-monthly)",
+   "kind": "cpi_mom",
+   "kalshi_event": "KXCPI-25JAN",
+   "kalshi_event_mutually_exclusive": false,
+   "polymarket_event": {
+    "id": "16790",
+    "slug": "january-inflation-monthly",
+    "title": "January Inflation - Monthly",
+    "scheduled_end": "2025-02-12T12:00:00Z",
+    "neg_risk": true,
+    "neg_risk_market_id": "0x6b8589c57d51a95670671a5e581c0b476e031622282602245c97a45ea829fa00"
+   },
+   "pairs": [
+    {
+     "leg": "≥0.4% == Kalshi Above 0.3%",
+     "equivalence": "direct",
+     "reference_close": "2025-02-12T12:00:00Z",
+     "kalshi": {
+      "market_id": "KXCPI-25JAN-T0.3",
+      "question": "Above 0.3%: If the Consumer Price Index (CPI) increases by more than 0.3% in January 2025, then the market resolves to Yes.",
+      "scheduled_close": "2025-02-12T13:25:00Z",
+      "status_at_discovery": "finalized"
+     },
+     "polymarket": {
+      "market_id": "518796",
+      "question": "Will monthly inflation increase by 0.4% or more in January?",
+      "bucket": "≥0.4%",
+      "scheduled_close": "2025-02-12T12:00:00Z",
+      "closed_at_discovery": true
+     },
+     "non_release_clause": {
+      "kalshi": true,
+      "polymarket": false
+     }
+    }
+   ],
+   "excluded_legs": [
+    {
+     "venue": "polymarket",
+     "market_id": "518699",
+     "leg": "≤0.1%",
+     "complement_of": "KXCPI-25JAN-T0.1",
+     "reason": "complement of Kalshi KXCPI-25JAN-T0.1 (YES here = NO there); not collected"
+    }
+   ],
+   "excluded_exact_value_buckets": 2
+  },
+  {
+   "group": "CPI YoY 2025-01 (january-inflation-annual)",
+   "kind": "cpi_yoy",
+   "kalshi_event": "KXCPIYOY-25JAN",
+   "kalshi_event_mutually_exclusive": false,
+   "polymarket_event": {
+    "id": "16808",
+    "slug": "january-inflation-annual",
+    "title": "January Inflation - Annual",
+    "scheduled_end": "2025-02-12T12:00:00Z",
+    "neg_risk": true,
+    "neg_risk_market_id": "0x70a53f96d76771a7d326a29709680f31b0fcb0cc54ff3d9234138b9f24604200"
+   },
+   "pairs": [
+    {
+     "leg": "≥2.9% == Kalshi Above 2.8%",
+     "equivalence": "direct",
+     "reference_close": "2025-02-12T13:25:00Z",
+     "close_mismatch_days": 31.06,
+     "kalshi": {
+      "market_id": "KXCPIYOY-25JAN-T2.8",
+      "question": "Above 2.8%: If the Consumer Price Index (CPI) increases by more than 2.8% in the twelve months ending January 2025 (as represented by the one-decimal place value reported by the Bureau of Labor Statistics), then the market resolves to Yes.",
+      "scheduled_close": "2025-02-12T13:25:00Z",
+      "status_at_discovery": "finalized"
+     },
+     "polymarket": {
+      "market_id": "518813",
+      "question": "Will annual inflation increase by 2.9% or more in January?",
+      "bucket": "≥2.9%",
+      "scheduled_close": "2025-01-12T12:00:00Z",
+      "closed_at_discovery": true
+     },
+     "non_release_clause": {
+      "kalshi": true,
+      "polymarket": false
+     }
+    }
+   ],
+   "excluded_legs": [
+    {
+     "venue": "polymarket",
+     "market_id": "518808",
+     "leg": "≤2.6%",
+     "complement_of": "KXCPIYOY-25JAN-T2.6",
+     "reason": "complement of Kalshi KXCPIYOY-25JAN-T2.6 (YES here = NO there); not collected"
+    }
+   ],
+   "excluded_exact_value_buckets": 2
+  },
+  {
+   "group": "CPI MoM 2025-02 (february-inflation-monthly)",
+   "kind": "cpi_mom",
+   "kalshi_event": "KXCPI-25FEB",
+   "kalshi_event_mutually_exclusive": false,
+   "polymarket_event": {
+    "id": "17894",
+    "slug": "february-inflation-monthly",
+    "title": "February Inflation - Monthly",
+    "scheduled_end": "2025-03-12T12:00:00Z",
+    "neg_risk": true,
+    "neg_risk_market_id": "0xa689ffda45def0b47d14c59f58c271cd1944d6657b5126a1f93f21ac9b8d0e00"
+   },
+   "pairs": [
+    {
+     "leg": "≥0.5% == Kalshi Above 0.4%",
+     "equivalence": "direct",
+     "reference_close": "2025-03-12T12:25:00Z",
+     "close_mismatch_days": 18.98,
+     "kalshi": {
+      "market_id": "KXCPI-25FEB-T0.4",
+      "question": "Above 0.4%: If the Consumer Price Index (CPI) increases by more than 0.4% in February 2025, then the market resolves to Yes.",
+      "scheduled_close": "2025-03-12T12:25:00Z",
+      "status_at_discovery": "finalized"
+     },
+     "polymarket": {
+      "market_id": "522192",
+      "question": "Will monthly inflation increase by 0.5% or more in February?",
+      "bucket": "≥0.5%",
+      "scheduled_close": "2025-03-31T12:00:00Z",
+      "closed_at_discovery": true
+     },
+     "non_release_clause": {
+      "kalshi": true,
+      "polymarket": false
+     }
+    }
+   ],
+   "excluded_legs": [
+    {
+     "venue": "polymarket",
+     "market_id": "522188",
+     "leg": "≤0.1%",
+     "complement_of": "KXCPI-25FEB-T0.1",
+     "reason": "complement of Kalshi KXCPI-25FEB-T0.1 (YES here = NO there); not collected"
+    }
+   ],
+   "excluded_exact_value_buckets": 3
+  },
+  {
+   "group": "CPI YoY 2025-02 (february-inflation-annual)",
+   "kind": "cpi_yoy",
+   "kalshi_event": "KXCPIYOY-25FEB",
+   "kalshi_event_mutually_exclusive": false,
+   "polymarket_event": {
+    "id": "17892",
+    "slug": "february-inflation-annual",
+    "title": "February Inflation - Annual",
+    "scheduled_end": "2025-03-12T12:00:00Z",
+    "neg_risk": true,
+    "neg_risk_market_id": "0xb74e15090d8e0223f03979783c530fce7c525985752b5550ab187a5d2e9fc200"
+   },
+   "pairs": [
+    {
+     "leg": "≥3.1% == Kalshi Above 3.0%",
+     "equivalence": "direct",
+     "reference_close": "2025-03-12T12:25:00Z",
+     "close_mismatch_days": 18.98,
+     "kalshi": {
+      "market_id": "KXCPIYOY-25FEB-T3.0",
+      "question": "Above 3.0%: If the Consumer Price Index (CPI) increases by more than 3.0% in the twelve months ending February 2025 (as represented by the one-decimal place value reported by the Bureau of Labor Statistics), then the market resolves to Yes.",
+      "scheduled_close": "2025-03-12T12:25:00Z",
+      "status_at_discovery": "finalized"
+     },
+     "polymarket": {
+      "market_id": "522186",
+      "question": "Will annual inflation increase by 3.1% or more in February?",
+      "bucket": "≥3.1%",
+      "scheduled_close": "2025-03-31T12:00:00Z",
+      "closed_at_discovery": true
+     },
+     "non_release_clause": {
+      "kalshi": true,
+      "polymarket": false
+     }
+    }
+   ],
+   "excluded_legs": [
+    {
+     "venue": "polymarket",
+     "market_id": "522182",
+     "leg": "≤2.7%",
+     "complement_of": "KXCPIYOY-25FEB-T2.7",
+     "reason": "complement of Kalshi KXCPIYOY-25FEB-T2.7 (YES here = NO there); not collected"
+    }
+   ],
+   "excluded_exact_value_buckets": 3
+  },
+  {
+   "group": "CPI MoM 2025-03 (march-inflation-monthly)",
+   "kind": "cpi_mom",
+   "kalshi_event": "KXCPI-25MAR",
+   "kalshi_event_mutually_exclusive": false,
+   "polymarket_event": {
+    "id": "20808",
+    "slug": "march-inflation-monthly",
+    "title": "March Inflation - Monthly",
+    "scheduled_end": "2025-04-10T12:00:00Z",
+    "neg_risk": true,
+    "neg_risk_market_id": "0x104a36ad8c9e3d7aaa44827d9c9065fdb94d49eed3f8cd309e74568ced3b6400"
+   },
+   "pairs": [],
+   "excluded_legs": [
+    {
+     "venue": "polymarket",
+     "market_id": "527838",
+     "leg": "≤0.1%",
+     "complement_of": "KXCPI-25MAR-T0.1",
+     "reason": "complement of Kalshi KXCPI-25MAR-T0.1 (YES here = NO there); not collected"
+    },
+    {
+     "venue": "polymarket",
+     "market_id": "527842",
+     "leg": "≥0.5%",
+     "reason": "no Kalshi 'Above 0.4%' market"
+    }
+   ],
+   "excluded_exact_value_buckets": 3
+  },
+  {
+   "group": "CPI YoY 2025-03 (march-inflation-annual)",
+   "kind": "cpi_yoy",
+   "kalshi_event": "KXCPIYOY-25MAR",
+   "kalshi_event_mutually_exclusive": false,
+   "polymarket_event": {
+    "id": "20809",
+    "slug": "march-inflation-annual",
+    "title": "March Inflation - Annual",
+    "scheduled_end": "2025-04-10T12:00:00Z",
+    "neg_risk": true,
+    "neg_risk_market_id": "0x382970e59dd90277c7ba200c89d38fc7e25cd939b7075214a9fabd33518b7300"
+   },
+   "pairs": [
+    {
+     "leg": "≥2.8% == Kalshi Above 2.7%",
+     "equivalence": "direct",
+     "reference_close": "2025-04-10T12:00:00Z",
+     "kalshi": {
+      "market_id": "KXCPIYOY-25MAR-T2.7",
+      "question": "Above 2.7%: If the Consumer Price Index (CPI) increases by more than 2.7% in the twelve months ending March 2025 (as represented by the one-decimal place value reported by the Bureau of Labor Statistics), then the market resolves to Yes.",
+      "scheduled_close": "2025-04-10T12:25:00Z",
+      "status_at_discovery": "finalized"
+     },
+     "polymarket": {
+      "market_id": "527847",
+      "question": "Will annual inflation increase by 2.8% or more in March?",
+      "bucket": "≥2.8%",
+      "scheduled_close": "2025-04-10T12:00:00Z",
+      "closed_at_discovery": true
+     },
+     "non_release_clause": {
+      "kalshi": true,
+      "polymarket": false
+     }
+    }
+   ],
+   "excluded_legs": [
+    {
+     "venue": "polymarket",
+     "market_id": "527843",
+     "leg": "≤2.4%",
+     "complement_of": "KXCPIYOY-25MAR-T2.4",
+     "reason": "complement of Kalshi KXCPIYOY-25MAR-T2.4 (YES here = NO there); not collected"
+    }
+   ],
+   "excluded_exact_value_buckets": 3
+  },
+  {
+   "group": "CPI MoM 2025-04 (april-inflation-monthly)",
+   "kind": "cpi_mom",
+   "kalshi_event": "KXCPI-25APR",
+   "kalshi_event_mutually_exclusive": false,
+   "polymarket_event": {
+    "id": "22581",
+    "slug": "april-inflation-monthly",
+    "title": "April Inflation - Monthly",
+    "scheduled_end": "2025-05-13T12:00:00Z",
+    "neg_risk": true,
+    "neg_risk_market_id": "0xab892b7678c2449bab83d6390e2680be2d4e6fc008165d0534ee80d3b8e6c600"
+   },
+   "pairs": [
+    {
+     "leg": "≥0.5% == Kalshi Above 0.4%",
+     "equivalence": "direct",
+     "reference_close": "2025-05-13T12:00:00Z",
+     "kalshi": {
+      "market_id": "KXCPI-25APR-T0.4",
+      "question": "Above 0.4%: If the Consumer Price Index (CPI) increases by more than 0.4% in April 2025, then the market resolves to Yes.",
+      "scheduled_close": "2025-05-13T12:25:00Z",
+      "status_at_discovery": "finalized"
+     },
+     "polymarket": {
+      "market_id": "535929",
+      "question": "Will monthly inflation increase by 0.5% or more in April?",
+      "bucket": "≥0.5%",
+      "scheduled_close": "2025-05-13T12:00:00Z",
+      "closed_at_discovery": true
+     },
+     "non_release_clause": {
+      "kalshi": true,
+      "polymarket": false
+     }
+    }
+   ],
+   "excluded_legs": [
+    {
+     "venue": "polymarket",
+     "market_id": "535925",
+     "leg": "≤0.1%",
+     "complement_of": "KXCPI-25APR-T0.1",
+     "reason": "complement of Kalshi KXCPI-25APR-T0.1 (YES here = NO there); not collected"
+    }
+   ],
+   "excluded_exact_value_buckets": 3
+  },
+  {
+   "group": "CPI YoY 2025-04 (april-inflation-annual)",
+   "kind": "cpi_yoy",
+   "kalshi_event": "KXCPIYOY-25APR",
+   "kalshi_event_mutually_exclusive": false,
+   "polymarket_event": {
+    "id": "22582",
+    "slug": "april-inflation-annual",
+    "title": "April Inflation - Annual",
+    "scheduled_end": "2025-05-13T12:00:00Z",
+    "neg_risk": true,
+    "neg_risk_market_id": "0x24e164a68c9cb5be4376eebe2183646ed11d9a6032d33d8dd8e2f732f3029700"
+   },
+   "pairs": [
+    {
+     "leg": "≥2.7% == Kalshi Above 2.6%",
+     "equivalence": "direct",
+     "reference_close": "2025-05-13T12:00:00Z",
+     "kalshi": {
+      "market_id": "KXCPIYOY-25APR-T2.6",
+      "question": "Above 2.6%: If the Consumer Price Index (CPI) increases by more than 2.6% in the twelve months ending April 2025 (as represented by the one-decimal place value reported by the Bureau of Labor Statistics), then the market resolves to Yes.",
+      "scheduled_close": "2025-05-13T12:25:00Z",
+      "status_at_discovery": "finalized"
+     },
+     "polymarket": {
+      "market_id": "535934",
+      "question": "Will annual inflation increase by 2.7% or more in April?",
+      "bucket": "≥2.7%",
+      "scheduled_close": "2025-05-13T12:00:00Z",
+      "closed_at_discovery": true
+     },
+     "non_release_clause": {
+      "kalshi": true,
+      "polymarket": false
+     }
+    }
+   ],
+   "excluded_legs": [
+    {
+     "venue": "polymarket",
+     "market_id": "535930",
+     "leg": "≤2.3%",
+     "complement_of": "KXCPIYOY-25APR-T2.3",
+     "reason": "complement of Kalshi KXCPIYOY-25APR-T2.3 (YES here = NO there); not collected"
+    }
+   ],
+   "excluded_exact_value_buckets": 3
+  },
+  {
+   "group": "CPI MoM 2025-05 (may-inflation-monthly)",
+   "kind": "cpi_mom",
+   "kalshi_event": "KXCPI-25MAY",
+   "kalshi_event_mutually_exclusive": false,
+   "polymarket_event": {
+    "id": "24432",
+    "slug": "may-inflation-monthly",
+    "title": "May Inflation - Monthly",
+    "scheduled_end": "2025-06-11T12:00:00Z",
+    "neg_risk": true,
+    "neg_risk_market_id": "0xe4da9e818d1faa78cedd48f2d3d56cb75d19df106c0f7f340532628577159d00"
+   },
+   "pairs": [
+    {
+     "leg": "≥0.4% == Kalshi Above 0.3%",
+     "equivalence": "direct",
+     "reference_close": "2025-06-11T12:00:00Z",
+     "kalshi": {
+      "market_id": "KXCPI-25MAY-T0.3",
+      "question": "Above 0.3%: If the Consumer Price Index (CPI) increases by more than 0.3% in May 2025, then the market resolves to Yes.",
+      "scheduled_close": "2025-06-11T12:25:00Z",
+      "status_at_discovery": "finalized"
+     },
+     "polymarket": {
+      "market_id": "544344",
+      "question": "Will monthly inflation increase by 0.4% or more in May?",
+      "bucket": "≥0.4%",
+      "scheduled_close": "2025-06-11T12:00:00Z",
+      "closed_at_discovery": true
+     },
+     "non_release_clause": {
+      "kalshi": true,
+      "polymarket": false
+     }
+    }
+   ],
+   "excluded_legs": [
+    {
+     "venue": "polymarket",
+     "market_id": "544340",
+     "leg": "≤0.0%",
+     "complement_of": "KXCPI-25MAY-T0.0",
+     "reason": "complement of Kalshi KXCPI-25MAY-T0.0 (YES here = NO there); not collected"
+    }
+   ],
+   "excluded_exact_value_buckets": 3
+  },
+  {
+   "group": "CPI YoY 2025-05 (may-inflation-annual)",
+   "kind": "cpi_yoy",
+   "kalshi_event": "KXCPIYOY-25MAY",
+   "kalshi_event_mutually_exclusive": false,
+   "polymarket_event": {
+    "id": "24433",
+    "slug": "may-inflation-annual",
+    "title": "May Inflation - Annual",
+    "scheduled_end": "2025-06-11T12:00:00Z",
+    "neg_risk": true,
+    "neg_risk_market_id": "0xc3cf7ad51bd2ff163c2ba716237595c88e1b0ad5c489f25978a76ea361f18900"
+   },
+   "pairs": [
+    {
+     "leg": "≥2.6% == Kalshi Above 2.5%",
+     "equivalence": "direct",
+     "reference_close": "2025-06-11T12:00:00Z",
+     "kalshi": {
+      "market_id": "KXCPIYOY-25MAY-T2.5",
+      "question": "Above 2.5%: If the Consumer Price Index (CPI) increases by more than 2.5% in the twelve months ending May 2025 (as represented by the one-decimal place value reported by the Bureau of Labor Statistics), then the market resolves to Yes.",
+      "scheduled_close": "2025-06-11T12:25:00Z",
+      "status_at_discovery": "finalized"
+     },
+     "polymarket": {
+      "market_id": "544349",
+      "question": "Will annual inflation increase by 2.6% or more in May?",
+      "bucket": "≥2.6%",
+      "scheduled_close": "2025-06-11T12:00:00Z",
+      "closed_at_discovery": true
+     },
+     "non_release_clause": {
+      "kalshi": true,
+      "polymarket": false
+     }
+    }
+   ],
+   "excluded_legs": [
+    {
+     "venue": "polymarket",
+     "market_id": "544345",
+     "leg": "≤2.2%",
+     "complement_of": "KXCPIYOY-25MAY-T2.2",
+     "reason": "complement of Kalshi KXCPIYOY-25MAY-T2.2 (YES here = NO there); not collected"
+    }
+   ],
+   "excluded_exact_value_buckets": 3
+  },
+  {
+   "group": "CPI MoM 2025-06 (june-inflation-monthly)",
+   "kind": "cpi_mom",
+   "kalshi_event": "KXCPI-25JUN",
+   "kalshi_event_mutually_exclusive": false,
+   "polymarket_event": {
+    "id": "26717",
+    "slug": "june-inflation-monthly",
+    "title": "June Inflation - Monthly",
+    "scheduled_end": "2025-07-15T12:30:00Z",
+    "neg_risk": true,
+    "neg_risk_market_id": "0x4731c41975bf081e498b91fa8ff8f0dd953e7a9e732c23ba01ac4df77f4cfd00"
+   },
+   "pairs": [
+    {
+     "leg": "≥0.4% == Kalshi Above 0.3%",
+     "equivalence": "direct",
+     "reference_close": "2025-07-15T12:29:00Z",
+     "kalshi": {
+      "market_id": "KXCPI-25JUN-T0.3",
+      "question": "Above 0.3%: If the Consumer Price Index (CPI) increases by more than 0.3% in June 2025, then the market resolves to Yes.",
+      "scheduled_close": "2025-07-15T12:29:00Z",
+      "status_at_discovery": "finalized"
+     },
+     "polymarket": {
+      "market_id": "551583",
+      "question": "Will monthly inflation increase by 0.4% or more in June?",
+      "bucket": "≥0.4%",
+      "scheduled_close": "2025-07-15T12:30:00Z",
+      "closed_at_discovery": true
+     },
+     "non_release_clause": {
+      "kalshi": true,
+      "polymarket": false
+     }
+    }
+   ],
+   "excluded_legs": [
+    {
+     "venue": "polymarket",
+     "market_id": "551579",
+     "leg": "≤0.0%",
+     "complement_of": "KXCPI-25JUN-T0.0",
+     "reason": "complement of Kalshi KXCPI-25JUN-T0.0 (YES here = NO there); not collected"
+    }
+   ],
+   "excluded_exact_value_buckets": 3
+  },
+  {
+   "group": "CPI YoY 2025-06 (june-inflation-annual)",
+   "kind": "cpi_yoy",
+   "kalshi_event": "KXCPIYOY-25JUN",
+   "kalshi_event_mutually_exclusive": false,
+   "polymarket_event": {
+    "id": "26718",
+    "slug": "june-inflation-annual",
+    "title": "June Inflation - Annual",
+    "scheduled_end": "2025-07-15T12:30:00Z",
+    "neg_risk": true,
+    "neg_risk_market_id": "0xd12918000ebb23390a5276fc6d6811e0a129a90710e0a6e65eb45944e898e500"
+   },
+   "pairs": [
+    {
+     "leg": "≥2.6% == Kalshi Above 2.5%",
+     "equivalence": "direct",
+     "reference_close": "2025-07-15T12:29:00Z",
+     "kalshi": {
+      "market_id": "KXCPIYOY-25JUN-T2.5",
+      "question": "Above 2.5%: If the Consumer Price Index (CPI) increases by more than 2.5% in the twelve months ending June 2025 (as represented by the one-decimal place value reported by the Bureau of Labor Statistics), then the market resolves to Yes.",
+      "scheduled_close": "2025-07-15T12:29:00Z",
+      "status_at_discovery": "finalized"
+     },
+     "polymarket": {
+      "market_id": "551588",
+      "question": "Will annual inflation increase by 2.6% or more in June?",
+      "bucket": "≥2.6%",
+      "scheduled_close": "2025-07-15T12:30:00Z",
+      "closed_at_discovery": true
+     },
+     "non_release_clause": {
+      "kalshi": true,
+      "polymarket": false
+     }
+    }
+   ],
+   "excluded_legs": [
+    {
+     "venue": "polymarket",
+     "market_id": "551584",
+     "leg": "≤2.2%",
+     "reason": "no Kalshi 'Above 2.2%' market"
+    }
+   ],
+   "excluded_exact_value_buckets": 3
+  },
+  {
+   "group": "CPI MoM 2025-07 (july-inflation-monthly)",
+   "kind": "cpi_mom",
+   "kalshi_event": "KXCPI-25JUL",
+   "kalshi_event_mutually_exclusive": false,
+   "polymarket_event": {
+    "id": "32575",
+    "slug": "july-inflation-monthly",
+    "title": "July Inflation - Monthly",
+    "scheduled_end": "2025-08-15T00:00:00Z",
+    "neg_risk": true,
+    "neg_risk_market_id": "0x9d873a0f1e40eafeaa91d6e64ded055956d66aee91d9a7c3203a28509f876c00"
+   },
+   "pairs": [
+    {
+     "leg": "≥0.5% == Kalshi Above 0.4%",
+     "equivalence": "direct",
+     "reference_close": "2025-08-12T12:29:00Z",
+     "kalshi": {
+      "market_id": "KXCPI-25JUL-T0.4",
+      "question": "Above 0.4%: If the Consumer Price Index (CPI) increases by more than 0.4% (single-decimal) in July 2025, then the market resolves to Yes.",
+      "scheduled_close": "2025-08-12T12:29:00Z",
+      "status_at_discovery": "finalized"
+     },
+     "polymarket": {
+      "market_id": "563695",
+      "question": "Will monthly inflation increase by 0.5% or more in July?",
+      "bucket": "≥0.5%",
+      "scheduled_close": "2025-08-15T00:00:00Z",
+      "closed_at_discovery": true
+     },
+     "non_release_clause": {
+      "kalshi": true,
+      "polymarket": false
+     }
+    }
+   ],
+   "excluded_legs": [
+    {
+     "venue": "polymarket",
+     "market_id": "563690",
+     "leg": "≤0.0%",
+     "complement_of": "KXCPI-25JUL-T0.0",
+     "reason": "complement of Kalshi KXCPI-25JUL-T0.0 (YES here = NO there); not collected"
+    }
+   ],
+   "excluded_exact_value_buckets": 4
+  },
+  {
+   "group": "CPI YoY 2025-07 (july-inflation-annual-462)",
+   "kind": "cpi_yoy",
+   "kalshi_event": "KXCPIYOY-25JUL",
+   "kalshi_event_mutually_exclusive": false,
+   "polymarket_event": {
+    "id": "32581",
+    "slug": "july-inflation-annual-462",
+    "title": "July Inflation - Annual",
+    "scheduled_end": "2025-08-12T00:00:00Z",
+    "neg_risk": true,
+    "neg_risk_market_id": "0xc5ede3bf64df10faf7643d53bab923d6b25735cfa357079079a1e97c79268e00"
+   },
+   "pairs": [
+    {
+     "leg": "≥3.0% == Kalshi Above 2.9%",
+     "equivalence": "direct",
+     "reference_close": "2025-08-12T00:00:00Z",
+     "kalshi": {
+      "market_id": "KXCPIYOY-25JUL-T2.9",
+      "question": "Above 2.9%: If the Consumer Price Index (CPI) increases by more than 2.9% in the twelve months ending July 2025 (as represented by the one-decimal place value reported by the Bureau of Labor Statistics), then the market resolves to Yes.",
+      "scheduled_close": "2025-08-12T12:29:00Z",
+      "status_at_discovery": "finalized"
+     },
+     "polymarket": {
+      "market_id": "563709",
+      "question": "Will annual inflation increase by 3.0% or more in July?",
+      "bucket": "≥3.0%",
+      "scheduled_close": "2025-08-12T00:00:00Z",
+      "closed_at_discovery": true
+     },
+     "non_release_clause": {
+      "kalshi": true,
+      "polymarket": false
+     }
+    }
+   ],
+   "excluded_legs": [
+    {
+     "venue": "polymarket",
+     "market_id": "563705",
+     "leg": "≤2.6%",
+     "complement_of": "KXCPIYOY-25JUL-T2.6",
+     "reason": "complement of Kalshi KXCPIYOY-25JUL-T2.6 (YES here = NO there); not collected"
+    }
+   ],
+   "excluded_exact_value_buckets": 3
+  },
+  {
+   "group": "CPI MoM 2025-08 (august-inflation-monthly)",
+   "kind": "cpi_mom",
+   "kalshi_event": "KXCPI-25AUG",
+   "kalshi_event_mutually_exclusive": false,
+   "polymarket_event": {
+    "id": "37171",
+    "slug": "august-inflation-monthly",
+    "title": "August Inflation - Monthly",
+    "scheduled_end": "2025-09-11T00:00:00Z",
+    "neg_risk": true,
+    "neg_risk_market_id": "0x6cab87dcc240bbeb8917efd49321c43d31744fdd5d51284667493dfc20225c00"
+   },
+   "pairs": [
+    {
+     "leg": "≥0.4% == Kalshi Above 0.3%",
+     "equivalence": "direct",
+     "reference_close": "2025-09-11T00:00:00Z",
+     "kalshi": {
+      "market_id": "KXCPI-25AUG-T0.3",
+      "question": "Above 0.3%: If the Consumer Price Index (CPI) increases by more than 0.3% in August 2025, then the market resolves to Yes.",
+      "scheduled_close": "2025-09-11T12:25:00Z",
+      "status_at_discovery": "finalized"
+     },
+     "polymarket": {
+      "market_id": "575242",
+      "question": "Will monthly inflation increase by 0.4% or more in August?",
+      "bucket": "≥0.4%",
+      "scheduled_close": "2025-09-11T00:00:00Z",
+      "closed_at_discovery": true
+     },
+     "non_release_clause": {
+      "kalshi": true,
+      "polymarket": false
+     }
+    }
+   ],
+   "excluded_legs": [
+    {
+     "venue": "polymarket",
+     "market_id": "575238",
+     "leg": "≤0.0%",
+     "complement_of": "KXCPI-25AUG-T0.0",
+     "reason": "complement of Kalshi KXCPI-25AUG-T0.0 (YES here = NO there); not collected"
+    }
+   ],
+   "excluded_exact_value_buckets": 3
+  },
+  {
+   "group": "CPI YoY 2025-08 (august-inflation-annual)",
+   "kind": "cpi_yoy",
+   "kalshi_event": "KXCPIYOY-25AUG",
+   "kalshi_event_mutually_exclusive": false,
+   "polymarket_event": {
+    "id": "37170",
+    "slug": "august-inflation-annual",
+    "title": "August Inflation - Annual",
+    "scheduled_end": "2025-09-11T00:00:00Z",
+    "neg_risk": true,
+    "neg_risk_market_id": "0x2ae4bad7ee476df794abd2e21b726cc162b146e321f77acf9a081c7437264800"
+   },
+   "pairs": [
+    {
+     "leg": "≥3.0% == Kalshi Above 2.9%",
+     "equivalence": "direct",
+     "reference_close": "2025-09-11T00:00:00Z",
+     "kalshi": {
+      "market_id": "KXCPIYOY-25AUG-T2.9",
+      "question": "Above 2.9%: If the Consumer Price Index (CPI) increases by more than 2.9% in the twelve months ending August 2025 (as represented by the one-decimal place value reported by the Bureau of Labor Statistics), then the market resolves to Yes.",
+      "scheduled_close": "2025-09-11T12:29:00Z",
+      "status_at_discovery": "finalized"
+     },
+     "polymarket": {
+      "market_id": "575237",
+      "question": "Will annual inflation increase by 3.0% or more in August?",
+      "bucket": "≥3.0%",
+      "scheduled_close": "2025-09-11T00:00:00Z",
+      "closed_at_discovery": true
+     },
+     "non_release_clause": {
+      "kalshi": true,
+      "polymarket": false
+     }
+    }
+   ],
+   "excluded_legs": [
+    {
+     "venue": "polymarket",
+     "market_id": "575233",
+     "leg": "≤2.6%",
+     "complement_of": "KXCPIYOY-25AUG-T2.6",
+     "reason": "complement of Kalshi KXCPIYOY-25AUG-T2.6 (YES here = NO there); not collected"
+    }
+   ],
+   "excluded_exact_value_buckets": 3
+  },
+  {
+   "group": "CPI MoM 2025-09 (september-inflation-monthly)",
+   "kind": "cpi_mom",
+   "kalshi_event": "KXCPI-25SEP",
+   "kalshi_event_mutually_exclusive": false,
+   "polymarket_event": {
+    "id": "43393",
+    "slug": "september-inflation-monthly",
+    "title": "September Inflation - Monthly",
+    "scheduled_end": "2025-10-15T00:00:00Z",
+    "neg_risk": true,
+    "neg_risk_market_id": "0xaa6264843f2253c9cc35fd7953b4294379e73ecec920842479b4a4d785d78200"
+   },
+   "pairs": [],
+   "excluded_legs": [
+    {
+     "venue": "polymarket",
+     "market_id": "594153",
+     "leg": "≤0.1%",
+     "complement_of": "KXCPI-25SEP-T0.1",
+     "reason": "complement of Kalshi KXCPI-25SEP-T0.1 (YES here = NO there); not collected"
+    }
+   ],
+   "excluded_exact_value_buckets": 3,
+   "diverging_pairs": [
+    {
+     "leg": "≥0.5% == Kalshi Above 0.4%",
+     "equivalence": "direct",
+     "reference_close": "2025-10-15T00:00:00Z",
+     "kalshi": {
+      "market_id": "KXCPI-25SEP-T0.4",
+      "question": "Above 0.4%: If the Consumer Price Index (CPI) increases by more than 0.4% (single-decimal) in September 2025, then the market resolves to Yes.",
+      "scheduled_close": "2025-10-15T12:29:00Z",
+      "status_at_discovery": "finalized"
+     },
+     "polymarket": {
+      "market_id": "594157",
+      "question": "Will monthly inflation increase by 0.5% or more in September?",
+      "bucket": "≥0.5%",
+      "scheduled_close": "2025-10-15T00:00:00Z",
+      "closed_at_discovery": true
+     },
+     "non_release_clause": {
+      "kalshi": true,
+      "polymarket": false
+     },
+     "excluded_reason": "definitions diverge under non-release; NOT the same question. Kalshi rules_secondary extends expiry if a federal government shutdown delays the release; this Polymarket market has no non-release clause. The release fell in the late-2025 shutdown period, so scheduled close - 7d may not be 7 days before the real release. Snapshots kept for reference, not paired."
+    }
+   ]
+  },
+  {
+   "group": "CPI YoY 2025-09 (september-inflation-annual)",
+   "kind": "cpi_yoy",
+   "kalshi_event": "KXCPIYOY-25SEP",
+   "kalshi_event_mutually_exclusive": false,
+   "polymarket_event": {
+    "id": "43395",
+    "slug": "september-inflation-annual",
+    "title": "September Inflation - Annual",
+    "scheduled_end": "2025-10-15T00:00:00Z",
+    "neg_risk": true,
+    "neg_risk_market_id": "0x278b2143173b5ace0749e2d8ae6a9af598b9cb3c95b0ac42b36ad001b5831000"
+   },
+   "pairs": [],
+   "excluded_legs": [
+    {
+     "venue": "polymarket",
+     "market_id": "594317",
+     "leg": "≤2.9%",
+     "complement_of": "KXCPIYOY-25SEP-T2.9",
+     "reason": "complement of Kalshi KXCPIYOY-25SEP-T2.9 (YES here = NO there); not collected"
+    },
+    {
+     "venue": "polymarket",
+     "market_id": "594320",
+     "leg": "≥3.3%",
+     "reason": "no Kalshi 'Above 3.2%' market"
+    }
+   ],
+   "excluded_exact_value_buckets": 3
+  },
+  {
+   "group": "CPI MoM 2025-10 (october-inflation-monthly)",
+   "kind": "cpi_mom",
+   "kalshi_event": "KXCPI-25OCT",
+   "kalshi_event_mutually_exclusive": false,
+   "polymarket_event": {
+    "id": "67929",
+    "slug": "october-inflation-monthly",
+    "title": "October Inflation - Monthly",
+    "scheduled_end": "2025-11-13T00:00:00Z",
+    "neg_risk": true,
+    "neg_risk_market_id": "0x81806241e6f35f2c62842da2a2221893cb7f6bcf71a80c51dfbc041cb1db6b00"
+   },
+   "pairs": [],
+   "excluded_legs": [
+    {
+     "venue": "polymarket",
+     "market_id": "655621",
+     "leg": "≤0.1%",
+     "complement_of": "KXCPI-25OCT-T0.1",
+     "reason": "complement of Kalshi KXCPI-25OCT-T0.1 (YES here = NO there); not collected"
+    }
+   ],
+   "excluded_exact_value_buckets": 3,
+   "diverging_pairs": [
+    {
+     "leg": "≥0.5% == Kalshi Above 0.4%",
+     "equivalence": "direct",
+     "reference_close": "2025-11-13T00:00:00Z",
+     "kalshi": {
+      "market_id": "KXCPI-25OCT-T0.4",
+      "question": "Above 0.4%: If the Consumer Price Index (CPI) increases by more than 0.4% (single-decimal) in October 2025, then the market resolves to Yes.",
+      "scheduled_close": "2025-11-13T13:29:00Z",
+      "status_at_discovery": "finalized"
+     },
+     "polymarket": {
+      "market_id": "655625",
+      "question": "Will monthly inflation increase by 0.5% or more in October?",
+      "bucket": "≥0.5%",
+      "scheduled_close": "2025-11-13T00:00:00Z",
+      "closed_at_discovery": true
+     },
+     "non_release_clause": {
+      "kalshi": true,
+      "polymarket": false
+     },
+     "excluded_reason": "definitions diverge under non-release; NOT the same question. Kalshi rules_secondary extends expiry if a federal government shutdown delays the release; this Polymarket market has no non-release clause. The release fell in the late-2025 shutdown period, so scheduled close - 7d may not be 7 days before the real release. Snapshots kept for reference, not paired."
+    }
+   ]
+  },
+  {
+   "group": "CPI YoY 2025-10 (october-inflation-annual)",
+   "kind": "cpi_yoy",
+   "kalshi_event": "KXCPIYOY-25OCT",
+   "kalshi_event_mutually_exclusive": false,
+   "polymarket_event": {
+    "id": "67280",
+    "slug": "october-inflation-annual",
+    "title": "October Inflation - Annual",
+    "scheduled_end": "2025-11-13T00:00:00Z",
+    "neg_risk": true,
+    "neg_risk_market_id": "0xf28a451850bf36b1c840d38c5335e4b0535c7bf0d43450666aafa4b292c2d100"
+   },
+   "pairs": [],
+   "excluded_legs": [
+    {
+     "venue": "polymarket",
+     "market_id": "654397",
+     "leg": "≤2.8%",
+     "complement_of": "KXCPIYOY-25OCT-T2.8",
+     "reason": "complement of Kalshi KXCPIYOY-25OCT-T2.8 (YES here = NO there); not collected"
+    }
+   ],
+   "excluded_exact_value_buckets": 3,
+   "diverging_pairs": [
+    {
+     "leg": "≥3.2% == Kalshi Above 3.1%",
+     "equivalence": "direct",
+     "reference_close": "2025-11-13T13:29:00Z",
+     "kalshi": {
+      "market_id": "KXCPIYOY-25OCT-T3.1",
+      "question": "Above 3.1%: If the Consumer Price Index (CPI) increases by more than 3.1% in the twelve months ending October 2025 (as represented by the one-decimal place value reported by the Bureau of Labor Statistics), then the market resolves to Yes.",
+      "scheduled_close": "2025-11-13T13:29:00Z",
+      "status_at_discovery": "finalized"
+     },
+     "polymarket": {
+      "market_id": "654401",
+      "question": "Will annual inflation increase by ≥3.2% in October?",
+      "bucket": "≥3.2%",
+      "scheduled_close": "2025-11-15T00:00:00Z",
+      "closed_at_discovery": true
+     },
+     "non_release_clause": {
+      "kalshi": true,
+      "polymarket": false
+     },
+     "excluded_reason": "definitions diverge under non-release; NOT the same question. Kalshi rules_secondary extends expiry if a federal government shutdown delays the release; this Polymarket market has no non-release clause. The release fell in the late-2025 shutdown period, so scheduled close - 7d may not be 7 days before the real release. Snapshots kept for reference, not paired."
+    }
+   ]
+  },
+  {
+   "group": "CPI MoM 2025-11 (november-inflation-monthly)",
+   "kind": "cpi_mom",
+   "kalshi_event": "KXCPI-25NOV",
+   "kalshi_event_mutually_exclusive": false,
+   "polymarket_event": {
+    "id": "80638",
+    "slug": "november-inflation-monthly",
+    "title": "November Inflation - Monthly",
+    "scheduled_end": "2025-12-18T00:00:00Z",
+    "neg_risk": true,
+    "neg_risk_market_id": "0xda0ab618f5bc424405ccff49a521f9a375b2a4ec454df075e5c07832da912700"
+   },
+   "pairs": [],
+   "excluded_legs": [
+    {
+     "venue": "polymarket",
+     "market_id": "680561",
+     "leg": "≤0.1%",
+     "complement_of": "KXCPI-25NOV-T0.1",
+     "reason": "complement of Kalshi KXCPI-25NOV-T0.1 (YES here = NO there); not collected"
+    },
+    {
+     "venue": "polymarket",
+     "market_id": "680565",
+     "leg": "≥0.5%",
+     "reason": "no Kalshi 'Above 0.4%' market"
+    }
+   ],
+   "excluded_exact_value_buckets": 3
+  },
+  {
+   "group": "CPI YoY 2025-11 (november-inflation-annual)",
+   "kind": "cpi_yoy",
+   "kalshi_event": "KXCPIYOY-25NOV",
+   "kalshi_event_mutually_exclusive": false,
+   "polymarket_event": {
+    "id": "80636",
+    "slug": "november-inflation-annual",
+    "title": "November Inflation - Annual",
+    "scheduled_end": "2025-12-18T00:00:00Z",
+    "neg_risk": true,
+    "neg_risk_market_id": "0xe79935725aceda0faa77c7d586b49a3af0e2df92b5f6414b9028242fac335300"
+   },
+   "pairs": [
+    {
+     "leg": "≥3.2% == Kalshi Above 3.1%",
+     "equivalence": "direct",
+     "reference_close": "2025-12-18T00:00:00Z",
+     "kalshi": {
+      "market_id": "KXCPIYOY-25NOV-T3.1",
+      "question": "Above 3.1%: If the Consumer Price Index (CPI) increases by more than 3.1% in the twelve months ending November 2025 (as represented by the one-decimal place value reported by the Bureau of Labor Statistics), then the market resolves to Yes.",
+      "scheduled_close": "2025-12-18T13:29:00Z",
+      "status_at_discovery": "finalized"
+     },
+     "polymarket": {
+      "market_id": "680537",
+      "question": "Will annual inflation increase by ≥3.2% in November?",
+      "bucket": "≥3.2%",
+      "scheduled_close": "2025-12-18T00:00:00Z",
+      "closed_at_discovery": true
+     },
+     "non_release_clause": {
+      "kalshi": true,
+      "polymarket": true
+     }
+    }
+   ],
+   "excluded_legs": [
+    {
+     "venue": "polymarket",
+     "market_id": "680533",
+     "leg": "≤2.8%",
+     "complement_of": "KXCPIYOY-25NOV-T2.8",
+     "reason": "complement of Kalshi KXCPIYOY-25NOV-T2.8 (YES here = NO there); not collected"
+    }
+   ],
+   "excluded_exact_value_buckets": 3
+  },
+  {
+   "group": "CPI MoM 2025-12 (december-inflation-us-monthly)",
+   "kind": "cpi_mom",
+   "kalshi_event": "KXCPI-25DEC",
+   "kalshi_event_mutually_exclusive": false,
+   "polymarket_event": {
+    "id": "97910",
+    "slug": "december-inflation-us-monthly",
+    "title": "December Inflation US - Monthly",
+    "scheduled_end": "2026-01-13T00:00:00Z",
+    "neg_risk": true,
+    "neg_risk_market_id": "0xbc5b4349f00eeb7f4d4e19fc606d9cc8542b1e0a29f6a010bb79fd00848c4500"
+   },
+   "pairs": [
+    {
+     "leg": "≥0.5% == Kalshi Above 0.4%",
+     "equivalence": "direct",
+     "reference_close": "2026-01-13T13:29:00Z",
+     "close_mismatch_days": 31.56,
+     "kalshi": {
+      "market_id": "KXCPI-25DEC-T0.4",
+      "question": "Above 0.4%: If the Consumer Price Index (CPI) increases by more than 0.4% (single-decimal) in December 2025, then the market resolves to Yes.",
+      "scheduled_close": "2026-01-13T13:29:00Z",
+      "status_at_discovery": "finalized"
+     },
+     "polymarket": {
+      "market_id": "833219",
+      "question": "Will monthly inflation increase by 0.5% or more in December?",
+      "bucket": "≥0.5%",
+      "scheduled_close": "2025-12-13T00:00:00Z",
+      "closed_at_discovery": true
+     },
+     "non_release_clause": {
+      "kalshi": true,
+      "polymarket": true
+     }
+    }
+   ],
+   "excluded_legs": [
+    {
+     "venue": "polymarket",
+     "market_id": "833215",
+     "leg": "≤0.1%",
+     "complement_of": "KXCPI-25DEC-T0.1",
+     "reason": "complement of Kalshi KXCPI-25DEC-T0.1 (YES here = NO there); not collected"
+    }
+   ],
+   "excluded_exact_value_buckets": 3
+  },
+  {
+   "group": "CPI YoY 2025-12 (december-inflation-us-annual)",
+   "kind": "cpi_yoy",
+   "kalshi_event": "KXCPIYOY-25DEC",
+   "kalshi_event_mutually_exclusive": false,
+   "polymarket_event": {
+    "id": "97909",
+    "slug": "december-inflation-us-annual",
+    "title": "December Inflation US - Annual",
+    "scheduled_end": "2026-01-13T00:00:00Z",
+    "neg_risk": true,
+    "neg_risk_market_id": "0x7a9c35fc751474a70a117af93a5d320dc2a3c00da08cc3ba5fe3d6d5cf430f00"
+   },
+   "pairs": [
+    {
+     "leg": "≥3.2% == Kalshi Above 3.1%",
+     "equivalence": "direct",
+     "reference_close": "2026-01-13T00:00:00Z",
+     "kalshi": {
+      "market_id": "KXCPIYOY-25DEC-T3.1",
+      "question": "Above 3.1%: If the Consumer Price Index (CPI) increases by more than 3.1% in the twelve months ending December 2025 (as represented by the one-decimal place value reported by the Bureau of Labor Statistics), then the market resolves to Yes.",
+      "scheduled_close": "2026-01-13T13:29:00Z",
+      "status_at_discovery": "finalized"
+     },
+     "polymarket": {
+      "market_id": "833214",
+      "question": "Will annual inflation increase by ≥3.2% in December?",
+      "bucket": "≥3.2%",
+      "scheduled_close": "2026-01-13T00:00:00Z",
+      "closed_at_discovery": true
+     },
+     "non_release_clause": {
+      "kalshi": true,
+      "polymarket": true
+     }
+    }
+   ],
+   "excluded_legs": [
+    {
+     "venue": "polymarket",
+     "market_id": "833210",
+     "leg": "≤2.8%",
+     "complement_of": "KXCPIYOY-25DEC-T2.8",
+     "reason": "complement of Kalshi KXCPIYOY-25DEC-T2.8 (YES here = NO there); not collected"
+    }
+   ],
+   "excluded_exact_value_buckets": 3
+  },
+  {
+   "group": "CPI MoM 2026-01 (january-inflation-us-monthly)",
+   "kind": "cpi_mom",
+   "kalshi_event": "KXCPI-26JAN",
+   "kalshi_event_mutually_exclusive": false,
+   "polymarket_event": {
+    "id": "111039",
+    "slug": "january-inflation-us-monthly",
+    "title": "January Inflation US - Monthly",
+    "scheduled_end": "2026-02-11T00:00:00Z",
+    "neg_risk": true,
+    "neg_risk_market_id": "0x5f07c4f7963479c2dee96fc5a442ffdb1e3c485244c7fdd9bf1fcf0cc6237300"
+   },
+   "pairs": [
+    {
+     "leg": "≥0.5% == Kalshi Above 0.4%",
+     "equivalence": "direct",
+     "reference_close": "2026-02-11T00:00:00Z",
+     "kalshi": {
+      "market_id": "KXCPI-26JAN-T0.4",
+      "question": "Above 0.4%: If the Consumer Price Index (CPI) increases by more than 0.4% (single-decimal) in January 2026, then the market resolves to Yes.",
+      "scheduled_close": "2026-02-13T13:29:00Z",
+      "status_at_discovery": "finalized"
+     },
+     "polymarket": {
+      "market_id": "969649",
+      "question": "Will monthly inflation increase by 0.5% or more in January?",
+      "bucket": "≥0.5%",
+      "scheduled_close": "2026-02-11T00:00:00Z",
+      "closed_at_discovery": true
+     },
+     "non_release_clause": {
+      "kalshi": true,
+      "polymarket": true
+     }
+    }
+   ],
+   "excluded_legs": [
+    {
+     "venue": "polymarket",
+     "market_id": "969645",
+     "leg": "≤0.1%",
+     "complement_of": "KXCPI-26JAN-T0.1",
+     "reason": "complement of Kalshi KXCPI-26JAN-T0.1 (YES here = NO there); not collected"
+    }
+   ],
+   "excluded_exact_value_buckets": 3
+  },
+  {
+   "group": "CPI YoY 2026-01 (january-inflation-us-annual)",
+   "kind": "cpi_yoy",
+   "kalshi_event": "KXCPIYOY-26JAN",
+   "kalshi_event_mutually_exclusive": false,
+   "polymarket_event": {
+    "id": "111050",
+    "slug": "january-inflation-us-annual",
+    "title": "January Inflation US - Annual",
+    "scheduled_end": "2026-02-11T00:00:00Z",
+    "neg_risk": true,
+    "neg_risk_market_id": "0x19e278523c10e9dbf71d88bc75b5eeadad92e64ea247ce3ef3e73773cd248500"
+   },
+   "pairs": [
+    {
+     "leg": "≥3.2% == Kalshi Above 3.1%",
+     "equivalence": "direct",
+     "reference_close": "2026-02-11T00:00:00Z",
+     "kalshi": {
+      "market_id": "KXCPIYOY-26JAN-T3.1",
+      "question": "Above 3.1%: If the Consumer Price Index (CPI) increases by more than 3.1% in the twelve months ending January 2026 (as represented by the one-decimal place value reported by the Bureau of Labor Statistics), then the market resolves to Yes.",
+      "scheduled_close": "2026-02-13T13:29:00Z",
+      "status_at_discovery": "finalized"
+     },
+     "polymarket": {
+      "market_id": "969664",
+      "question": "Will annual inflation increase by ≥3.2% in January?",
+      "bucket": "≥3.2%",
+      "scheduled_close": "2026-02-11T00:00:00Z",
+      "closed_at_discovery": true
+     },
+     "non_release_clause": {
+      "kalshi": true,
+      "polymarket": true
+     }
+    }
+   ],
+   "excluded_legs": [
+    {
+     "venue": "polymarket",
+     "market_id": "969660",
+     "leg": "≤2.8%",
+     "complement_of": "KXCPIYOY-26JAN-T2.8",
+     "reason": "complement of Kalshi KXCPIYOY-26JAN-T2.8 (YES here = NO there); not collected"
+    }
+   ],
+   "excluded_exact_value_buckets": 3
+  },
+  {
+   "group": "CPI YoY 2026-01 (january-inflation-us-annual-lower-brackets-817)",
+   "kind": "cpi_yoy",
+   "kalshi_event": "KXCPIYOY-26JAN",
+   "kalshi_event_mutually_exclusive": false,
+   "polymarket_event": {
+    "id": "164580",
+    "slug": "january-inflation-us-annual-lower-brackets-817",
+    "title": "January Inflation US - Annual (Lower Brackets)",
+    "scheduled_end": "2026-02-11T00:00:00Z",
+    "neg_risk": true,
+    "neg_risk_market_id": "0x004472d8a9eab10c1ecb796b094f637ce00b3ac7e16f7c5906bacac90d740000"
+   },
+   "pairs": [
+    {
+     "leg": "≥2.7% == Kalshi Above 2.6%",
+     "equivalence": "direct",
+     "reference_close": "2026-02-11T00:00:00Z",
+     "kalshi": {
+      "market_id": "KXCPIYOY-26JAN-T2.6",
+      "question": "Above 2.6%: If the Consumer Price Index (CPI) increases by more than 2.6% in the twelve months ending January 2026 (as represented by the one-decimal place value reported by the Bureau of Labor Statistics), then the market resolves to Yes.",
+      "scheduled_close": "2026-02-13T13:29:00Z",
+      "status_at_discovery": "finalized"
+     },
+     "polymarket": {
+      "market_id": "1185722",
+      "question": "Will annual inflation increase by ≥2.7% in January?",
+      "bucket": "≥2.7%",
+      "scheduled_close": "2026-02-11T00:00:00Z",
+      "closed_at_discovery": true
+     },
+     "non_release_clause": {
+      "kalshi": true,
+      "polymarket": true
+     }
+    }
+   ],
+   "excluded_legs": [
+    {
+     "venue": "polymarket",
+     "market_id": "1185716",
+     "leg": "≤2.1%",
+     "complement_of": "KXCPIYOY-26JAN-T2.1",
+     "reason": "complement of Kalshi KXCPIYOY-26JAN-T2.1 (YES here = NO there); not collected"
+    }
+   ],
+   "excluded_exact_value_buckets": 5
+  },
+  {
+   "group": "CPI MoM 2026-02 (february-inflation-us-monthly-231)",
+   "kind": "cpi_mom",
+   "kalshi_event": "KXCPI-26FEB",
+   "kalshi_event_mutually_exclusive": false,
+   "polymarket_event": {
+    "id": "207993",
+    "slug": "february-inflation-us-monthly-231",
+    "title": "February Inflation US - Monthly",
+    "scheduled_end": "2026-03-11T00:00:00Z",
+    "neg_risk": true,
+    "neg_risk_market_id": "0x6603067464c35d3231357b7911c5e113fdf6ae448772b5e3c4c32c7deb2e3600"
+   },
+   "pairs": [
+    {
+     "leg": "≥0.4% == Kalshi Above 0.3%",
+     "equivalence": "direct",
+     "reference_close": "2026-03-11T00:00:00Z",
+     "kalshi": {
+      "market_id": "KXCPI-26FEB-T0.3",
+      "question": "Above 0.3%: If the Consumer Price Index (CPI) increases by more than 0.3% (single-decimal) in February 2026, then the market resolves to Yes.",
+      "scheduled_close": "2026-03-11T12:29:00Z",
+      "status_at_discovery": "finalized"
+     },
+     "polymarket": {
+      "market_id": "1373678",
+      "question": "Will monthly inflation increase by 0.4% or more in February?",
+      "bucket": "≥0.4%",
+      "scheduled_close": "2026-03-11T00:00:00Z",
+      "closed_at_discovery": true
+     },
+     "non_release_clause": {
+      "kalshi": true,
+      "polymarket": true
+     }
+    }
+   ],
+   "excluded_legs": [
+    {
+     "venue": "polymarket",
+     "market_id": "1373674",
+     "leg": "≤0.0%",
+     "complement_of": "KXCPI-26FEB-T0.0",
+     "reason": "complement of Kalshi KXCPI-26FEB-T0.0 (YES here = NO there); not collected"
+    }
+   ],
+   "excluded_exact_value_buckets": 3
+  },
+  {
+   "group": "CPI YoY 2026-02 (february-inflation-us-annual)",
+   "kind": "cpi_yoy",
+   "kalshi_event": "KXCPIYOY-26FEB",
+   "kalshi_event_mutually_exclusive": false,
+   "polymarket_event": {
+    "id": "207936",
+    "slug": "february-inflation-us-annual",
+    "title": "February Inflation US - Annual",
+    "scheduled_end": "2026-03-11T00:00:00Z",
+    "neg_risk": true,
+    "neg_risk_market_id": "0xb3c20ba0b1e5efe953b7b7e1abf999ccef7c7e8b517f07134c2e46efcc00e700"
+   },
+   "pairs": [
+    {
+     "leg": "≥2.7% == Kalshi Above 2.6%",
+     "equivalence": "direct",
+     "reference_close": "2026-03-11T00:00:00Z",
+     "kalshi": {
+      "market_id": "KXCPIYOY-26FEB-T2.6",
+      "question": "Above 2.6%: If the Consumer Price Index (CPI) increases by more than 2.6% in the twelve months ending February 2026 (as represented by the one-decimal place value reported by the Bureau of Labor Statistics), then the market resolves to Yes.",
+      "scheduled_close": "2026-03-11T12:29:00Z",
+      "status_at_discovery": "finalized"
+     },
+     "polymarket": {
+      "market_id": "1373479",
+      "question": "Will annual inflation increase by ≥2.7% in February?",
+      "bucket": "≥2.7%",
+      "scheduled_close": "2026-03-11T00:00:00Z",
+      "closed_at_discovery": true
+     },
+     "non_release_clause": {
+      "kalshi": true,
+      "polymarket": true
+     }
+    }
+   ],
+   "excluded_legs": [
+    {
+     "venue": "polymarket",
+     "market_id": "1373473",
+     "leg": "≤2.1%",
+     "reason": "no Kalshi 'Above 2.1%' market"
+    }
+   ],
+   "excluded_exact_value_buckets": 5
+  },
+  {
+   "group": "CPI MoM 2026-03 (march-inflation-us-monthly)",
+   "kind": "cpi_mom",
+   "kalshi_event": "KXCPI-26MAR",
+   "kalshi_event_mutually_exclusive": false,
+   "polymarket_event": {
+    "id": "261184",
+    "slug": "march-inflation-us-monthly",
+    "title": "March Inflation US - Monthly",
+    "scheduled_end": "2026-04-10T00:00:00Z",
+    "neg_risk": true,
+    "neg_risk_market_id": "0x3a35326ddc022d488438c39c2e8bff7c2c6845f596c2f7597ee059c3b8a71400"
+   },
+   "pairs": [
+    {
+     "leg": "≥0.8% == Kalshi Above 0.7%",
+     "equivalence": "direct",
+     "reference_close": "2026-04-10T00:00:00Z",
+     "kalshi": {
+      "market_id": "KXCPI-26MAR-T0.7",
+      "question": "Above 0.7%: If the Consumer Price Index (CPI) increases by more than 0.7% (single-decimal) in March 2026, then the market resolves to Yes.",
+      "scheduled_close": "2026-04-10T12:25:00Z",
+      "status_at_discovery": "finalized"
+     },
+     "polymarket": {
+      "market_id": "1559154",
+      "question": "Will monthly inflation increase by 0.8% or more in March?",
+      "bucket": "≥0.8%",
+      "scheduled_close": "2026-04-10T00:00:00Z",
+      "closed_at_discovery": true
+     },
+     "non_release_clause": {
+      "kalshi": true,
+      "polymarket": true
+     }
+    }
+   ],
+   "excluded_legs": [
+    {
+     "venue": "polymarket",
+     "market_id": "1559150",
+     "leg": "≤0.3%",
+     "complement_of": "KXCPI-26MAR-T0.3",
+     "reason": "complement of Kalshi KXCPI-26MAR-T0.3 (YES here = NO there); not collected"
+    }
+   ],
+   "excluded_exact_value_buckets": 4
+  },
+  {
+   "group": "CPI YoY 2026-03 (march-inflation-us-annual)",
+   "kind": "cpi_yoy",
+   "kalshi_event": "KXCPIYOY-26MAR",
+   "kalshi_event_mutually_exclusive": false,
+   "polymarket_event": {
+    "id": "208170",
+    "slug": "march-inflation-us-annual",
+    "title": "March Inflation US - Annual",
+    "scheduled_end": "2026-04-10T00:00:00Z",
+    "neg_risk": true,
+    "neg_risk_market_id": "0xb31f29ca2bab193029542ab810afcb07f82e596e60c55ad445109153fa728900"
+   },
+   "pairs": [
+    {
+     "leg": "≥2.8% == Kalshi Above 2.7%",
+     "equivalence": "direct",
+     "reference_close": "2026-04-10T00:00:00Z",
+     "kalshi": {
+      "market_id": "KXCPIYOY-26MAR-T2.7",
+      "question": "Above 2.7%: If the Consumer Price Index (CPI) increases by more than 2.7% in the twelve months ending March 2026 (as represented by the one-decimal place value reported by the Bureau of Labor Statistics), then the market resolves to Yes.",
+      "scheduled_close": "2026-04-10T13:00:23Z",
+      "status_at_discovery": "finalized"
+     },
+     "polymarket": {
+      "market_id": "1374263",
+      "question": "Will annual inflation increase by ≥2.8% in March?",
+      "bucket": "≥2.8%",
+      "scheduled_close": "2026-04-10T00:00:00Z",
+      "closed_at_discovery": true
+     },
+     "non_release_clause": {
+      "kalshi": true,
+      "polymarket": true
+     }
+    }
+   ],
+   "excluded_legs": [
+    {
+     "venue": "polymarket",
+     "market_id": "1374255",
+     "leg": "≤2.0%",
+     "complement_of": "KXCPIYOY-26MAR-T2.0",
+     "reason": "complement of Kalshi KXCPIYOY-26MAR-T2.0 (YES here = NO there); not collected"
+    }
+   ],
+   "excluded_exact_value_buckets": 7
+  },
+  {
+   "group": "CPI YoY 2026-03 (march-inflation-us-annual-higher-brackets)",
+   "kind": "cpi_yoy",
+   "kalshi_event": "KXCPIYOY-26MAR",
+   "kalshi_event_mutually_exclusive": false,
+   "polymarket_event": {
+    "id": "261155",
+    "slug": "march-inflation-us-annual-higher-brackets",
+    "title": "March Inflation US - Annual (Higher Brackets)",
+    "scheduled_end": "2026-04-10T00:00:00Z",
+    "neg_risk": true,
+    "neg_risk_market_id": "0x2dcaa7195f5d49f15ded498db8b31a7b6dec50e87264408d26d5225445bd3100"
+   },
+   "pairs": [
+    {
+     "leg": "≥3.4% == Kalshi Above 3.3%",
+     "equivalence": "direct",
+     "reference_close": "2026-04-10T00:00:00Z",
+     "kalshi": {
+      "market_id": "KXCPIYOY-26MAR-T3.3",
+      "question": "Above 3.3%: If the Consumer Price Index (CPI) increases by more than 3.3% in the twelve months ending March 2026 (as represented by the one-decimal place value reported by the Bureau of Labor Statistics), then the market resolves to Yes.",
+      "scheduled_close": "2026-04-10T13:00:23Z",
+      "status_at_discovery": "finalized"
+     },
+     "polymarket": {
+      "market_id": "1559117",
+      "question": "Will annual inflation increase by ≥3.4% in March?",
+      "bucket": "≥3.4%",
+      "scheduled_close": "2026-04-10T00:00:00Z",
+      "closed_at_discovery": true
+     },
+     "non_release_clause": {
+      "kalshi": true,
+      "polymarket": true
+     }
+    }
+   ],
+   "excluded_legs": [
+    {
+     "venue": "polymarket",
+     "market_id": "1559109",
+     "leg": "≤2.6%",
+     "complement_of": "KXCPIYOY-26MAR-T2.6",
+     "reason": "complement of Kalshi KXCPIYOY-26MAR-T2.6 (YES here = NO there); not collected"
+    }
+   ],
+   "excluded_exact_value_buckets": 7
+  },
+  {
+   "group": "CPI MoM 2026-04 (april-inflation-us-monthly)",
+   "kind": "cpi_mom",
+   "kalshi_event": "KXCPI-26APR",
+   "kalshi_event_mutually_exclusive": false,
+   "polymarket_event": {
+    "id": "364618",
+    "slug": "april-inflation-us-monthly",
+    "title": "April Inflation US - Monthly",
+    "scheduled_end": "2026-05-12T00:00:00Z",
+    "neg_risk": true,
+    "neg_risk_market_id": "0xf93d06beada463213d570595919d96c010d093977d9c5ca4c5673dd9b5059600"
+   },
+   "pairs": [
+    {
+     "leg": "≥1.1% == Kalshi Above 1.0%",
+     "equivalence": "direct",
+     "reference_close": "2026-05-12T00:00:00Z",
+     "kalshi": {
+      "market_id": "KXCPI-26APR-T1.0",
+      "question": "Above 1.0%: If the Consumer Price Index (CPI) increases by more than 1.0% (single-decimal) in April 2026, then the market resolves to Yes.",
+      "scheduled_close": "2026-05-12T12:25:00Z",
+      "status_at_discovery": "finalized"
+     },
+     "polymarket": {
+      "market_id": "1937996",
+      "question": "Will monthly inflation increase by ≥1.1% in April?",
+      "bucket": "≥1.1%",
+      "scheduled_close": "2026-05-12T00:00:00Z",
+      "closed_at_discovery": true
+     },
+     "non_release_clause": {
+      "kalshi": true,
+      "polymarket": true
+     }
+    }
+   ],
+   "excluded_legs": [
+    {
+     "venue": "polymarket",
+     "market_id": "1937988",
+     "leg": "≤0.3%",
+     "complement_of": "KXCPI-26APR-T0.3",
+     "reason": "complement of Kalshi KXCPI-26APR-T0.3 (YES here = NO there); not collected"
+    }
+   ],
+   "excluded_exact_value_buckets": 7
+  },
+  {
+   "group": "CPI YoY 2026-04 (april-inflation-us-annual)",
+   "kind": "cpi_yoy",
+   "kalshi_event": "KXCPIYOY-26APR",
+   "kalshi_event_mutually_exclusive": false,
+   "polymarket_event": {
+    "id": "364599",
+    "slug": "april-inflation-us-annual",
+    "title": "April Inflation US - Annual",
+    "scheduled_end": "2026-05-12T00:00:00Z",
+    "neg_risk": true,
+    "neg_risk_market_id": "0x47d955ff49da0a3661487d1713b55db1bddfc4bdf48ce0e295bc56902b2fc500"
+   },
+   "pairs": [
+    {
+     "leg": "≥4.1% == Kalshi Above 4.0%",
+     "equivalence": "direct",
+     "reference_close": "2026-05-12T00:00:00Z",
+     "kalshi": {
+      "market_id": "KXCPIYOY-26APR-T4.0",
+      "question": "Above 4.0%: If the Consumer Price Index (CPI) increases by more than 4.0% in the twelve months ending April 2026 (as represented by the one-decimal place value reported by the Bureau of Labor Statistics), then the market resolves to Yes.",
+      "scheduled_close": "2026-05-12T12:29:00Z",
+      "status_at_discovery": "finalized"
+     },
+     "polymarket": {
+      "market_id": "1937962",
+      "question": "Will annual inflation increase by ≥4.1% in April?",
+      "bucket": "≥4.1%",
+      "scheduled_close": "2026-05-12T00:00:00Z",
+      "closed_at_discovery": true
+     },
+     "non_release_clause": {
+      "kalshi": true,
+      "polymarket": true
+     }
+    }
+   ],
+   "excluded_legs": [
+    {
+     "venue": "polymarket",
+     "market_id": "1937952",
+     "leg": "≤3.1%",
+     "complement_of": "KXCPIYOY-26APR-T3.1",
+     "reason": "complement of Kalshi KXCPIYOY-26APR-T3.1 (YES here = NO there); not collected"
+    }
+   ],
+   "excluded_exact_value_buckets": 9
+  },
+  {
+   "group": "CPI MoM 2026-05 (may-inflation-us-monthly)",
+   "kind": "cpi_mom",
+   "kalshi_event": "KXCPI-26MAY",
+   "kalshi_event_mutually_exclusive": false,
+   "polymarket_event": {
+    "id": "477898",
+    "slug": "may-inflation-us-monthly",
+    "title": "May Inflation US - Monthly",
+    "scheduled_end": "2026-06-10T08:00:00Z",
+    "neg_risk": true,
+    "neg_risk_market_id": "0x51c2414a70a330aaf7eaee3f673b6bf0e130453096e34f289276dbbcd7d04900"
+   },
+   "pairs": [
+    {
+     "leg": "≥0.9% == Kalshi Above 0.8%",
+     "equivalence": "direct",
+     "reference_close": "2026-06-10T08:00:00Z",
+     "kalshi": {
+      "market_id": "KXCPI-26MAY-T0.8",
+      "question": "Above 0.8%: If the Consumer Price Index (CPI) increases by more than 0.8% (single-decimal) in May 2026, then the market resolves to Yes.",
+      "scheduled_close": "2026-06-10T12:25:00Z",
+      "status_at_discovery": "finalized"
+     },
+     "polymarket": {
+      "market_id": "2242053",
+      "question": "Will monthly inflation increase by 0.9% or more in May?",
+      "bucket": "≥0.9%",
+      "scheduled_close": "2026-06-10T08:00:00Z",
+      "closed_at_discovery": true
+     },
+     "non_release_clause": {
+      "kalshi": true,
+      "polymarket": true
+     }
+    }
+   ],
+   "excluded_legs": [
+    {
+     "venue": "polymarket",
+     "market_id": "2242045",
+     "leg": "≤0.1%",
+     "complement_of": "KXCPI-26MAY-T0.1",
+     "reason": "complement of Kalshi KXCPI-26MAY-T0.1 (YES here = NO there); not collected"
+    }
+   ],
+   "excluded_exact_value_buckets": 7
+  },
+  {
+   "group": "CPI YoY 2026-05 (may-inflation-us-annual)",
+   "kind": "cpi_yoy",
+   "kalshi_event": "KXCPIYOY-26MAY",
+   "kalshi_event_mutually_exclusive": false,
+   "polymarket_event": {
+    "id": "477999",
+    "slug": "may-inflation-us-annual",
+    "title": "May Inflation US - Annual",
+    "scheduled_end": "2026-06-10T08:00:00Z",
+    "neg_risk": true,
+    "neg_risk_market_id": "0x2229d5b7c78e6f2396860067a2eee7725b9dfa0786f063bb2787d0a03819f400"
+   },
+   "pairs": [
+    {
+     "leg": "≥4.4% == Kalshi Above 4.3%",
+     "equivalence": "direct",
+     "reference_close": "2026-06-10T08:00:00Z",
+     "kalshi": {
+      "market_id": "KXCPIYOY-26MAY-T4.3",
+      "question": "Above 4.3%: If the Consumer Price Index (CPI) increases by more than 4.3% in the twelve months ending May 2026 (as represented by the one-decimal place value reported by the Bureau of Labor Statistics), then the market resolves to Yes.",
+      "scheduled_close": "2026-06-10T12:29:00Z",
+      "status_at_discovery": "finalized"
+     },
+     "polymarket": {
+      "market_id": "2242383",
+      "question": "Will annual inflation be 4.4% or more in May?",
+      "bucket": "≥4.4%",
+      "scheduled_close": "2026-06-10T08:00:00Z",
+      "closed_at_discovery": true
+     },
+     "non_release_clause": {
+      "kalshi": true,
+      "polymarket": true
+     }
+    }
+   ],
+   "excluded_legs": [
+    {
+     "venue": "polymarket",
+     "market_id": "2242373",
+     "leg": "≤3.3%",
+     "complement_of": "KXCPIYOY-26MAY-T3.3",
+     "reason": "complement of Kalshi KXCPIYOY-26MAY-T3.3 (YES here = NO there); not collected"
+    }
+   ],
+   "excluded_exact_value_buckets": 10
+  },
+  {
+   "group": "CPI MoM 2026-06 (june-inflation-us-monthly-20260610151033433)",
+   "kind": "cpi_mom",
+   "kalshi_event": "KXCPI-26JUN",
+   "kalshi_event_mutually_exclusive": false,
+   "polymarket_event": {
+    "id": "580295",
+    "slug": "june-inflation-us-monthly-20260610151033433",
+    "title": "June Inflation US - Monthly",
+    "scheduled_end": "2026-07-15T03:59:00Z",
+    "neg_risk": true,
+    "neg_risk_market_id": "0xdf745274ab8d7f6baca84a8097a7dfd0a72da816f7d167e2b9c95a30dcc50200"
+   },
+   "pairs": [],
+   "excluded_legs": [
+    {
+     "venue": "polymarket",
+     "market_id": "2491383",
+     "leg": "≤0.1%",
+     "complement_of": "KXCPI-26JUN-T0.1",
+     "reason": "complement of Kalshi KXCPI-26JUN-T0.1 (YES here = NO there); not collected"
+    },
+    {
+     "venue": "polymarket",
+     "market_id": "2491391",
+     "leg": "≥0.9%",
+     "reason": "no Kalshi 'Above 0.8%' market"
+    }
+   ],
+   "excluded_exact_value_buckets": 7
+  },
+  {
+   "group": "CPI YoY 2026-06 (june-inflation-us-annual-20260610151727862)",
+   "kind": "cpi_yoy",
+   "kalshi_event": "KXCPIYOY-26JUN",
+   "kalshi_event_mutually_exclusive": false,
+   "polymarket_event": {
+    "id": "580294",
+    "slug": "june-inflation-us-annual-20260610151727862",
+    "title": "June Inflation US - Annual",
+    "scheduled_end": "2026-07-15T03:59:00Z",
+    "neg_risk": true,
+    "neg_risk_market_id": "0x96edcc47d5a25d9cc38a8a8fd2ac07339e748fb41a5afb0e0c5c846d7a531800"
+   },
+   "pairs": [],
+   "excluded_legs": [
+    {
+     "venue": "polymarket",
+     "market_id": "2491371",
+     "leg": "≤3.6%",
+     "complement_of": "KXCPIYOY-26JUN-T3.6",
+     "reason": "complement of Kalshi KXCPIYOY-26JUN-T3.6 (YES here = NO there); not collected"
+    },
+    {
+     "venue": "polymarket",
+     "market_id": "2491382",
+     "leg": "≥4.7%",
+     "reason": "no Kalshi 'Above 4.6%' market"
+    }
+   ],
+   "excluded_exact_value_buckets": 10
+  },
+  {
+   "group": "CPI MoM 2026-07 (july-inflation-us-monthly-20260714151042665)",
+   "kind": "cpi_mom",
+   "kalshi_event": "KXCPI-26JUL",
+   "kalshi_event_mutually_exclusive": false,
+   "polymarket_event": {
+    "id": "703588",
+    "slug": "july-inflation-us-monthly-20260714151042665",
+    "title": "July Inflation US - Monthly",
+    "scheduled_end": "2026-08-12T03:59:00Z",
+    "neg_risk": true,
+    "neg_risk_market_id": "0x82c5b9e9cb0193799f1b873ef62e9f32f4c2c614649845846dc3b5fc71410700"
+   },
+   "pairs": [
+    {
+     "leg": "≥0.1% == Kalshi Above 0.0%",
+     "equivalence": "direct",
+     "reference_close": "2026-08-12T03:59:00Z",
+     "kalshi": {
+      "market_id": "KXCPI-26JUL-T0.0",
+      "question": "Above 0.0%: If the Consumer Price Index (CPI) increases by more than 0.0% (single-decimal) in July 2026, then the market resolves to Yes.",
+      "scheduled_close": "2026-08-12T12:25:00Z",
+      "status_at_discovery": "finalized"
+     },
+     "polymarket": {
+      "market_id": "2925106",
+      "question": "Will monthly inflation increase by 0.1% or more in July?",
+      "bucket": "≥0.1%",
+      "scheduled_close": "2026-08-12T03:59:00Z",
+      "closed_at_discovery": true
+     },
+     "non_release_clause": {
+      "kalshi": true,
+      "polymarket": true
+     }
+    }
+   ],
+   "excluded_legs": [
+    {
+     "venue": "polymarket",
+     "market_id": "2925098",
+     "leg": "≤-0.7%",
+     "reason": "no Kalshi 'Above -0.7%' market"
+    }
+   ],
+   "excluded_exact_value_buckets": 7
+  },
+  {
+   "group": "CPI YoY 2026-07 (july-inflation-us-annual-20260714150613267)",
+   "kind": "cpi_yoy",
+   "kalshi_event": "KXCPIYOY-26JUL",
+   "kalshi_event_mutually_exclusive": false,
+   "polymarket_event": {
+    "id": "703573",
+    "slug": "july-inflation-us-annual-20260714150613267",
+    "title": "July Inflation US - Annual",
+    "scheduled_end": "2026-08-12T03:59:00Z",
+    "neg_risk": true,
+    "neg_risk_market_id": "0xe19955a59d89e18f188e8f92bc25293db835f04d708702080716734476805800"
+   },
+   "pairs": [
+    {
+     "leg": "≥4.2% == Kalshi Above 4.1%",
+     "equivalence": "direct",
+     "reference_close": "2026-08-12T03:59:00Z",
+     "kalshi": {
+      "market_id": "KXCPIYOY-26JUL-T4.1",
+      "question": "Above 4.1%: If the Consumer Price Index (CPI) increases by more than 4.1% in the twelve months ending July 2026 (as represented by the one-decimal place value reported by the Bureau of Labor Statistics), then the market resolves to Yes.",
+      "scheduled_close": "2026-08-12T12:29:00Z",
+      "status_at_discovery": "finalized"
+     },
+     "polymarket": {
+      "market_id": "2925083",
+      "question": "Will annual inflation be 4.2% or more in July?",
+      "bucket": "≥4.2%",
+      "scheduled_close": "2026-08-12T03:59:00Z",
+      "closed_at_discovery": true
+     },
+     "non_release_clause": {
+      "kalshi": true,
+      "polymarket": true
+     }
+    }
+   ],
+   "excluded_legs": [
+    {
+     "venue": "polymarket",
+     "market_id": "2925072",
+     "leg": "≤3.1%",
+     "complement_of": "KXCPIYOY-26JUL-T3.1",
+     "reason": "complement of Kalshi KXCPIYOY-26JUL-T3.1 (YES here = NO there); not collected"
+    }
+   ],
+   "excluded_exact_value_buckets": 10
+  },
+  {
+   "group": "CPI MoM 2026-08 (august-inflation-us-monthly-1786474662954)",
+   "kind": "cpi_mom",
+   "kalshi_event": "KXCPI-26AUG",
+   "kalshi_event_mutually_exclusive": false,
+   "polymarket_event": {
+    "id": "838709",
+    "slug": "august-inflation-us-monthly-1786474662954",
+    "title": "August Inflation US - Monthly",
+    "scheduled_end": "2026-09-11T03:59:00Z",
+    "neg_risk": true,
+    "neg_risk_market_id": "0x6f123a9fd7073cc10f5fd9867118e3cde3616d3eb38192ec25b5954fb80a1d00"
+   },
+   "pairs": [
+    {
+     "leg": "≥0.5% == Kalshi Above 0.4%",
+     "equivalence": "direct",
+     "reference_close": "2026-09-11T03:59:00Z",
+     "kalshi": {
+      "market_id": "KXCPI-26AUG-T0.4",
+      "question": "Above 0.4%: If the Consumer Price Index (CPI) increases by more than 0.4% (single-decimal) in August 2026, then the market resolves to Yes.",
+      "scheduled_close": "2026-09-11T12:25:00Z",
+      "status_at_discovery": "finalized"
+     },
+     "polymarket": {
+      "market_id": "3539668",
+      "question": "Will monthly inflation increase by 0.5% or more in August?",
+      "bucket": "≥0.5%",
+      "scheduled_close": "2026-09-11T03:59:00Z",
+      "closed_at_discovery": true
+     },
+     "non_release_clause": {
+      "kalshi": true,
+      "polymarket": true
+     }
+    }
+   ],
+   "excluded_legs": [
+    {
+     "venue": "polymarket",
+     "market_id": "3539660",
+     "leg": "≤-0.3%",
+     "complement_of": "KXCPI-26AUG-T-0.3",
+     "reason": "complement of Kalshi KXCPI-26AUG-T-0.3 (YES here = NO there); not collected"
+    }
+   ],
+   "excluded_exact_value_buckets": 7
+  },
+  {
+   "group": "CPI YoY 2026-08 (august-inflation-us-annual-1786474662954)",
+   "kind": "cpi_yoy",
+   "kalshi_event": "KXCPIYOY-26AUG",
+   "kalshi_event_mutually_exclusive": false,
+   "polymarket_event": {
+    "id": "838710",
+    "slug": "august-inflation-us-annual-1786474662954",
+    "title": "August Inflation US - Annual",
+    "scheduled_end": "2026-09-11T03:59:00Z",
+    "neg_risk": true,
+    "neg_risk_market_id": "0x68ebc5c79070189e62bac4b1b9d34005a8be771b8a7b74d8deb20405ffda8d00"
+   },
+   "pairs": [
+    {
+     "leg": "≥4.0% == Kalshi Above 3.9%",
+     "equivalence": "direct",
+     "reference_close": "2026-09-11T03:59:00Z",
+     "kalshi": {
+      "market_id": "KXCPIYOY-26AUG-T3.9",
+      "question": "Above 3.9%: If the Consumer Price Index (CPI) increases by more than 3.9% in the twelve months ending August 2026 (as represented by the one-decimal place value reported by the Bureau of Labor Statistics), then the market resolves to Yes.",
+      "scheduled_close": "2026-09-11T12:29:00Z",
+      "status_at_discovery": "finalized"
+     },
+     "polymarket": {
+      "market_id": "3539680",
+      "question": "Will annual inflation be 4.0% or more in August?",
+      "bucket": "≥4.0%",
+      "scheduled_close": "2026-09-11T03:59:00Z",
+      "closed_at_discovery": true
+     },
+     "non_release_clause": {
+      "kalshi": true,
+      "polymarket": true
+     }
+    }
+   ],
+   "excluded_legs": [
+    {
+     "venue": "polymarket",
+     "market_id": "3539669",
+     "leg": "≤2.9%",
+     "complement_of": "KXCPIYOY-26AUG-T2.9",
+     "reason": "complement of Kalshi KXCPIYOY-26AUG-T2.9 (YES here = NO there); not collected"
+    }
+   ],
+   "excluded_exact_value_buckets": 10
+  },
+  {
+   "group": "CPI MoM 2026-09 (september-inflation-us-monthly)",
+   "kind": "cpi_mom",
+   "kalshi_event": "KXCPI-26SEP",
+   "kalshi_event_mutually_exclusive": false,
+   "polymarket_event": {
+    "id": "1005014",
+    "slug": "september-inflation-us-monthly",
+    "title": "September Inflation US - Monthly",
+    "scheduled_end": "2026-10-15T03:59:00Z",
+    "neg_risk": true,
+    "neg_risk_market_id": "0xc3f372a888993b9bcfef88f59dd3f1e539f442de84974829287e596d3dcaff00"
+   },
+   "pairs": [
+    {
+     "leg": "≥0.8% == Kalshi Above 0.7%",
+     "equivalence": "direct",
+     "reference_close": "2026-10-14T12:29:00Z",
+     "kalshi": {
+      "market_id": "KXCPI-26SEP-T0.7",
+      "question": "Above 0.7%: If the Consumer Price Index (CPI) increases by more than 0.7% (single-decimal) in September 2026, then the market resolves to Yes.",
+      "scheduled_close": "2026-10-14T12:29:00Z",
+      "status_at_discovery": "finalized"
+     },
+     "polymarket": {
+      "market_id": "4469465",
+      "question": "Will monthly inflation increase by 0.8% or more in September?",
+      "bucket": "≥0.8%",
+      "scheduled_close": "2026-10-15T03:59:00Z",
+      "closed_at_discovery": true
+     },
+     "non_release_clause": {
+      "kalshi": true,
+      "polymarket": true
+     }
+    }
+   ],
+   "excluded_legs": [
+    {
+     "venue": "polymarket",
+     "market_id": "4469455",
+     "leg": "≤0.0%",
+     "complement_of": "KXCPI-26SEP-T0.0",
+     "reason": "complement of Kalshi KXCPI-26SEP-T0.0 (YES here = NO there); not collected"
+    }
+   ],
+   "excluded_exact_value_buckets": 7
+  },
+  {
+   "group": "CPI YoY 2026-09 (september-inflation-us-annual)",
+   "kind": "cpi_yoy",
+   "kalshi_event": "KXCPIYOY-26SEP",
+   "kalshi_event_mutually_exclusive": false,
+   "polymarket_event": {
+    "id": "1005013",
+    "slug": "september-inflation-us-annual",
+    "title": "September Inflation US - Annual",
+    "scheduled_end": "2026-10-15T03:59:00Z",
+    "neg_risk": true,
+    "neg_risk_market_id": "0xfba62c8f288adf1686b3a1fab8a17142b434833e81a88358aa95da3a5c67e300"
+   },
+   "pairs": [
+    {
+     "leg": "≥4.0% == Kalshi Above 3.9%",
+     "equivalence": "direct",
+     "reference_close": "2026-10-14T12:29:00Z",
+     "kalshi": {
+      "market_id": "KXCPIYOY-26SEP-T3.9",
+      "question": "Above 3.9%: If the Consumer Price Index (CPI) increases by more than 3.9% in the twelve months ending September 2026 (as represented by the one-decimal place value reported by the Bureau of Labor Statistics), then the market resolves to Yes.",
+      "scheduled_close": "2026-10-14T12:29:00Z",
+      "status_at_discovery": "finalized"
+     },
+     "polymarket": {
+      "market_id": "4469403",
+      "question": "Will annual inflation be 4.0% or more in September?",
+      "bucket": "≥4.0%",
+      "scheduled_close": "2026-10-15T03:59:00Z",
+      "closed_at_discovery": true
+     },
+     "non_release_clause": {
+      "kalshi": true,
+      "polymarket": true
+     }
+    }
+   ],
+   "excluded_legs": [
+    {
+     "venue": "polymarket",
+     "market_id": "4469383",
+     "leg": "≤2.9%",
+     "reason": "no Kalshi 'Above 2.9%' market"
+    }
+   ],
+   "excluded_exact_value_buckets": 10
+  },
+  {
+   "group": "CPI MoM 2026-10 (october-inflation-us-monthly)",
+   "kind": "cpi_mom",
+   "kalshi_event": "KXCPI-26OCT",
+   "kalshi_event_mutually_exclusive": false,
+   "polymarket_event": {
+    "id": "1189083",
+    "slug": "october-inflation-us-monthly",
+    "title": "October Inflation US - Monthly",
+    "scheduled_end": "2026-11-11T04:59:00Z",
+    "neg_risk": true,
+    "neg_risk_market_id": "0xea9bda9d5d65a7f15664bc1a6f831dd456f2cdcf7f7fc816c6f02a021d5a8000"
+   },
+   "pairs": [
+    {
+     "leg": "≥0.9% == Kalshi Above 0.8%",
+     "equivalence": "direct",
+     "reference_close": "2026-11-10T13:29:00Z",
+     "kalshi": {
+      "market_id": "KXCPI-26OCT-T0.8",
+      "question": "Above 0.8%: If the Consumer Price Index (CPI) increases by more than 0.8% (single-decimal) in October 2026, then the market resolves to Yes.",
+      "scheduled_close": "2026-11-10T13:29:00Z",
+      "status_at_discovery": "finalized"
+     },
+     "polymarket": {
+      "market_id": "5691235",
+      "question": "Will monthly inflation increase by 0.9% or more in October?",
+      "bucket": "≥0.9%",
+      "scheduled_close": "2026-11-11T04:59:00Z",
+      "closed_at_discovery": true
+     },
+     "non_release_clause": {
+      "kalshi": true,
+      "polymarket": true
+     }
+    }
+   ],
+   "excluded_legs": [
+    {
+     "venue": "polymarket",
+     "market_id": "5691223",
+     "leg": "≤0.1%",
+     "complement_of": "KXCPI-26OCT-T0.1",
+     "reason": "complement of Kalshi KXCPI-26OCT-T0.1 (YES here = NO there); not collected"
+    }
+   ],
+   "excluded_exact_value_buckets": 7
+  },
+  {
+   "group": "CPI YoY 2026-10 (october-inflation-us-annual)",
+   "kind": "cpi_yoy",
+   "kalshi_event": "KXCPIYOY-26OCT",
+   "kalshi_event_mutually_exclusive": null,
+   "polymarket_event": {
+    "id": "1189074",
+    "slug": "october-inflation-us-annual",
+    "title": "October Inflation US - Annual",
+    "scheduled_end": "2026-11-11T04:59:00Z",
+    "neg_risk": true,
+    "neg_risk_market_id": "0x485dfa370bac9c3ee364f33eb19a40371ec85828d6c91876e3cc796c8ef6d400"
+   },
+   "pairs": [],
+   "excluded_legs": [
+    {
+     "venue": "polymarket",
+     "market_id": "5691083",
+     "leg": "≤3.2%",
+     "reason": "no Kalshi 'Above 3.2%' market"
+    },
+    {
+     "venue": "polymarket",
+     "market_id": "5691094",
+     "leg": "≥4.3%",
+     "reason": "no Kalshi 'Above 4.2%' market"
+    }
+   ],
+   "excluded_exact_value_buckets": 10
+  }
+ ],
+ "rule_checks": "2026-11-13: keyword check of rule text only (Kalshi rules_primary/rules_secondary, Gamma description). non_release_clause.kalshi = mentions a shutdown/delayed-data expiry extension; non_release_clause.polymarket = says what happens if the figure is not released. Pairs whose release fell in the late-2025 shutdown period and whose venues disagree are in diverging_pairs, not pairs."
+}

@@ -39,7 +39,8 @@ _S_MS_BOUNDARY = 10**11
 
 DEFAULT_MAX_STALENESS = timedelta(hours=24)
 
-_KIND_RANK = {"midpoint": 0, "candle_close": 1, "last_trade": 2, "price_history_point": 3}
+# "synthetic" never mixes with the others: a market's quotes share one venue, and only venue "synthetic" has it.
+_KIND_RANK = {"midpoint": 0, "candle_close": 1, "last_trade": 2, "price_history_point": 3, "synthetic": 4}
 
 
 def _to_decimal(raw: object) -> Decimal | None:

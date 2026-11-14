@@ -98,6 +98,8 @@ Principal evolves as $D_{t+1} = D_t - A_t$. In the demand shock, $\rho = 0$ mean
 ($m_t = 1$ immediately after $t_2$), which is how §9 Case B "week 2 only" is encoded ($t_1 = t_2 = 2$, $\rho = 0$).
 Financing that cannot happen is rejected by the simulator, not simulated: a repayment above the balance ($B_t < 0$) or
 amortization above the remaining principal ($D_{t+1} < 0$), with a \$$10^{-6}$ tolerance for solver round-off.
+Physically impossible plans are rejected the same way: the simulator enforces $P_t \ge 0$ and $I_t \ge 0$ in every week
+(same tolerance; purchases are checked before inventory), while the floor $I_t \ge I_{min}$ stays an optimizer constraint (§4.3).
 Inputs must be finite (no NaN or ±∞).
 
 **Runway:** first $t$ with $C_t < 0$ on the simulated path; reported as `> T weeks` if none. (No extrapolated burn-rate runway unless labeled.)
@@ -156,6 +158,83 @@ For outcome $y \in \{0,1\}$ and forecast $p \in [0,1]$:
 - $5 \le n < 30$: show the numbers with a `small sample` caveat
 - Say "agent better than market" **only if** the CI upper bound $< 0$. Otherwise `No improvement measured`.
 
+### What n ≈ 15 can and can't tell us (statistical review, issue #80)
+
+*Explanatory only: no formula or rule above changes. The model below is `[assumed]` and every number in this
+subsection is SYNTHETIC or derived from that assumption; no real case or sealed outcome was used. The
+simulations are in `services/api/tests/test_power.py`. Recommendations are proposals for the lead.*
+
+**Per-event difference.** With agent forecast $p_i$, market $q_i$, outcome $y_i$ (after averaging within the event):
+
+$$
+d_i = (p_i - y_i)^2 - (q_i - y_i)^2 = (p_i - q_i)(p_i + q_i - 2y_i).
+$$
+
+If $y_i \sim \text{Bernoulli}(\pi_i)$ and $\delta_i = p_i - q_i$, then $\mathbb{E}[d_i] = \delta_i(p_i + q_i - 2\pi_i)$ and
+$\text{Var}(d_i) = 4\delta_i^2\,\pi_i(1-\pi_i)$. Example, $p = 0.95$, $q = 0.85$: YES gives $0.0025 - 0.0225 = -0.02$,
+NO gives $0.9025 - 0.7225 = +0.18$. Differences are usually small and occasionally large.
+
+**Assumed spread $\sigma_d$** `[assumed]`. Outcomes drawn at $\pi \approx 0.85$ (about a T−7 "hold" price), agent and
+market differing by a typical $|\delta| = 0.05$ to $0.15$: $\sigma_d = 2|\delta|\sqrt{0.85 \cdot 0.15} = 0.714\,|\delta|$,
+so $\sigma_d \approx 0.036$, $0.071$ (central: $2 \times 0.10 \times 0.357$), $0.107$. Near $\pi = 0.5$ it would be up to $|\delta|$;
+near $\pi = 0.95$, $0.44\,|\delta|$.
+
+**Minimum detectable difference.** "CI upper bound $< 0$" is a one-sided test at the 2.5% level, with standard error
+$\approx \sigma_d/\sqrt n$. A true mean improvement (agent − market, in Brier) is detected
+
+- half the time if it is at least $\text{MDE}_{50} = z_{0.975}\,\sigma_d/\sqrt n = 1.96\,\sigma_d/\sqrt n$ (this is also the typical CI half-width);
+- 80% of the time if it is at least $\text{MDE}_{80} = (z_{0.975} + z_{0.80})\,\sigma_d/\sqrt n \approx 2.80\,\sigma_d/\sqrt n$.
+
+| $n$ | $\sigma_d = 0.036$: MDE$_{50}$ / MDE$_{80}$ | $\sigma_d = 0.071$ (central) | $\sigma_d = 0.107$ |
+|---|---|---|---|
+| 4 (shown as `INSUFFICIENT DATA`) | 0.035 / 0.050 | 0.070 / 0.100 | 0.105 / 0.150 |
+| 7 | 0.026 / 0.038 | 0.053 / 0.076 | 0.079 / 0.113 |
+| 15 | 0.018 / 0.026 | 0.036 / 0.052 | 0.054 / 0.077 |
+| 30 | 0.013 / 0.018 | 0.026 / 0.037 | 0.038 / 0.055 |
+
+For scale, a calibrated market at 0.85 has expected Brier $0.85 \times 0.15 = 0.1275$, so the central MDE$_{80}$ at $n = 15$
+(0.052) is about 40% of the market's whole Brier score. A realistic edge is far smaller: an agent that is exactly right
+($p = \pi$) where the market is off by $|\delta|$ gains only $\mathbb{E}[d] = -\delta^2$, i.e. $-0.01$ for $|\delta| = 0.10$.
+80% power for that needs $n = \big(2.80\,\sigma_d/\delta^2\big)^2 \approx 400$ events (178 at $|\delta| = 0.15$, 1,600 at $0.05$);
+at $n = 15$ the power is about 8%. **With n ≈ 15 only a very large difference is detectable, so `No improvement measured`
+is the expected honest result unless the agent is much better than the market.** It means "not measured", not "no edge".
+
+**Review findings.**
+1. *Sound:* pairing on identical events, averaging within an event, events as the resampling unit, Brier as the
+   verdict metric, $B = 10{,}000$ (Monte Carlo error is small next to sampling error), a seed fixed before any
+   reveal, `INSUFFICIENT DATA` below 5 events (at $n = 4$ there are only 35 distinct resamples).
+2. *Exact ties are decided by rounding.* With few events and rounded forecasts the bootstrap means take few distinct
+   values, and the 97.5th percentile can be exactly 0. Example (SYNTHETIC, scorecard B and seed): 15 events, one NO,
+   agent 0.85 vs market 0.75 everywhere; the exact upper bound is 0, the computed one is $-8 \times 10^{-18}$, so
+   `ci_high < 0` reads "agent better than market". *Proposal:* decide on `ci_high < -1e-12` (or round $d_i$ first).
+3. *One-sided samples.* If every scored outcome is YES, the bootstrap never sees a surprise. An agent that always says
+   0.95 against a calibrated 0.85 market is worse on average ($\mathbb{E}[d] = +0.01$), yet is labelled better whenever no
+   NO occurs: probability $0.85^n$ = 44% at $n = 5$, 32% at 7, 8.7% at 15, 0.8% at 30, against the nominal 2.5%
+   (simulated in `test_power.py`). *Proposal:* allow "agent better than market" only if both outcomes occur among the
+   scored events, otherwise `No improvement measured` with the caveat "all N outcomes were the same; the sample cannot test surprises".
+4. *The percentile CI is too narrow at small n.* It is close to $\bar d \pm 1.96\, s_n/\sqrt n$ with $s_n$ dividing by $n$ and
+   $z$ in place of Student's $t$. For normal $d_i$ its coverage is about 85% at $n = 5$, 88% at 7, 92% at 15, 94% at 30.
+   Simulated mean half-width ÷ formula: 0.74 ($n = 4$), 0.83 (7), 0.92 (15), 0.98 (30). *Proposal:* also report
+   $\bar d \pm t_{n-1,0.975}\, s/\sqrt n$ ($t$ = 2.78, 2.45, 2.14, 2.05 at $n$ = 5, 7, 15, 30) and require both bounds below 0.
+5. *Multiple comparisons.* Each variant compared with the market is a separate 2.5% chance of a false "better";
+   two variants give up to 5%. *Proposal:* name one primary variant before the reveal and call the others exploratory,
+   or use a 97.5% CI (percentiles 1.25 and 98.75) for each of two comparisons.
+6. *Asymmetry.* A CI entirely above 0 (agent measurably worse) also shows `No improvement measured`. True, but it hides
+   the direction; the CI should always be shown next to the verdict.
+7. *Log loss is fragile at small n.* One confident miss costs $-\ln(10^{-6}) = 13.8$ (Brier is at most 1), adding 0.92 to
+   a 15-event mean. Keep Brier as the only verdict metric; log loss stays secondary, without a CI.
+8. *Accuracy at 0.5* is uninformative here: near $p \approx 0.85$ both forecasters say YES on almost every event.
+
+**Exact wording.** The verdict, label and caveat at the start of each line are the strings in `evaluator.py`; the text
+after them is the context to show with them. $N$, $\Delta$, $a$, $b$ are the computed values, never typed in.
+- $n < 5$: "INSUFFICIENT DATA: No valid comparison (n = N events; at least 5 are needed). Per-event scores are listed below."
+- Otherwise: "No improvement measured (n = N events; mean Brier difference, agent − market: Δ; 95% CI: [a, b])."
+- Only when $b < 0$: "agent better than market (n = N events; mean Brier difference, agent − market: Δ; 95% CI: [a, b], entirely below 0)."
+- For $5 \le n < 30$ add: "small sample: n = N events (< 30)." *Proposed second sentence (not yet in the code):*
+  "The 95% CI is approximate and may be too narrow."
+- Spoken: "With N events we could only have detected a large edge. We did not measure one; that is not proof that there is none."
+- Never: "the agent matches the market", "no difference", or "95% likely to be better".
+
 ## 7. Market-quote normalization (`markets/normalize.py`)
 
 - Kalshi prices are fixed-point dollar strings per \$1-notional contract (`FixedPointDollars`, e.g. `"0.5600"`): $p = x$.
@@ -167,6 +246,14 @@ For outcome $y \in \{0,1\}$ and forecast $p \in [0,1]$:
 - Preference order: bid/ask midpoint, then candle close, then last trade; record which (`quote_kind`).
 - Binary markets only (MVP). Reject values outside $[0,1]$ after normalization.
 - Label: "market-implied probability (price-derived; affected by fees, spread, liquidity)", never "true probability".
+- **Synthetic benchmark price (SYNTHETIC cases only, #102).** Venue `synthetic`, `quote_kind = synthetic`,
+  `provenance = SYNTHETIC`, decimal scale ($p = x$, normalized once like any quote), URLs on a `.invalid` host,
+  `raw_sha256` = SHA-256 of the canonical JSON of `{market_id, raw_price, ts, venue}`, `collected_at` = when the
+  case author wrote it. Label: "SYNTHETIC benchmark price written by the case author; not from any market, not a
+  true probability". It is not price-derived: no venue, trades or fees exist. The 24 h selection rule and the
+  `venue:market_id` reference apply unchanged. A real case can never load one. Any quote on a SYNTHETIC case is shown
+  with provenance SYNTHETIC. Scoring uses it as the "market" forecaster only in the synthetic case set, which is never
+  OFFICIAL and never pooled with real cases (EVALUATION_PROTOCOL §3). No formula in this section changed.
 
 ## 8. From forecast to decision (ACT / WAIT / HEDGE)
 
