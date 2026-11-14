@@ -270,6 +270,14 @@ $$
 Recommend the $a$ maximizing $\mathbb{E}[V]$ **among policies feasible in both states**. After reveal, realized
 regret $= \max_{a'} V(a', y) - V(a, y)$. These are **SIMULATED** synthetic-business payoffs, never trading P&L.
 
+*Break-even (issue #55, `routes/decision.py`).* For the top two policies $a, b$ by $\mathbb{E}[V]$ at $p$ among those
+feasible in both states, $\mathbb{E}[V \mid a] = \mathbb{E}[V \mid b]$ at
+$$
+p^* = \frac{V(b,0) - V(a,0)}{\big(V(a,1) - V(a,0)\big) - \big(V(b,1) - V(b,0)\big)}.
+$$
+$p^*$ is NOT AVAILABLE when fewer than two policies are feasible in both states, when the denominator is $0$ (within
+\$10^{-6}$: the two lines are parallel, so the ranking never depends on $p$), or when $p^* \notin [0,1]$.
+
 ## 9. Golden test cases (hand-checked; must be in `tests/test_financials.py`)
 
 Common: $C_0 = 100{,}000$; $S^{base} = 50{,}000$/wk (all stores); $S_0 = 50{,}000$; $g = 0.35$; $a = 0.8$; $L_p = 1$,

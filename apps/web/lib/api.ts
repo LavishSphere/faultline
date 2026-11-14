@@ -121,7 +121,7 @@ export function describeErrorBody(body: unknown): { message: string | null; code
   return { message: null, code };
 }
 
-async function requestJson<T>(
+export async function requestJson<T>(
   method: "GET" | "POST",
   path: string,
   timeoutMs: number,
