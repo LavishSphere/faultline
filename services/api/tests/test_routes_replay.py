@@ -56,7 +56,9 @@ ANSWER = {
 
 PRE_REVEAL = {("get", "/api/cases"), ("get", "/api/cases/{case_id}/evidence"), ("post", "/api/replay/run")}
 POST_REVEAL = {("post", "/api/replay/{prediction_id}/reveal")}
-NOT_REPLAY = {"/api/health", "/api/simulate", "/api/scenarios", "/api/vc-lenses"}
+# /api/explore/search is LIVE EXPLORE (#60): current web search, walled off from the replay by
+# tests/test_explore_separation.py (no replay module may reference it, and it serves no case or outcome data).
+NOT_REPLAY = {"/api/health", "/api/simulate", "/api/scenarios", "/api/vc-lenses", "/api/explore/search"}
 # routes/benchmark.py (tests/test_routes_benchmark*.py): GET serves recorded post-reveal scorecards, read-only (it
 # never reveals and never opens the store or sealed folder); compute reveals and is admin-only in public mode.
 BENCHMARK_POST_REVEAL_READ_ONLY = {("get", "/api/benchmark")}

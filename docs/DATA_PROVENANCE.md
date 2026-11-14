@@ -3,6 +3,12 @@
 Where each FAULTLINE dataset comes from, how it was checked, and what it must not be used for.
 Other workstreams add their own sections (market snapshots, synthetic business data, sealed outcomes).
 
+## Live Explore and curation candidates (Tavily)
+
+`GET /api/explore/search` (label `LIVE EXPLORE: current, not point-in-time`) and `scripts/tavily_curate.py` (files in
+`docs/curation/`, labeled `CANDIDATES, NOT VERIFIED`) return today's text, which may have been revised since any
+replay cutoff. It is never evidence until its `available_at` is proven from an archive capture.
+
 ## Research lenses (`services/api/data/research_lenses.json`)
 
 **Label:** `RESEARCH CONTEXT`. **Provenance:** `REAL_HISTORICAL` (wire value; displayed as "REAL HISTORICAL"):

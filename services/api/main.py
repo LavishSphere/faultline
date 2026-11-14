@@ -7,7 +7,7 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from config import get_settings
 from errors import FaultlineError, faultline_error_handler
-from routes import benchmark, cases, health, replay, research, scenarios, simulate
+from routes import benchmark, cases, explore, health, replay, research, scenarios, simulate
 
 
 def create_app() -> FastAPI:
@@ -31,6 +31,8 @@ def create_app() -> FastAPI:
     app.include_router(cases.router, prefix="/api")
     app.include_router(replay.router, prefix="/api")
     app.include_router(benchmark.router, prefix="/api")
+    # LIVE EXPLORE (Tavily). Admin-gated inside the route in public mode; never used by the Blind Replay (#60).
+    app.include_router(explore.router, prefix="/api")
     return app
 
 
