@@ -19,7 +19,8 @@ How to use it:
 **Say:** "It stress-tests a small business's cash against a real-world shock before the owner commits, using a
 deterministic engine, and scores its own forecasts against the market on sealed historical questions."
 **Backed by:** `docs/SPEC.md` §1–§2; `services/api/core/financials.py` (`simulate`); `services/api/core/evaluator.py`.
-Real historical cases: `services/api/data/demo_cases/` (4 FOMC 2026 meetings, merged in #54).
+Real historical cases: `services/api/data/demo_cases/` (28: 15 FOMC meetings, #54 and #67, and 13 US CPI prints, #160;
+2025–2026), plus 1 SYNTHETIC case (#128).
 
 ### 2. "Which numbers on screen are real?"
 **Say:** "Every datum carries a label. The business is SYNTHETIC: invented, and labeled that way. Cash paths are

@@ -37,11 +37,13 @@ moment. The real answer is sealed until the forecast has been saved with fingerp
 ## 2. Values as hard constraints, not prompts
 "Protect payroll" is a rule in code, not an instruction an AI could talk its way around. Today the decision engine
 marks any plan with a payroll cut infeasible in Protect-payroll mode (`core/decision.py`,
-`tests/test_decision.py::test_protect_payroll_mode`). Once the recovery optimizer lands (#69, not on main yet),
-Protect payroll is a hard bound in its maths (payroll cut ≤ 0): if no plan works without cutting pay, the solver
-says **NO FEASIBLE PLAN**. The panel then probes it with payroll cuts made free (with Protect payroll off it cuts
-pay, with it on it must cut none; `test_payroll_check_flips_when_the_solver_cuts_payroll`). Until then the panel
-shows NOT AVAILABLE for this check.
+`tests/test_decision.py::test_protect_payroll_mode`). The recovery optimizer is merged (#69) with its live Protect
+payroll switch (#127): Protect payroll is a hard bound in its maths (payroll cut ≤ 0;
+`tests/test_optimizer.py::test_protect_payroll_sets_every_payroll_cut_to_zero`), and if no plan works without
+cutting pay, the solver says **NO FEASIBLE PLAN** (`tests/test_routes_optimize.py`). The integrity panel probes it
+with payroll cuts made free: with Protect payroll off it cuts pay, with it on it must cut none
+(`test_payroll_check_flips_when_the_solver_cuts_payroll`). On 2026-11-14 `GET /api/integrity` returned
+`payroll_hard_constraint: PASS`; read the panel, not this line.
 **Humans stay in control:** the engine only proposes and evaluates; the codebase has no integration that moves
 money, trades, lends, or changes anyone's job (SPEC §1.8; a design rule, reviewed per PR, not a runtime check).
 

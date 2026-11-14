@@ -62,8 +62,8 @@ shown on a **SYNTHETIC** three-store food retailer. Today, on `main`, its CASCAD
 engine (no AI does the arithmetic). It shows the lowest cash point, the week it happens and the runway, labeled
 `SIMULATED` and `SYNTHETIC`, so an operator can check that low point against the cash floor they would not go below
 before living through the shock. Where data is missing or too thin, screens say `NOT AVAILABLE` or `INSUFFICIENT DATA`
-instead of guessing. **Pending, not merged as of 2026-11-13:** the recovery optimizer (PR #69, issue #17) and its live
-Protect payroll switch (#47, #56). That optimizer picks the least harmful mix of recovery actions that keeps cash above
+instead of guessing. The recovery optimizer (#69, issue #17) and its live Protect payroll switch (#127) are on `main`:
+the optimizer picks the least harmful mix of recovery actions that keeps cash at or above
 the floor every week, or says `NO FEASIBLE PLAN`. With Protect payroll on, the payroll-cut variable's upper bound is set
 to zero inside the solver (MATH_MODEL §4), so no plan can cut payroll. FAULTLINE does not prevent failures, give
 financial advice, lend, trade, or change anyone's employment. It shows consequences; people decide.
@@ -78,5 +78,3 @@ financial advice, lend, trade, or change anyone's employment. It shows consequen
    that is labeled as one."
 3. "With Protect payroll on, the optimizer is not allowed to cut payroll at all, because that is a hard constraint in
    the solver, and if no plan keeps cash above the floor, it says NO FEASIBLE PLAN instead of a comforting answer."
-   **PENDING: #69, #47, #56.** If these are not merged on demo day, say instead: "Next, a recovery optimizer that can
-   never cut payroll when Protect payroll is on is in review."
