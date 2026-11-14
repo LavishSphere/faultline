@@ -57,7 +57,7 @@ def _app_with_probe_routes() -> FastAPI:
     async def echo(payload: dict) -> dict[str, int]:
         return {"keys": len(payload)}
 
-    @app.post("/api/replay/run")
+    @app.post("/api/replay/_probe")  # under the gated /api/replay prefix; the real run route needs a body
     def fake_replay_run() -> dict[str, str]:
         return {"reached": "replay-run handler"}
 
@@ -214,17 +214,22 @@ def _public_client(monkeypatch, token: str | None = ADMIN_TOKEN) -> TestClient:
 )
 def test_public_mode_refuses_replay_run_without_valid_token(monkeypatch, headers):
     resp = _public_client(monkeypatch).post("/api/replay/run", json={}, headers=headers)
-    assert resp.status_code == 403
+    # Same statuses as the route-level gate: 401 when no bearer token is presented, 403 when it is wrong.
+    assert resp.status_code == (403 if headers.get("Authorization", "").startswith("Bearer ") else 401)
     body = resp.json()
     assert body["code"] == "ADMIN_TOKEN_REQUIRED"
     assert ADMIN_TOKEN not in resp.text
 
 
 @pytest.mark.parametrize(
-    "path", ["/api/replay/run/", "/api/replay/run/some-case", "/API/replay/run", "/api//replay/run"]
+    "path",
+    ["/api/replay/run/", "/api/replay/run/some-case", "/API/replay/run", "/api//replay/run", "/api/replay/x/reveal",
+     "/api/explore/search", "/API/Explore/analyze/", "/api/benchmark/compute", "/api//benchmark/compute/"],
 )
 def test_public_mode_gate_covers_path_variants(monkeypatch, path):
     resp = _public_client(monkeypatch).post(path, json={}, follow_redirects=False)
+    assert resp.status_code == 401, path
+    resp = _public_client(monkeypatch).post(path, json={}, headers={"Authorization": "Bearer nope"})
     assert resp.status_code == 403, path
 
 
@@ -232,21 +237,24 @@ def test_every_registered_inference_route_is_gated(monkeypatch):
     """Guards future routers: a replay route that runs the model must sit under the gated prefix."""
     from main import is_admin_gated
 
-    monkeypatch.setenv("FAULTLINE_MODE", "public")
-    for route in create_app().routes:
-        path = getattr(route, "path", "")
+    # The OpenAPI schema (local mode) lists every route, also inside included routers (create_app().routes
+    # holds lazy wrappers on recent FastAPI). tests/test_public_mode_routes.py classifies all of them.
+    monkeypatch.setenv("FAULTLINE_MODE", "local")
+    paths = list(create_app().openapi()["paths"])
+    assert "/api/replay/run" in paths
+    for path in paths:
         if "/replay" in path and re.search(r"/run\b", path):
             assert is_admin_gated(path), f"{path} runs inference but is not admin-gated in public mode"
 
 
 def test_public_mode_gate_applies_to_every_method(monkeypatch):
     client = _public_client(monkeypatch)
-    assert client.get("/api/replay/run").status_code == 403
+    assert client.get("/api/replay/run").status_code == 401
 
 
 def test_public_mode_with_valid_token_reaches_handler(monkeypatch):
     resp = _public_client(monkeypatch).post(
-        "/api/replay/run", json={}, headers={"Authorization": f"Bearer {ADMIN_TOKEN}"}
+        "/api/replay/_probe", json={}, headers={"Authorization": f"Bearer {ADMIN_TOKEN}"}
     )
     assert resp.status_code == 200
     assert resp.json() == {"reached": "replay-run handler"}
@@ -289,7 +297,7 @@ def test_public_mode_leaves_deterministic_routes_open(monkeypatch):
 
 def test_local_mode_replay_run_needs_no_token(monkeypatch):
     monkeypatch.setenv("FAULTLINE_MODE", "local")
-    resp = TestClient(_app_with_probe_routes()).post("/api/replay/run", json={})
+    resp = TestClient(_app_with_probe_routes()).post("/api/replay/_probe", json={})
     assert resp.status_code == 200
 
 

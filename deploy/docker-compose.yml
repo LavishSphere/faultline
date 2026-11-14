@@ -24,6 +24,11 @@ services:
       FAULTLINE_ADMIN_TOKEN: ${FAULTLINE_ADMIN_TOKEN:-}
       FAULTLINE_RATE_LIMIT_PER_MIN: ${FAULTLINE_RATE_LIMIT_PER_MIN:-120}
       FAULTLINE_MAX_BODY_BYTES: ${FAULTLINE_MAX_BODY_BYTES:-65536}
+      # The server never writes the OFFICIAL store (lead policy, #57/#130): admin runs and reveals go to a server
+      # scratch store in the api-var volume, and FAULTLINE_DEMO_STORE marks it so no computed scorecard served
+      # from it is OFFICIAL (#155). The official RECORDED RUN is the committed one (docs/DEPLOY.md).
+      FAULTLINE_PREDICTIONS_DB: /app/var/server/predictions.sqlite3
+      FAULTLINE_DEMO_STORE: /app/var/server/predictions.sqlite3
       OLLAMA_BASE_URL: http://ollama:11434
       FAULTLINE_OLLAMA_MODEL: ${FAULTLINE_OLLAMA_MODEL:-llama3.1:8b}
     user: "10001:10001"

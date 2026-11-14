@@ -6,7 +6,7 @@ Two public pieces, one local fallback:
 |---|---|---|---|
 | Web app (static export of `apps/web`) | GitHub Pages at `FAULTLINE_PUBLIC_ORIGIN` (now `https://faultline.khayrul.com`) | `main`, automatically, by `.github/workflows/pages.yml` | a lead, by merging to `main` |
 | API (`services/api`) | the lead's Debian/Ubuntu server at `FAULTLINE_API_HOST` (now `api.faultline.khayrul.com`), Docker Compose + Caddy | `main`, by `scripts/deploy-api.sh` | a lead, by hand |
-| Local demo | the presenter's laptop, `make demo` | the local checkout | anyone |
+| Local demo | the presenter's laptop, `make demo-scratch` | the local checkout | anyone |
 
 Agents never deploy (AGENTS.md §2). Nothing in this repo contains a server IP, SSH user, SSH target, key or token:
 those live only in the lead's `~/.ssh/config`, Cloudflare, GitHub settings, and `deploy/.env` on the server.
@@ -16,12 +16,69 @@ those live only in the lead's `~/.ssh/config`, Cloudflare, GitHub settings, and 
 | | `public` (server) | `local` (`make api`, `make demo`) |
 |---|---|---|
 | Set by | `FAULTLINE_MODE=public`, baked into `deploy/api.Dockerfile` and set in compose | default when `FAULTLINE_MODE` is unset |
-| `/api/replay/run` (live model inference) | **refused (403 `ADMIN_TOKEN_REQUIRED`)** unless `Authorization: Bearer <FAULTLINE_ADMIN_TOKEN>` | open |
-| What the audience sees | `RECORDED RUN` predictions + live deterministic `/api/simulate` and `/api/optimize` | everything live, against the laptop's Ollama |
+| Admin-only routes (table below: model inference, Tavily search, reveals, benchmark compute) | **refused (401/403 `ADMIN_TOKEN_REQUIRED`)** unless `Authorization: Bearer <FAULTLINE_ADMIN_TOKEN>` | open |
+| What the audience sees | the deterministic routes live (simulate, optimize, decision, judge challenges), cases and evidence, recorded scorecards; **no live forecast** (see "The public demo needs recorded data") | everything live, against the laptop's Ollama |
 | CORS allowlist | `FAULTLINE_CORS_ORIGINS`, else `FAULTLINE_PUBLIC_ORIGIN`; https origins only | the same, plus `http://localhost:3000` and `http://127.0.0.1:3000` |
 | Rate limit | 120 requests/min per client IPv4 address, or per IPv6 /64 (`FAULTLINE_RATE_LIMIT_PER_MIN`) | off |
 | Body limit | 64 KiB = 65,536 bytes (`FAULTLINE_MAX_BODY_BYTES`, and Caddy `request_body max_size 64KiB`) | 64 KiB |
 | `/docs`, `/redoc`, `/openapi.json` | **off** (404) | on (generate web types locally) |
+
+### Public mode: every route
+
+One table, in code as `PUBLIC_MODE_ROUTES` in `services/api/main.py`. `services/api/tests/test_public_mode_routes.py`
+walks the OpenAPI schema and fails if any route is missing from the table, if the edge gate and the route-level gate
+disagree with it, or if this table and the code differ. A new route therefore cannot ship unclassified.
+
+- **admin**: runs the model, spends paid API credits, writes the prediction store, or reveals sealed outcomes. In
+  public mode it needs `Authorization: Bearer <FAULTLINE_ADMIN_TOKEN>`: 401 when no bearer token is presented, 403
+  when it is wrong or none (or a too-short one) is configured, code `ADMIN_TOKEN_REQUIRED`. It is checked twice:
+  by the edge middleware before routing and body parsing (prefixes `/api/replay`, `/api/explore`,
+  `/api/benchmark/compute`, so any new route under `/api/replay` or `/api/explore` starts admin-only), and inside the
+  route by the shared gate `routes.replay.require_admin_in_public_mode`.
+- **public**: deterministic or read-only. Open to anyone, behind the per-IP rate limit and the body cap.
+
+| Route | Public mode | Why |
+|---|---|---|
+| `POST /api/replay/run` | admin | local-model inference; writes the prediction store |
+| `POST /api/replay/{prediction_id}/reveal` | admin | reveals a sealed outcome; writes the reveal ledger |
+| `POST /api/benchmark/compute` | admin | reveals outcomes to score them; writes a scorecard file |
+| `POST /api/explore/analyze` | admin | Tavily credits and local-model inference |
+| `GET /api/explore/search` | admin | Tavily credits |
+| `GET /api/health` | public | readiness booleans only |
+| `POST /api/simulate` | public | deterministic cash recurrence |
+| `POST /api/optimize` | public | deterministic MILP |
+| `GET /api/scenarios` | public | fixture read |
+| `GET /api/decision/frames` | public | fixture read |
+| `POST /api/decision` | public | deterministic ACT/WAIT/HEDGE payoffs |
+| `GET /api/judge-challenges` | public | fixture read |
+| `GET /api/cases` | public | outcome-free case list |
+| `GET /api/cases/{case_id}/evidence` | public | evidence gated by `available_at <= as_of` |
+| `GET /api/vc-lenses` | public | fixture read |
+| `GET /api/integrity` | public | static integrity checks |
+| `GET /api/benchmark` | public | recorded scorecards only; never reveals |
+
+The web app never sends the admin token (CORS does not allow the `Authorization` header), so on the public site
+the admin-only features show their "admin only" state. On the server, Live Explore could not work anyway: the api
+container has no internet route.
+
+### The public demo needs recorded data
+
+There is no committed `RECORDED RUN` yet (`services/api/data/recorded_runs/` holds only its README), and no route
+serves recorded predictions before a reveal (issue #116, not built here). So on the public site, with
+`/api/replay/run` and reveal admin-only, **the DECISION and REVEAL screens show NOT AVAILABLE** (no forecast, no
+reveal). That is the honest state, not a bug. REWIND (cases and evidence), CASCADE (simulate, optimize, judge
+challenges), RESEARCH (VC lenses), integrity and recorded benchmark scorecards work. For the full live flow use the
+local demo below.
+
+### Prediction stores (official-store policy)
+
+The OFFICIAL prediction store (`services/api/var/predictions.sqlite3`) is written only by `scripts/record_runs.py`
+for the official recorded run. Stage runs never touch it:
+- **Server:** `deploy/docker-compose.yml` sets `FAULTLINE_PREDICTIONS_DB=/app/var/server/predictions.sqlite3` and
+  `FAULTLINE_DEMO_STORE` to the same path, so admin runs and reveals land in a server scratch store in the `api-var`
+  volume and no scorecard computed from it is labeled OFFICIAL (#155). Committed scorecards are still served.
+- **Laptop:** `make demo-scratch` (store `services/api/var/scratch/predictions.sqlite3`). Plain `make demo` uses the
+  official store and prints a warning; do not use it on stage.
 
 Every API response carries `X-Faultline-Mode: public|local` (also readable cross-origin), so
 `curl -sI https://<api-host>/api/health | grep -i x-faultline-mode` tells you what is running.
@@ -106,7 +163,7 @@ Let's Encrypt). That combination has not been exercised on this server yet, so c
    shows "certificate obtained successfully" for the API host and no errors.
 4. From your laptop: `curl -sI https://api.faultline.khayrul.com/api/health` returns `HTTP/2 200` and
    `x-faultline-mode: public`; `curl -s -o /dev/null -w '%{http_code}\n' -X POST https://api.faultline.khayrul.com/api/replay/run`
-   prints `403`; `curl -s -o /dev/null -w '%{http_code}\n' https://api.faultline.khayrul.com/docs` prints `404`.
+   prints `401` (no token presented); `curl -s -o /dev/null -w '%{http_code}\n' https://api.faultline.khayrul.com/docs` prints `404`.
 5. The api has no internet: `docker compose -f deploy/docker-compose.yml exec api python -c "import urllib.request; urllib.request.urlopen('https://example.com', timeout=5)"` must fail.
 
 If step 2 or 3 fails because Caddy has no outbound route or its ports are not reachable, Docker may have picked
@@ -159,8 +216,9 @@ in the remote home) and `FAULTLINE_API_HOST` (otherwise read from the server's `
 - **Client address:** Caddy overwrites `X-Forwarded-For` with the TCP peer (`header_up X-Forwarded-For
   {remote_host}`), so it carries exactly one, unspoofable entry; uvicorn (`--proxy-headers`) uses it as the client IP.
 - **Beyond CORS** (CORS only binds browsers): per-IP token-bucket rate limit (429 with `Retry-After`), body limit
-  (413), and the public-mode admin gate on `/api/replay/run` (and any path under it), all at the ASGI layer and
-  covered by `services/api/tests/test_deploy_config.py`. The limiter is in-process; the image runs one uvicorn
+  (413), and the public-mode admin gate on every admin route in the table above (edge prefixes plus the route-level
+  gate), all at the ASGI layer and covered by `services/api/tests/test_deploy_config.py` and
+  `services/api/tests/test_public_mode_routes.py`. The limiter is in-process; the image runs one uvicorn
   worker, so the configured number is the real limit (with N workers it would be N times higher).
 - **No API explorer in public:** `/docs`, `/redoc` and `/openapi.json` return 404 in public mode.
 
@@ -218,16 +276,24 @@ and documentation; update them in a normal PR when convenient.
 ```bash
 make setup          # once, with internet: API venv + web node_modules
 ollama serve &      # local model server; `ollama pull llama3.1:8b` once, with internet
-make demo           # API on http://127.0.0.1:8000 (FAULTLINE_MODE=local), web on http://127.0.0.1:3000
+make web-build      # optional: production web build; without it the demo falls back to `next dev`
+make preflight      # PASS/WARN/FAIL per check; prefix with the same store variable you demo with
+make demo-scratch   # API on http://127.0.0.1:8000 (FAULTLINE_MODE=local), web on http://localhost:3000,
+                    # on the SCRATCH store services/api/var/scratch/predictions.sqlite3 (use this on stage)
 ```
 
-Both processes bind to 127.0.0.1 only. Live replay runs against the laptop's Ollama with no token and no rate
-limit, and works with Wi-Fi off once the steps above have run (fonts are self-hosted, replay makes no outbound
-calls). If Ollama is not running, `make demo` warns and replay shows `MODEL_UNAVAILABLE`.
+`make demo-scratch` (and `make demo`) run `scripts/demo_api.py`, which forces `FAULTLINE_MODE=local`, binds the API
+to 127.0.0.1, refuses a `FAULTLINE_DEMO_STORE` that names the official store, and prints which store it uses. The
+web half is `next start -p 3000` if `make web-build` has run (it listens on all interfaces; Next.js default), else
+`next dev`. Live replay runs against the laptop's Ollama with no token and no rate limit, and works with Wi-Fi off
+once the steps above have run (fonts are self-hosted, replay makes no outbound calls; Live Explore needs the
+internet and `TAVILY_API_KEY`). If Ollama is not running, replay shows `MODEL_UNAVAILABLE`.
 
 ## Troubleshooting
 
 - Pages workflow fails at "Read and validate repo variables": set the two repo variables (section 1).
+- The hosted site before the API server is up: every screen that needs the API says the API is unreachable /
+  NOT AVAILABLE. That is expected until `make deploy-api` has run.
 - Browser shows "API unavailable" on the hosted site: check `curl -sI https://<api-host>/api/health`; the site
   origin must be in the CORS allowlist (`FAULTLINE_PUBLIC_ORIGIN` / `FAULTLINE_CORS_ORIGINS` in `deploy/.env`).
 - Caddy cannot get a certificate: DNS must be DNS only and point at the server; ports 80 and 443 must be open.

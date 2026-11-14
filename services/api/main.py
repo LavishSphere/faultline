@@ -37,9 +37,42 @@ from routes import (
 # CORS only constrains browsers; everything else here applies to every client (curl, scripts, bots).
 
 MODE_HEADER = "X-Faultline-Mode"
-# Model inference (slow on the CPU server, and the only route that runs the LLM). In public mode it needs
-# `Authorization: Bearer <FAULTLINE_ADMIN_TOKEN>`; the public demo serves RECORDED RUN predictions instead.
-ADMIN_GATED_PREFIXES = ("/api/replay/run",)
+
+# Public-mode route classification: the ONE table (mirrored in docs/DEPLOY.md "Public mode: every route").
+# "admin": runs the model, spends paid API credits, writes the prediction store, or reveals sealed outcomes; in
+#          public mode it needs `Authorization: Bearer <FAULTLINE_ADMIN_TOKEN>`, checked twice: here at the edge
+#          (ADMIN_GATED_PREFIXES) and inside the route (routes.replay.require_admin_in_public_mode).
+# "public": deterministic or read-only; served to anyone, behind the rate limit and the body cap.
+# tests/test_public_mode_routes.py walks the OpenAPI schema: a route missing from this table fails the suite.
+ADMIN = "admin"
+PUBLIC = "public"
+PUBLIC_MODE_ROUTES: dict[tuple[str, str], str] = {
+    ("POST", "/api/replay/run"): ADMIN,  # local-model inference + writes the prediction store
+    ("POST", "/api/replay/{prediction_id}/reveal"): ADMIN,  # reveals a sealed outcome + writes the reveal ledger
+    ("POST", "/api/benchmark/compute"): ADMIN,  # reveals outcomes to score + writes a scorecard file
+    ("POST", "/api/explore/analyze"): ADMIN,  # Tavily credits + local-model inference
+    ("GET", "/api/explore/search"): ADMIN,  # Tavily credits
+    ("GET", "/api/health"): PUBLIC,
+    ("POST", "/api/simulate"): PUBLIC,
+    ("POST", "/api/optimize"): PUBLIC,
+    ("GET", "/api/scenarios"): PUBLIC,
+    ("GET", "/api/decision/frames"): PUBLIC,
+    ("POST", "/api/decision"): PUBLIC,
+    ("GET", "/api/judge-challenges"): PUBLIC,
+    ("GET", "/api/cases"): PUBLIC,
+    ("GET", "/api/cases/{case_id}/evidence"): PUBLIC,
+    ("GET", "/api/vc-lenses"): PUBLIC,
+    ("GET", "/api/integrity"): PUBLIC,
+    ("GET", "/api/benchmark"): PUBLIC,  # recorded scorecards only; never reveals
+}
+# Edge gate (defence in depth, runs before routing and body parsing). Prefixes, not exact paths, so a new route
+# under /api/replay or /api/explore is admin-only until someone decides otherwise (fail closed).
+ADMIN_GATED_PREFIXES = ("/api/replay", "/api/explore", "/api/benchmark/compute")
+ADMIN_MESSAGE = (
+    "Admin only on the public demo: this route runs the model, spends paid search credits or reveals sealed "
+    "outcomes, and needs the admin token (Authorization: Bearer <FAULTLINE_ADMIN_TOKEN>). The public demo shows "
+    "RECORDED RUN data; run FAULTLINE locally (`make demo-scratch`) for live replay and Live Explore."
+)
 
 
 class EdgeErrorCode(StrEnum):
@@ -68,7 +101,7 @@ def is_admin_gated(path: str) -> bool:
 
 
 class AdminGateMiddleware:
-    """Public mode: refuse model-inference paths unless a valid admin bearer token is presented."""
+    """Public mode: refuse every ADMIN_GATED_PREFIXES path unless a valid admin bearer token is presented."""
 
     def __init__(self, app: ASGIApp) -> None:
         self.app = app
@@ -77,18 +110,15 @@ class AdminGateMiddleware:
         if scope["type"] == "http" and scope["method"] != "OPTIONS" and is_admin_gated(scope["path"]):
             auth = dict(scope["headers"]).get(b"authorization", b"").decode("latin-1")
             scheme, _, token = auth.partition(" ")
-            if scheme.lower() != "bearer" or not admin_token_matches(token.strip()):
-                await _send_error(
-                    send,
-                    403,
-                    EdgeErrorCode.ADMIN_TOKEN_REQUIRED,
-                    "Live model inference is disabled on the public server. The public demo shows RECORDED RUN "
-                    "predictions; run `make demo` locally for live replay.",
-                )
+            token = token.strip()
+            # Same statuses as the route-level gate: 401 no bearer token presented, 403 wrong or none configured.
+            if scheme.lower() != "bearer" or not token:
+                await _send_error(send, 401, EdgeErrorCode.ADMIN_TOKEN_REQUIRED, ADMIN_MESSAGE)
+                return
+            if not admin_token_matches(token):
+                await _send_error(send, 403, EdgeErrorCode.ADMIN_TOKEN_REQUIRED, ADMIN_MESSAGE)
                 return
         await self.app(scope, receive, send)
-
-
 
 
 class BodySizeLimitMiddleware:
