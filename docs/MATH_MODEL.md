@@ -246,6 +246,14 @@ after them is the context to show with them. $N$, $\Delta$, $a$, $b$ are the com
 - Preference order: bid/ask midpoint, then candle close, then last trade; record which (`quote_kind`).
 - Binary markets only (MVP). Reject values outside $[0,1]$ after normalization.
 - Label: "market-implied probability (price-derived; affected by fees, spread, liquidity)", never "true probability".
+- **Synthetic benchmark price (SYNTHETIC cases only, #102).** Venue `synthetic`, `quote_kind = synthetic`,
+  `provenance = SYNTHETIC`, decimal scale ($p = x$, normalized once like any quote), URLs on a `.invalid` host,
+  `raw_sha256` = SHA-256 of the canonical JSON of `{market_id, raw_price, ts, venue}`, `collected_at` = when the
+  case author wrote it. Label: "SYNTHETIC benchmark price written by the case author; not from any market, not a
+  true probability". It is not price-derived: no venue, trades or fees exist. The 24 h selection rule and the
+  `venue:market_id` reference apply unchanged. A real case can never load one. Any quote on a SYNTHETIC case is shown
+  with provenance SYNTHETIC. Scoring uses it as the "market" forecaster only in the synthetic case set, which is never
+  OFFICIAL and never pooled with real cases (EVALUATION_PROTOCOL §3). No formula in this section changed.
 
 ## 8. From forecast to decision (ACT / WAIT / HEDGE)
 

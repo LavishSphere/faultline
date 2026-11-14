@@ -25,9 +25,10 @@ Order of operations (each step refuses rather than guessing):
 3. Rows: each saved forecast is written as a RECORDED RUN row (``runs/<run_id>/rows/<prediction_id>.json``)
    with the exact prompt and snapshot JSON, the model-call audit fields and every hash, plus ``manifest.json``.
 4. Score (only if nothing failed, or explicitly with ``--score``): verify every row against its hashes
-   (``routes.benchmark.verify_row``) and against the store's copy, then ``build_scorecard`` once per variant via
-   ``routes.benchmark.compute_and_record`` (this reveals), and write each Scorecard as a RECORDED RUN snapshot to
-   ``<out>/scorecards/``. A run is scored at most once.
+   (``routes.benchmark.verify_row``) and against the store's copy, then ``build_scorecard`` once per variant and
+   case set (real, then synthetic, never pooled; #102) via ``routes.benchmark.compute_and_record`` (this
+   reveals), and write each Scorecard as a RECORDED RUN snapshot to ``<out>/scorecards/``. A run is scored at most
+   once.
 
 Default output: ``<FAULTLINE_DATA_DIR>/recorded_runs/`` (committed). Exit codes: 0 done, 2 refused, 3 incomplete.
 No path substitutes a canned answer for a model forecast; the dry run's mocked answers are labeled SIMULATED,
@@ -482,7 +483,8 @@ def score_run(
     cases = cases if cases is not None else EvidenceStore.from_dir()
     paths = []
     for variant in manifest["variants"]:
-        path, record = compute_and_record(
+        # One snapshot per case set present (real first, then synthetic); they are never pooled (#102).
+        for path, record in compute_and_record(
             variant,
             directory=out_root / "scorecards",
             source="record_runs_script",
@@ -490,20 +492,21 @@ def score_run(
             store=store,
             cases=cases,
             clock=clock,
-        )
-        paths.append(path)
-        card = record.scorecard
-        manifest["scorecards"].append(
-            {
-                "agent_variant": variant,
-                "file": f"scorecards/{path.name}",
-                "scorecard_sha256": record.scorecard_sha256,
-                "label": card.label,
-                "verdict": card.verdict,
-                "n_events": card.n_events,
-                "official_blockers": card.official_blockers,
-            }
-        )
+        ):
+            paths.append(path)
+            card = record.scorecard
+            manifest["scorecards"].append(
+                {
+                    "agent_variant": variant,
+                    "case_set": card.case_set,
+                    "file": f"scorecards/{path.name}",
+                    "scorecard_sha256": record.scorecard_sha256,
+                    "label": card.label,
+                    "verdict": card.verdict,
+                    "n_events": card.n_events,
+                    "official_blockers": card.official_blockers,
+                }
+            )
     manifest["phase"] = "scored"
     _save_manifest(run_dir, manifest)
     return paths
