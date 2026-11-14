@@ -62,12 +62,37 @@ def ci_state(pr: dict) -> str:
     return "none"
 
 
+UPDATED_NOTE = "updated since changes requested"
+
+
+def changes_requested_on_head(pr: dict) -> bool:
+    """True if a CHANGES_REQUESTED decision still applies to the PR's current head commit.
+
+    GitHub keeps CHANGES_REQUESTED until the reviewer submits a new review; a push does not clear it. So the
+    decision blocks on the author only while the latest CHANGES_REQUESTED review is on `headRefOid`. Once the
+    author has pushed past it, the PR waits on the reviewer again. Without review data, trust the decision.
+    """
+    if pr.get("reviewDecision") != "CHANGES_REQUESTED":
+        return False
+    head = pr.get("headRefOid")
+    asks = [r for r in (pr.get("reviews") or []) if r.get("state") == "CHANGES_REQUESTED"]
+    if not head or not asks:
+        return True
+    latest = max(asks, key=lambda r: r.get("submittedAt") or "")
+    oid = (latest.get("commit") or {}).get("oid")
+    return not oid or oid == head
+
+
+def updated_since_changes(pr: dict) -> bool:
+    return pr.get("reviewDecision") == "CHANGES_REQUESTED" and not changes_requested_on_head(pr)
+
+
 def waits_on(pr: dict) -> str:
     """Who an open PR is waiting on: 'draft' | 'author' | 'ci' | 'merge' | 'review'."""
     ci = ci_state(pr)
     if pr.get("isDraft"):
         return "draft"
-    if pr.get("reviewDecision") == "CHANGES_REQUESTED" or ci == "red":
+    if changes_requested_on_head(pr) or ci == "red":
         return "author"
     if ci != "green":
         return "ci"
@@ -76,7 +101,7 @@ def waits_on(pr: dict) -> str:
 
 def why_author(pr: dict) -> str:
     reasons = []
-    if pr.get("reviewDecision") == "CHANGES_REQUESTED":
+    if changes_requested_on_head(pr):
         reasons.append("changes requested")
     if ci_state(pr) == "red":
         reasons.append("CI red")
@@ -96,7 +121,7 @@ def pr_row(pr: dict, note: str = "") -> str:
 def open_prs() -> list[dict] | None:
     """All open PRs with review + CI state, in ONE GitHub call. None if GitHub can't be reached."""
     code, out = run(["gh", "pr", "list", "--state", "open", "--limit", "40", "--json",
-                     "number,title,author,isDraft,reviewDecision,statusCheckRollup,closingIssuesReferences"], timeout=15)
+                     "number,title,author,isDraft,reviewDecision,reviews,headRefOid,statusCheckRollup,closingIssuesReferences"], timeout=15)
     if code != 0:
         return None
     try:
@@ -120,7 +145,7 @@ def lead_queue_lines(prs: list[dict]) -> list[str]:
         lines += [pr_row(p) for p in groups["merge"]]
     if groups.get("review"):
         lines.append("  CI green, waiting for lead review (oldest first):")
-        lines += [pr_row(p) for p in groups["review"]]
+        lines += [pr_row(p, UPDATED_NOTE if updated_since_changes(p) else "") for p in groups["review"]]
     if groups.get("author"):
         lines.append("  Waiting on the author (nothing for the lead to do yet):")
         lines += [pr_row(p, why_author(p)) for p in groups["author"]]
@@ -145,7 +170,8 @@ def partner_pr_lines(prs: list[dict], login: str) -> list[str]:
         lines.append("- FIX THESE FIRST (your PRs that cannot merge as they are). Use the `address-review` skill:")
         lines += [pr_row(p, why_author(p)) for p in fix]
     if rest:
-        lines.append("- Your PRs waiting for the lead (nothing to do): " + ", ".join(f"#{p['number']}" for p in rest))
+        lines.append("- Your PRs waiting for the lead (nothing to do): "
+                     + ", ".join(f"#{p['number']}" + (f" ({UPDATED_NOTE})" if updated_since_changes(p) else "") for p in rest))
     return lines
 
 
@@ -169,10 +195,13 @@ def starts_after(body: str) -> list[str]:
     return re.findall(r"#(\d+)", m.group(1) if m else "")
 
 
-def task_rows(issues: list[dict], prs: list[dict], states: dict[str, str]) -> tuple[list[str], int]:
-    """One row per delegated issue with its real status. Returns (rows, number that are ready to start)."""
+def task_rows(issues: list[dict], prs: list[dict] | None, states: dict[str, str]) -> tuple[list[str], int]:
+    """One row per delegated issue with its real status. Returns (rows, number that are ready to start).
+
+    `prs` is None when the open PRs could not be read: a task with no visible PR is then "unknown", not "ready".
+    """
     by_issue: dict[int, dict] = {}
-    for pr in prs:
+    for pr in prs or []:
         for num in closes(pr):
             by_issue.setdefault(num, pr)
     rows, ready = [], 0
@@ -183,6 +212,8 @@ def task_rows(issues: list[dict], prs: list[dict], states: dict[str, str]) -> tu
             status = f"PR #{pr['number']} needs fixes" if waits_on(pr) == "author" else f"in review: PR #{pr['number']}"
         elif pending:
             status = f"waiting on {', '.join(pending)}"
+        elif prs is None:
+            status = "status unknown: could not read open PRs"
         else:
             status, ready = "ready", ready + 1
         rows.append(f"  - #{i['number']} {i['title']}  ({status})")
@@ -193,6 +224,18 @@ def _span(seconds: float) -> str:
     m = int(seconds // 60)
     d, h, m = m // 1440, (m % 1440) // 60, m % 60
     return f"{d}d {h}h" if d else (f"{h}h {m:02d}m" if h else f"{m}m")
+
+
+def rule_deadline_passed(team: dict, now: datetime | None = None) -> bool:
+    """True once any deadline that carries an `after` rule (practice demos, code freeze) has passed."""
+    now = now or datetime.now(timezone.utc)
+    for d in team.get("deadlines", []):
+        try:
+            if d.get("after") and datetime.fromisoformat(d["at"]) <= now:
+                return True
+        except (KeyError, TypeError, ValueError, AttributeError):
+            continue
+    return False
 
 
 def deadline_lines(team: dict, now: datetime | None = None) -> list[str]:
@@ -290,13 +333,18 @@ def full() -> None:
                     issues = []
                 lead_set = {l.lower() for l in leads}
                 valid = [i for i in issues if i["author"]["login"].lower() in lead_set]
-                prs = open_prs() or []
-                lines += partner_pr_lines(prs, ident["login"])
+                prs = open_prs()
+                if prs is None:
+                    lines.append("- Your open PRs: could not read them from GitHub (`gh pr list` failed). Tell the human.")
+                else:
+                    lines += partner_pr_lines(prs, ident["login"])
                 if valid:
                     refs = [r for i in valid for r in starts_after(i.get("body", ""))]
                     rows, ready = task_rows(valid, prs, dep_states(team.get("repo", ""), refs))
                     lines.append("- Delegated tasks for you:\n" + "\n".join(rows))
-                    if ready > 1:
+                    if prs is None:
+                        pass  # task status is unknown; the line above already says so
+                    elif ready > 1 and not rule_deadline_passed(team):
                         lines.append(f"  -> {ready} tasks are ready. Offer /my-sprint to run them in parallel (one agent each, separate PRs).")
                     elif ready == 0:
                         lines.append("  -> Nothing new can start yet. Fix PRs that need it; otherwise tell the human what is waiting on the lead.")

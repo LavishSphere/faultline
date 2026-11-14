@@ -164,6 +164,13 @@ def main() -> int:
     after = "\n".join(sync.deadline_lines(team, datetime(2026, 11, 15, 17, 0, tzinfo=timezone.utc)))
     queue = "\n".join(sync.lead_queue_lines(prs))
     mine = "\n".join(sync.partner_pr_lines(prs, "yaseenahmad12"))
+
+    # A push does not clear CHANGES_REQUESTED: only the latest such review on the current head blocks the author.
+    def asked(*oids):
+        return [{"state": "CHANGES_REQUESTED", "submittedAt": f"2026-11-14T0{i}:00:00Z", "commit": {"oid": o}} for i, o in enumerate(oids)]
+    fixed = dict(pr(72, review="CHANGES_REQUESTED"), headRefOid="c3", reviews=asked("c1", "c2") + [{"state": "COMMENTED", "commit": {"oid": "c3"}}])
+    unfixed = dict(pr(101, review="CHANGES_REQUESTED"), headRefOid="c2", reviews=asked("c1", "c2"))
+    stale_queue = "\n".join(sync.lead_queue_lines([fixed, unfixed]))
     BANNER_CASES = [
         ("waits_on", [sync.waits_on(p) for p in prs], ["author", "review", "author", "review", "merge", "draft", "ci"]),
         ("why_author", [sync.why_author(prs[0]), sync.why_author(prs[2])], ["changes requested", "CI red"]),
@@ -180,6 +187,18 @@ def main() -> int:
         ("partner sees fixes first", mine.index("FIX THESE FIRST") < mine.index("#54") < mine.index("waiting for the lead"), True),
         ("partner list is only their PRs", "#76" in mine, False),
         ("no PRs", sync.lead_queue_lines([]), ["- Open PRs: none."]),
+        ("changes requested on an older commit waits on review, on the head waits on the author",
+         [sync.waits_on(fixed), sync.why_author(fixed), sync.waits_on(unfixed), sync.why_author(unfixed)],
+         ["review", "", "author", "changes requested"]),
+        ("lead queue notes a PR updated since changes requested",
+         "#72 t72 (by YaseenAhmad12) [updated since changes requested]" in stale_queue
+         and stale_queue.index("#72") < stale_queue.index("Waiting on the author") < stale_queue.index("#101"), True),
+        ("unreadable PR list makes task status unknown, not ready",
+         (sync.task_rows([{"number": 20, "title": "b", "body": ""}], None, {})[1],
+          "status unknown" in sync.task_rows([{"number": 20, "title": "b", "body": ""}], None, {})[0][0]), (0, True)),
+        ("/my-sprint is suppressed once a deadline with a rule has passed",
+         [sync.rule_deadline_passed(team, datetime(2026, 11, 13, 21, 0, tzinfo=timezone.utc)),
+          sync.rule_deadline_passed(team, datetime(2026, 11, 15, 17, 0, tzinfo=timezone.utc))], [False, True]),
     ]
     for name, got, want in BANNER_CASES:
         if got != want:

@@ -35,6 +35,8 @@ waiting on the lead. The rules that follow from that:
 - **Who approves what.** A partner PR gets a lead approval on GitHub. A lead cannot approve their own PR, so a
   lead-authored PR is gated by green CI plus the `integrity-auditor` report and is merged with the admin bypass
   (`gh pr merge --squash --admin`). That is a weaker gate than a second human; the finance owner is also requested on the math files.
+  `--admin` also bypasses the required `checks` status, so run `gh pr checks <N>` on the current head right before merging
+  and pass `--match-head-commit <headRefOid>` (see the `merge-queue` skill).
 - **Parking.** A PR that must not merge yet becomes a draft with a comment saying what it waits for.
 
 The session banner shows this state every time a session starts: for a lead, open PRs grouped by who they wait on; for a
@@ -61,7 +63,7 @@ Layers 3–5 are local guardrails that a determined user could disable; layer 1 
 
 ## Production
 Production = what is built from `main`: the static web export on GitHub Pages and the API on the lead's own server
-(issue #13, PR #28). Only leads hold deploy credentials. Agents are blocked from deploy commands.
+(issue #13, PR #28, which is still open, so this is the plan rather than a running setup). Only leads hold deploy credentials. Agents are blocked from deploy commands.
 
 ## Parallelism without collisions
 Each workstream owns directories (`workstreams` in `.agents/team.json`). Shared files (`services/api/main.py`,

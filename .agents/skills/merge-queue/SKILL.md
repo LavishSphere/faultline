@@ -11,12 +11,14 @@ writing, decides what makes the demo. This procedure gets the most valuable gree
 
 ## 1. Snapshot (two calls, not one per PR)
 ```bash
-gh pr list --state open --limit 40 --json number,title,author,headRefName,isDraft,reviewDecision,mergeable,additions,deletions,updatedAt,files,closingIssuesReferences,statusCheckRollup
+gh pr list --state open --limit 40 --json number,title,author,headRefName,headRefOid,isDraft,reviewDecision,reviews,mergeable,additions,deletions,updatedAt,files,closingIssuesReferences,statusCheckRollup
 gh issue list --state open --limit 100 --label delegated --json number,title,assignees,body
 ```
 
 ## 2. Classify each PR
-- **Waits on:** *author* (changes requested, or `checks` red on the latest run) · *CI* (running) · *lead* (green, not a draft). Drafts are parked.
+- **Waits on:** *author* (changes requested on the current head, or `checks` red on the latest run) · *CI* (running) ·
+  *lead* (green, not a draft). Drafts are parked. A push does not clear CHANGES_REQUESTED: if the latest such review's
+  `commit.oid` is not `headRefOid` (`gh pr view <N> --json reviews,headRefOid`), the author has pushed a fix and it waits on the lead.
 - **Tier** A / B / C from its files (table in `review-pr`, paths in `.agents/team.json` → `integrity_core`).
 - **Unblocks:** open issues whose `**Starts after:**` line names this PR or the issue it closes. More is better.
 - **Overlap:** files it shares with other open PRs (group the `files` lists by path). `shared_files` in `team.json`
@@ -39,9 +41,13 @@ queue cannot clear before the next deadline in the banner, and which PRs you wou
 ## 4. Work the queue in order
 - Review each with the `review-pr` procedure at its tier. Tier-A audits for PRs that do not overlap can run in parallel (≤ 3).
 - **Merge only when the lead says so in this session** ("merge the ones that pass" counts; an old go-ahead does not).
-  - Partner PR: `gh pr review <N> --approve` then `gh pr merge <N> --squash`.
+  - Immediately before merging, read the current head (`gh pr view <N> --json headRefOid`) and run `gh pr checks <N>`:
+    `checks` must be green on that head. Do not rely on an earlier look; a push since then resets it.
+  - Partner PR: `gh pr review <N> --approve` then `gh pr merge <N> --squash --match-head-commit <headRefOid>`.
   - Lead-authored PR: GitHub will not let the lead approve it, so the gate is the audit plus green CI, and the merge is
-    `gh pr merge <N> --squash --admin`. Say this in the merge report; it is a bypass of the approval rule, not an approval.
+    `gh pr merge <N> --squash --admin --match-head-commit <headRefOid>`. `--admin` also bypasses the required `checks`
+    status, so the `gh pr checks` step above is the only thing enforcing CI here, and `--match-head-commit` refuses the
+    merge if a commit landed after you checked. Say this in the merge report; it is a bypass of the approval rule, not an approval.
 - **After every merge:** `git fetch origin`, then re-check the PRs that overlapped it
   (`gh pr view <M> --json mergeable,statusCheckRollup`). If one now conflicts, tell its author right away with a PR comment
   (`needs a rebase onto main after #<N>; run address-review`) or resume the agent that wrote it. Do not review it until it is rebased and green.
