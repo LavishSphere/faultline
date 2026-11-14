@@ -26,6 +26,14 @@ export function marketSource(
   return null;
 }
 
+/** Panel badges for the market value: AS-OF plus the quote's served provenance; SYNTHETIC for any synthetic price. */
+export function marketBadges(c: ReplayCasePublic | null, run: ReplayRun | null, evidence: EvidenceState) {
+  const m = c ? marketSource(run, evidence)?.market : undefined;
+  if (!m || m.status !== "AVAILABLE") return "NOT AVAILABLE" as const;
+  if (isSyntheticQuote(m, c)) return ["AS-OF", "SYNTHETIC"] as const;
+  return m.provenance ? (["AS-OF", m.provenance] as const) : ("AS-OF" as const);
+}
+
 /**
  * B.2: the market-implied probability at the cutoff (SPEC §2 Screen B, MATH_MODEL §7), exactly as the API's
  * `market_at_cutoff` serves it (routes/cases.py `MarketAtCutoff`, the gate's fixed rule). After a run it is the run's
@@ -77,7 +85,7 @@ export function MarketAtCutoff({
   // SYNTHETIC badge, the server's label verbatim, and no raw payload to point to.
   const synthetic = isSyntheticQuote(market, c);
   return (
-    <div className="flex flex-col gap-3">
+    <div className="flex flex-col gap-3" data-testid="market-at-cutoff">
       <FinancialReadout
         label={KICKER}
         value={market.p_yes}

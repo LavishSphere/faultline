@@ -5,6 +5,7 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 import { KNOWN_VERDICTS, checkRevealResponse, isSyntheticRef, notesForVariant, readBenchmark } from "./benchmark.ts";
 import { checkCaseEvidence, checkRecordedResponse, isSyntheticQuote, outcomeKeyPaths } from "./replay.ts";
+import { summarizeHealth } from "./api.ts";
 
 const SHA = "a".repeat(64);
 
@@ -343,4 +344,59 @@ test("checkRecordedResponse refuses another case or variant, a non-RECORDED_RUN 
   assert.match(checkRecordedResponse(simulated, "fixture_case", "agent_only"), /not RECORDED_RUN/);
   assert.match(checkRecordedResponse({ ...recordedBody([]), status: "AVAILABLE" }, "fixture_case", "agent_only"), /no items/);
   assert.match(checkRecordedResponse(recordedBody([recordedItem({ p_yes: 1.5 })]), "fixture_case", "agent_only"), /p_yes/);
+});
+
+// GET /api/health, #163: the shape models.HealthResponse serves (copied from a local API response on 2026-11-14,
+// with Ollama up). Before the fix `ollama: true` plus a nested model list read as "Local model unavailable".
+const HEALTH_READY = {
+  status: "ok",
+  ollama: true,
+  model_ready: true,
+  ollama_status: {
+    reachable: true,
+    models: ["gemma4:e2b", "gemma4:e4b", "llama3.1:8b"],
+    required_model: "llama3.1:8b",
+    required_model_present: true,
+    error: null,
+  },
+  optional_keys: { anthropic_api_key: false, tavily_api_key: false },
+  data_dir_present: true,
+  data_manifest_sha256: null,
+  notices: ["TAVILY_API_KEY not set: Live Explore web search is disabled."],
+};
+
+test("summarizeHealth: model_ready true with ollama: true is available, named by required_model", () => {
+  const s = summarizeHealth(HEALTH_READY);
+  assert.equal(s.model, "available");
+  assert.equal(s.requiredModel, "llama3.1:8b");
+  assert.deepEqual(s.modelTags, ["gemma4:e2b", "gemma4:e4b", "llama3.1:8b"]);
+  assert.equal(s.modelError, null);
+});
+
+test("summarizeHealth: model_ready false is unavailable even when Ollama is reachable", () => {
+  const s = summarizeHealth({
+    ...HEALTH_READY,
+    model_ready: false,
+    ollama_status: { ...HEALTH_READY.ollama_status, models: ["gemma4:e2b"], required_model_present: false },
+  });
+  assert.equal(s.model, "unavailable");
+  assert.equal(s.requiredModel, "llama3.1:8b");
+});
+
+test("summarizeHealth: Ollama down keeps the probe's error; no readiness field at all is unknown", () => {
+  const down = summarizeHealth({
+    ...HEALTH_READY,
+    ollama: false,
+    model_ready: false,
+    ollama_status: {
+      reachable: false,
+      models: [],
+      required_model: "llama3.1:8b",
+      required_model_present: false,
+      error: "Ollama not reachable at OLLAMA_BASE_URL (ConnectError).",
+    },
+  });
+  assert.equal(down.model, "unavailable");
+  assert.match(down.modelError ?? "", /not reachable/);
+  assert.equal(summarizeHealth({ status: "ok" }).model, "unknown");
 });
