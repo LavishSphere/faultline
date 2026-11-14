@@ -303,8 +303,10 @@ below may be changed after any official reveal; a change needs a new dated subse
   - Events share evidence across cases and families (`docs/CASES.md`, "Cross-case visibility"), and consecutive
     decisions and prints share shocks. The bootstrap resamples events as if they were independent, so that assumption
     is only approximate, and the CI is likely too narrow (see also MATH_MODEL §6 review finding 4).
-  - #115 also recommends no "better" verdict unless both outcomes occur among the scored events. That rule is not in
-    `evaluator.py` at this commit, so it is not part of this pre-registration unless it merges before the run.
+  - #115 also recommends no "better" verdict unless both outcomes occur among the scored events. **Lead decision
+    (2026-11-14, before any official forecast): this rule is NOT applied to the first official run.** Changing the
+    scoring code just before the one-time run is riskier than the rule is worth here. Every scored event's outcome is in the
+    card's per-event rows, so a reader can count YES and NO outcomes and apply the rule themselves. The rule is a candidate for the next run.
 
 ---
 
