@@ -272,3 +272,20 @@ def test_public_mode_serves_it_without_a_token(committed, monkeypatch):
     assert resp.status_code == 200 and resp.json()["status"] == "AVAILABLE"
     run = TestClient(create_app()).post("/api/replay/run", json={"case_id": CASE, "variant": "agent_only"})
     assert run.status_code == 401  # the live run stays admin-only
+
+
+@pytest.mark.parametrize(
+    ("path", "gated"),
+    [
+        ("/api/replay/recorded", False),
+        ("/api/replay/recorded/", False),
+        ("/api/replay/recorded/reveal", True),
+        ("/api/replay/recordedx", True),
+        ("/api/replay/run", True),
+        ("/api/replay/x/reveal", True),
+    ],
+)
+def test_edge_gate_exempts_exactly_the_recorded_path(path, gated):
+    from main import is_admin_gated
+
+    assert is_admin_gated(path) is gated

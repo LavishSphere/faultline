@@ -9,7 +9,7 @@ import { Field, Panel } from "../Panel";
 import { SplitView } from "../decision/SplitView";
 import { MarketAtCutoff, marketSource } from "../replay/MarketAtCutoff";
 import { ModelReadiness } from "../replay/ModelReadiness";
-import { RecordedRun, recordedForecast, useRecordedRun } from "../replay/RecordedRun";
+import { RecordedRun, recordedForecast, recordedPublicMode, useRecordedRun } from "../replay/RecordedRun";
 import { CaseBadges, CutoffLine, FailureNote, Hash, InFlight, TextButton } from "../replay/ReplayParts";
 import { useCaseEvidence, useReplayCases, useReplayRoutes, useSelectedCase, type EvidenceState } from "../replay/hooks";
 import { useReplayRun, type RunState } from "../replay/useReplayRun";
@@ -53,10 +53,12 @@ export function DecisionScreen({ step }: { step: Step }) {
   const rejected = run ? skepticRejected(run.skeptic.problems) : false;
   const valid = run && !rejected ? run : null;
   const forecastBadges = valid ? (["FORECAST", valid.prediction.provenance] as const) : ("NOT AVAILABLE" as const);
-  // #116: the committed RECORDED RUN forecast for this case + variant. When the live run is admin-gated (public
-  // demo), it becomes the primary view, still labeled RECORDED RUN and never shown as a live answer.
+  // #116: the committed RECORDED RUN forecast for this case + variant. When the live run is admin-gated (the API
+  // says X-Faultline-Mode: public, or Run came back 401/403), it becomes the primary view, still labeled RECORDED RUN
+  // and never shown as a live answer.
   const recorded = useRecordedRun(selected, variant);
-  const gated = state.kind === "failed" && state.failure.kind === "admin_required";
+  const gated =
+    recordedPublicMode(recorded) || (state.kind === "failed" && state.failure.kind === "admin_required");
   const recordedPrimary = gated && recordedForecast(recorded) !== null;
 
   return (

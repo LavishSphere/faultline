@@ -64,7 +64,7 @@ function fixtureRow(caseId: string, asOf: string, variant: string) {
   };
 }
 
-async function mockPublicDemo(page: Page, asOf: string) {
+async function mockPublicDemo(page: Page, asOf: string, modeHeader: boolean) {
   await page.route(isRecorded, (route: Route) => {
     const url = new URL(route.request().url());
     const caseId = url.searchParams.get("case_id") ?? "";
@@ -72,7 +72,12 @@ async function mockPublicDemo(page: Page, asOf: string) {
     return route.fulfill({
       status: 200,
       contentType: "application/json",
-      headers: { "access-control-allow-origin": "*" },
+      headers: {
+        "access-control-allow-origin": "*",
+        ...(modeHeader
+          ? { "x-faultline-mode": "public", "access-control-expose-headers": "X-Faultline-Mode, Retry-After" }
+          : {}),
+      },
       body: JSON.stringify({
         status: "AVAILABLE",
         provenance: "RECORDED_RUN",
@@ -112,14 +117,30 @@ test.describe("DECISION · recorded run", () => {
     await expect(page.getByTestId("recorded-run")).toHaveCount(0);
   });
 
+  test("X-Faultline-Mode: public makes the recorded forecast primary before any Run click", async ({ page }) => {
+    const c = await firstCase(page);
+    const row = fixtureRow(c.event_id, c.as_of, "agent_only");
+    const runs: string[] = [];
+    page.on("request", (r) => {
+      if (r.method() === "POST" && r.url() === RUN_URL) runs.push(r.url());
+    });
+    await mockPublicDemo(page, c.as_of, true);
+    await page.goto("/decision/");
+    await page.locator("#decision-case").selectOption(c.event_id);
+    const primary = page.locator("section").filter({ has: page.getByText("B.R", { exact: true }) });
+    await expect(primary.getByTestId("recorded-p")).toHaveText(row.p_yes.toFixed(3));
+    await expect(page.getByTestId("recorded-slot").getByTestId("recorded-run")).toHaveCount(0);
+    expect(runs, "nothing is run to decide this").toEqual([]);
+  });
+
   for (const width of [1920, 390]) {
-    test(`public demo at ${width} px: Run is admin-gated, the recorded forecast is primary and fills REVEAL`, async ({
+    test(`Run answers 401 at ${width} px: Run is admin-gated, the recorded forecast is primary and fills REVEAL`, async ({
       page,
     }) => {
       await page.setViewportSize({ width, height: width === 390 ? 844 : 1080 });
       const c = await firstCase(page);
       const row = fixtureRow(c.event_id, c.as_of, "agent_only");
-      await mockPublicDemo(page, c.as_of);
+      await mockPublicDemo(page, c.as_of, false);
       await page.goto("/decision/");
       await page.locator("#decision-case").selectOption(c.event_id);
 

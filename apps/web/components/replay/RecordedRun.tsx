@@ -43,6 +43,11 @@ export function useRecordedRun(c: ReplayCasePublic | null, variant: ForecastVari
   return state.kind !== "no_case" && state.key === key ? state : { kind: "loading", key };
 }
 
+/** True when the API said it runs in public mode (X-Faultline-Mode: public): live Run is admin-only there. */
+export function recordedPublicMode(state: RecordedState): boolean {
+  return state.kind === "done" && state.result.ok && state.result.mode === "public";
+}
+
 /** The newest committed forecast for the selection, or null. */
 export function recordedForecast(state: RecordedState): RecordedForecast | null {
   return state.kind === "done" && state.result.ok ? (state.result.data.items[0] ?? null) : null;

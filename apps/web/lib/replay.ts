@@ -289,7 +289,8 @@ export interface ReplayFailure {
   request: string;
 }
 
-export type ReplayResult<T> = { ok: true; data: T; request: string } | ReplayFailure;
+/** `mode`: the API's `X-Faultline-Mode` response header ("public" / "local"), when the server sends it. */
+export type ReplayResult<T> = { ok: true; data: T; request: string; mode?: string | null } | ReplayFailure;
 
 // --------------------------------------------------------------------------------------------- shape checks
 
@@ -655,7 +656,7 @@ async function request(
         status: res.status,
       });
     }
-    return { ok: true, data: body, request: label };
+    return { ok: true, data: body, request: label, mode: res.headers.get("x-faultline-mode") };
   } catch (err) {
     if (controller.signal.aborted) {
       const reason: unknown = controller.signal.reason;
@@ -878,7 +879,7 @@ export async function getRecorded(
   if (problem) {
     return { ok: false, kind: "malformed", message: `malformed recorded-run payload: ${problem}`, request: res.request };
   }
-  return { ok: true, data: res.data as RecordedResponse, request: res.request };
+  return { ok: true, data: res.data as RecordedResponse, request: res.request, mode: res.mode };
 }
 
 // --------------------------------------------------------------------------------------------- display helpers
