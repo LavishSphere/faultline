@@ -9,11 +9,15 @@ import { E2E_API_BASE, E2E_API_PORT, E2E_WEB_ORIGIN, E2E_WEB_PORT } from "./e2e/
  * browser's requests to the API (e2e/smoke.spec.ts).
  *
  * Ports (e2e/ports.ts) are unusual so a running `make dev` (8000/3000) is never reused by accident.
- * Python for uvicorn: FAULTLINE_E2E_PYTHON, else services/api/.venv (from `make setup`), else python3 on PATH.
+ * Python for uvicorn: FAULTLINE_E2E_PYTHON, else the services/api/.venv interpreter (Scripts/python.exe on Windows,
+ * bin/python elsewhere), else `python` on Windows (where `python3` is usually the Microsoft Store stub) or `python3`.
  */
 const apiDir = resolve(__dirname, "../../services/api");
-const venvPython = resolve(apiDir, ".venv/bin/python");
-const python = process.env.FAULTLINE_E2E_PYTHON || (existsSync(venvPython) ? venvPython : "python3");
+const venvPythons = [resolve(apiDir, ".venv/Scripts/python.exe"), resolve(apiDir, ".venv/bin/python")];
+const python =
+  process.env.FAULTLINE_E2E_PYTHON ||
+  venvPythons.find((candidate) => existsSync(candidate)) ||
+  (process.platform === "win32" ? "python" : "python3");
 
 const CI = !!process.env.CI;
 

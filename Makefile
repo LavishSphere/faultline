@@ -1,11 +1,16 @@
 # FAULTLINE developer targets. Run `make help` for a list.
-.PHONY: help pull agent-start setup api web dev test test-api check guard-test preflight web-build demo demo-scratch demo-api demo-web
+.PHONY: help pull agent-start setup setup-deps api web dev test test-api check guard-test preflight web-build demo demo-scratch demo-api demo-web
 
 API_DIR  := services/api
 VENV     := $(API_DIR)/.venv
+# On Windows `python3` is often the Microsoft Store stub, so the default there is `python`.
+ifeq ($(OS),Windows_NT)
+PYTHON   ?= python
+else
 PYTHON   ?= python3
-# Use the API venv if `make setup` has created it, otherwise whatever python3 is on PATH (CI installs deps globally).
-# Windows venvs put the interpreter in Scripts/ instead of bin/.
+endif
+# Use the API venv if `make setup` has created it, otherwise $(PYTHON) from PATH (CI installs deps globally).
+# Windows venvs put the interpreter in Scripts/python.exe instead of bin/python; bin/ wins if both exist.
 VENV_PY  := $(firstword $(wildcard $(VENV)/bin/python) $(wildcard $(VENV)/Scripts/python.exe))
 API_PY   := $(if $(VENV_PY),$(abspath $(VENV_PY)),$(PYTHON))
 API_PORT ?= 8000
@@ -21,15 +26,20 @@ agent-start:            ## install git hooks + sync with GitHub + show role/task
 	@bash scripts/agent-start.sh
 
 setup:                  ## create services/api/.venv and install the API with dev extras (+ web deps if apps/web exists)
-	@[ -x $(VENV)/bin/python ] || $(PYTHON) -m venv $(VENV)
-	@$(VENV)/bin/python -m pip install --upgrade pip
-	@cd $(API_DIR) && .venv/bin/python -m pip install -e ".[dev]"
+	@[ -x $(VENV)/bin/python ] || [ -x $(VENV)/Scripts/python.exe ] || $(PYTHON) -m venv $(VENV)
+	@$(MAKE) --no-print-directory setup-deps
+
+# A fresh `make` re-reads this file, so VENV_PY now sees the venv that `setup` may have just created.
+setup-deps:
+	@[ -n "$(VENV_PY)" ] || { echo "no venv in $(VENV): run make setup"; exit 1; }
+	@$(API_PY) -m pip install --upgrade pip
+	@cd $(API_DIR) && $(API_PY) -m pip install -e ".[dev]"
 	@if [ -f apps/web/package.json ]; then cd apps/web && npm install; else echo "no web app yet (apps/web)"; fi
 
 api:                    ## run the FastAPI server with reload on http://localhost:8000 (override: API_PORT=...)
 	@$(LOAD_ENV) cd $(API_DIR) && $(API_PY) -m uvicorn main:app --reload --host 127.0.0.1 --port $(API_PORT)
 
-web:                    ## run the Next.js dev server (once apps/web exists)
+web:                    ## run the Next.js dev server on http://localhost:3000
 	@if [ -f apps/web/package.json ]; then cd apps/web && npm run dev; else echo "no web app yet (apps/web)"; fi
 
 dev:                    ## run api + web together (Ctrl-C stops both)
@@ -44,7 +54,7 @@ check:                  ## web typecheck + lint
 	@if [ -f apps/web/package.json ]; then cd apps/web && npm run typecheck && npm run lint; else echo "no web app yet"; fi
 
 guard-test:             ## guardrail hook self-test
-	@python3 scripts/test_guardrails.py
+	@$(PYTHON) scripts/test_guardrails.py
 
 preflight:              ## release preflight: PASS/WARN/FAIL per check (ARGS=--tests also runs pytest)
 	@$(LOAD_ENV) $(API_PY) scripts/preflight.py $(ARGS)

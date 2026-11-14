@@ -378,6 +378,180 @@ def test_deep_slump_protect_off_cut_capped_by_week_purchases():
     assert res.min_cash == approx(25_000.0)
 
 
+# ---------------------------------------------------------------- §4 lexicographic tie-break (issue #104)
+#
+# Stage 1 finds the least harmful cost J*; stage 2 keeps J <= J* and minimizes
+#   TB = sum_t [ (T+1-t)/T (v_t + y_t + z_t W_t) + t/(2T) q_t ]
+# i.e. among equally cheap plans: act as late as possible, borrow for as short a time as possible.
+
+PLAN_FIELDS = ("purchase_cut", "revolver_draw", "revolver_repay", "payroll_cut")
+
+
+def assert_same_plan(a, b):
+    assert (a.plan.use_backup_supplier, a.plan.defer_capex, a.plan.delay_expansion) == (
+        b.plan.use_backup_supplier, b.plan.defer_capex, b.plan.delay_expansion)
+    for name in PLAN_FIELDS:
+        assert getattr(a.plan, name) == [approx(x) for x in getattr(b.plan, name)], name
+    assert [(x.action, x.week) for x in a.actions] == [(x.action, x.week) for x in b.actions]
+
+
+def test_deep_slump_same_plan_with_protect_on_and_off():
+    # Lead review on PR #69: both modes cost 677.34 but cut in different weeks (v_5 = 10,000 vs v_3 = 10,000), so
+    # flipping "Protect payroll" moved the cuts although payroll is never cut. With the tie-break both give one plan.
+    # Hand check (70% drop weeks 5-8, L_p = 2, so a week-t cut is paid out in week t+2):
+    #   no-action C_7 = 14,788.462, so weeks <= 5 must cut 25,000 - 14,788.462 = 10,211.538 to keep C_7 at the floor.
+    #   Latest first: v_5 = 9,750 (all of week 5's purchases, P_5 = 0), v_4 = 10,211.538 - 9,750 = 461.538.
+    #   Week 8 (no-action C_8 = 1,115.385) is bridged by a week-8 draw repaid in week 9, at 10%/52 interest.
+    #   The rest of the permanent cut, 11,000 + interest - 10,211.538, goes in week 6 (paid in week 8):
+    #   v_6 = 788.462 + 0.10/52 x y_8 with y_8 = 25,000 - 1,115.385 - 10,211.538 - v_6 = 13,673.077 - v_6
+    #   -> v_6 = (520 x 788.462 + 13,673.077) / 521 = 423,673.077 / 521 = 813.192, y_8 = q_9 = 12,859.885.
+    shock = _deep_slump()
+    off = run(DEMO, shock, protect=False)
+    on = run(DEMO, shock, protect=True)
+    assert off.status == on.status == OPTIMAL
+    assert off.plan.payroll_cut == [0.0] * 26 and on.plan.payroll_cut == [0.0] * 26
+    assert_same_plan(off, on)
+    assert off.objective == approx(on.objective)
+    cuts = off.plan.purchase_cut
+    assert [t for t, v in enumerate(cuts, start=1) if v > 0] == [4, 5, 6]
+    assert cuts[3:6] == [approx(461.538462), approx(9_750.0), approx(423_673.076923 / 521)]
+    assert off.plan.revolver_draw[7] == approx(13_673.076923 - 423_673.076923 / 521)  # week 8: 12,859.885
+    assert off.plan.revolver_repay[8] == approx(13_673.076923 - 423_673.076923 / 521)  # week 9
+    assert sum(off.plan.revolver_draw) == approx(off.plan.revolver_draw[7])
+
+
+TIE_BREAK_SCENARIOS = [(sid, DEMO, SCENARIOS[sid]) for sid in SCENARIOS] + [
+    ("70% drop weeks 5-8", DEMO, _deep_slump()),
+]
+
+
+@pytest.mark.parametrize(("label", "params", "shock"), TIE_BREAK_SCENARIOS, ids=[c[0] for c in TIE_BREAK_SCENARIOS])
+def test_tie_break_never_changes_the_optimal_cost(label, params, shock):
+    # Every named scenario (data/scenarios.json) plus the deep slump, both modes: the tie-break only chooses among
+    # plans that are already optimal, so J is the stage-1 optimum to within 1e-6 relative.
+    for protect in (False, True):
+        before = optimize(params, shock, protect, SEC10, tie_break=False)
+        after = run(params, shock, protect)
+        assert before.status == after.status == OPTIMAL, label
+        assert abs(after.objective - before.objective) <= 1e-6 * max(1.0, abs(before.objective)), label
+        assert after.disruption_cost == pytest.approx(before.disruption_cost, rel=1e-6, abs=1e-6)
+        assert after.min_cash == pytest.approx(before.min_cash, rel=1e-6, abs=1e-6)
+
+
+def test_named_scenarios_same_plan_with_protect_on_and_off():
+    # None of the named scenarios needs a payroll cut, so "Protect payroll" must not move any action.
+    for sid, shock in SCENARIOS.items():
+        off, on = run(DEMO, shock, protect=False), run(DEMO, shock, protect=True)
+        assert off.plan.payroll_cut == [0.0] * 26, sid
+        assert_same_plan(off, on)
+
+
+def test_bad_quarter_cuts_just_in_time():
+    # Before the tie-break, protect on put 3,307.69 in week 21 and nothing in week 22 (same total, same cost 550.00).
+    # Latest-first (L_p = 2): no-action cash first dips below 25,000 in week 20 (23,873.08, short 1,126.92) and then
+    # falls 1,653.85/wk (the 1,423.08/wk baseline loss plus 600,000 x 2%/52 = 230.77/wk of extra interest) to 13,950 in
+    # week 26. So week 18 cuts 1,126.92 (paid in week 20) and weeks 19-24 each cut the next 1,653.85:
+    # 1,126.92 + 6 x 1,653.85 = 11,050.
+    for protect in (False, True):
+        cuts = run(DEMO, SCENARIOS["bad-quarter"], protect).plan.purchase_cut
+        assert [t for t, v in enumerate(cuts, start=1) if v > 0] == list(range(18, 25))
+        assert cuts[18:24] == [approx(1_653.846154)] * 6
+        assert cuts[17] == approx(11_050.0 - 6 * 1_653.846154)
+
+
+def test_tie_break_puts_a_tied_payroll_cut_in_the_latest_week():
+    # 3-week payroll case above: a payroll cut in week 1 or week 2 raises C_2 equally at the same harm (5/$).
+    # Latest first: the whole 146.154 in week 2.
+    res = run(three_week_params(revolver_limit=500.0, min_inventory=59_800.0), CASE_B, protect=False)
+    assert [z * 12_000.0 for z in res.plan.payroll_cut] == [approx(0.0), approx(146.153846), approx(0.0)]
+    # 3-week slump: 1,346.154 of payroll cuts in weeks 1-2. Week 2 takes the cap z-bar W = 1,200 first, week 1 the rest.
+    res = run(three_week_params(revolver_limit=0.0, min_cash=50_000.0), _three_week_slump(), protect=False)
+    assert [z * 12_000.0 for z in res.plan.payroll_cut] == [approx(146.153846), approx(1_200.0), approx(0.0)]
+
+
+def test_tie_break_failure_reports_the_equally_cheap_stage_1_plan(monkeypatch):
+    # If the stage-2 solve fails, the stage-1 plan (same cost) is reported and the message says the tie-break was
+    # not applied; nothing is hidden and the status stays OPTIMAL.
+    real_milp = optimizer_module.milp
+
+    def failing_stage_2(*args, **kwargs):
+        if len(kwargs["constraints"]) > 1:  # only stage 2 adds the J <= J* row
+            return SimpleNamespace(status=1, x=None, message="Time limit reached.")
+        return real_milp(*args, **kwargs)
+
+    monkeypatch.setattr(optimizer_module, "milp", failing_stage_2)
+    res = run(DEMO, _deep_slump(), protect=True)
+    monkeypatch.setattr(optimizer_module, "milp", real_milp)
+    stage_1 = optimize(DEMO, _deep_slump(), True, SEC10, tie_break=False)
+    assert res.status == OPTIMAL
+    assert "tie-break not applied" in res.solver_message
+    assert_same_plan(res, stage_1)
+    assert res.objective == approx(stage_1.objective)
+
+
+def test_tie_break_keeps_no_feasible_plan():
+    # NO FEASIBLE PLAN is decided by stage 1 alone; stage 2 never runs.
+    res = run(DEMO, _severe_drop(), protect=True)
+    assert res.status == NO_FEASIBLE_PLAN
+    assert res.plan is None
+    assert res.max_feasible_cash_floor == approx(22_375.0)
+
+
+# ---------------------------------------------------------------- reporting round-off (issue #147)
+#
+# After the tie-break (#104) some plans sit on C_min = 25,000 in several weeks, and the solver's cash differs between
+# those weeks by ~4e-12. That must not move the reported min-cash week, and B_t = -4e-13 must not be reported.
+
+CHALLENGES = {
+    c["id"]: ScenarioShock.model_validate(c["shock"])
+    for c in json.loads((DATA / "judge_challenges.json").read_text(encoding="utf-8"))["challenges"]
+}
+ALL_NAMED = {
+    **{f"scenario {k}": v for k, v in SCENARIOS.items()},
+    **{f"challenge {k}": v for k, v in CHALLENGES.items()},
+}
+
+
+def test_min_cash_week_ignores_round_off_between_tied_weeks():
+    # Hand case: week 1 is 4e-12 above week 3, which is the exact minimum. Within tolerance -> week 1 (first tie).
+    assert optimizer_module._min_cash_week([25_000.0 + 4e-12, 30_000.0, 25_000.0], 25_000.0) == 1
+    # A real gap (1 cent, far above max(1e-6, 1e-9 x 25,000) = 2.5e-5) is not a tie: the strict minimum wins.
+    assert optimizer_module._min_cash_week([25_000.01, 30_000.0, 25_000.0], 25_000.0) == 3
+
+
+def test_distributor_strike_min_cash_week_is_the_first_week_on_the_floor():
+    # Judge's Challenge "distributor strike": the plan sits on C_min in week 5 and again in week 26. #136 reported
+    # week 26 (C_26 was 4e-12 below C_5); the first tied week is the one to report.
+    for protect in (False, True):
+        res = run(DEMO, CHALLENGES["judge-distributor-strike"], protect)
+        assert res.status == OPTIMAL
+        assert res.min_cash == approx(DEMO.min_cash)
+        tol = max(1e-6, 1e-9 * abs(res.min_cash))
+        tied = [t for t, c in enumerate(res.cash, start=1) if c - res.min_cash <= tol]
+        assert len(tied) >= 2 and tied[-1] == 26  # a genuine tie: more than one week on the floor
+        assert res.min_cash_week == tied[0]
+        assert all(c - res.min_cash > tol for c in res.cash[: res.min_cash_week - 1])
+
+
+@pytest.mark.parametrize("label", sorted(ALL_NAMED))
+def test_reported_paths_have_no_round_off_around_zero(label):
+    # Every named scenario and Judge's Challenge, both modes: no negative revolver balance (plant closure with
+    # payroll cuts allowed used to report B_t = -4.03e-13), and no |x| < ZERO_TOL residue in any reported path.
+    for protect in (False, True):
+        res = run(DEMO, ALL_NAMED[label], protect)
+        if res.status != OPTIMAL:
+            continue
+        assert all(b >= 0.0 for b in res.revolver_balance), label
+        for path in (res.cash, res.revolver_balance, res.inventory):
+            assert all(x == 0.0 or abs(x) >= optimizer_module.ZERO_TOL for x in path), label
+
+
+def test_plant_closure_with_payroll_cuts_reports_zero_revolver_balance():
+    res = run(DEMO, CHALLENGES["judge-plant-closure"], protect=False)
+    assert res.status == OPTIMAL
+    assert min(res.revolver_balance) == 0.0
+
+
 def _long_outage() -> ScenarioShock:
     kappa = [1.0, 1.0] + [0.0] * 12 + [1.0] * 12  # primary supplier down weeks 3-14
     return ScenarioShock(name="outage weeks 3-14", supplier=SupplierOutage(availability=kappa, dependent_share=0.4))
