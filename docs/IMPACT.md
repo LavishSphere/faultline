@@ -5,7 +5,7 @@ businesses and cash-flow shocks, and say plainly what FAULTLINE does and does no
 **Written:** 2026-11-13 for issue #77. Every figure below was read by the author on the source page on the access date
 shown, and is quoted as printed. Provenance of the facts: `REAL HISTORICAL` (published statistics). Nothing in this
 brief is FAULTLINE output.
-**Review:** ☐ Yaseen (finance owner) has checked each figure and its wording against the source.
+**Review:** ☑ Yaseen (finance owner) has checked each figure and its wording against the source (2026-11-14; the BLS figures S1, S2 were checked in a browser, since BLS blocks automated tools).
 
 ## How to read the numbers
 - **All facts are US-only.**

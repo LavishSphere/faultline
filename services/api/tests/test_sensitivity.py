@@ -172,6 +172,16 @@ def test_revolver_limit_is_not_applicable_even_when_the_plan_draws():
     assert e.max_abs_delta == pytest.approx(10_000 * 0.002 * 22 / 52, abs=TOL)
 
 
+def test_revolver_spread_acts_with_an_opening_balance_and_no_draws():
+    # B_0 = 20,000 outstanding all 26 weeks, no draws: s_R = 0.02 +-10% moves revolver interest by
+    # 20,000 x 0.002 x 26 / 52 = 20.00 a side, so swing = 40.00 and max_abs_delta = 20.00.
+    params = BUSINESS.model_copy(update={"revolver_balance_0": 20_000.0})
+    e = entry(tornado(params, ScenarioShock()), "revolver_spread")
+    assert e.status == "OK"
+    assert e.swing == pytest.approx(40.0, abs=TOL)
+    assert e.max_abs_delta == pytest.approx(20.0, abs=TOL)
+
+
 def test_backup_terms_act_when_the_plan_uses_the_backup_supplier(bad):
     res = tornado(BUSINESS, BAD_QUARTER, plan=ActionPlan(use_backup_supplier=True))
     for key in ("backup_premium", "backup_switch_fee"):

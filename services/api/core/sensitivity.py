@@ -16,6 +16,11 @@ Choices (documented so a finance reviewer can disagree with them):
   must list exactly L_p pre-horizon values: a shorter lag keeps the most recent ones (P_0 last); a longer lag
   prepends copies of the oldest known value (the §10 steady-state assumption P_{-1} = P_0).
 - φ (outage share) lives on the scenario's supplier outage. With no outage in the scenario it is NOT_APPLICABLE.
+- NOT_APPLICABLE also marks inputs that cannot move min cash in this run (issue #115), so a 0.00 swing is never read
+  as "this doesn't matter": B-bar always (only the optimizer reads it); π and F_b when the plan does not use the backup
+  supplier (x_b = 0); s_R when the revolver is never drawn (B_0 = 0 and no draws in the plan); and any input equal
+  to 0, which a relative step cannot move.
+- Each computable entry also reports max_abs_delta = max(|delta low|, |delta high|), next to the swing.
 - Opening balances (C_0, S_0, prior purchases, I_0, D_1, B_0) are not perturbed: they are balances known at the
   start of the plan, not forward-looking assumptions. C_min and I_min are not perturbed either: they are optimizer
   floors (§4) that simulate() does not use. Per-case placeholders (K_t, E_t, X_t, A_t) are zero in the demo business.
