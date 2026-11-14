@@ -6,10 +6,15 @@ import { EvidenceDrawer } from "../EvidenceDrawer";
 import { Field, Panel } from "../Panel";
 import { ProvenanceBadge } from "../ProvenanceBadge";
 import { CaseList } from "../replay/CaseList";
-import { CaseBadges, CutoffLine, FailureNote, Hash, InFlight, TextButton, caseProvenance } from "../replay/ReplayParts";
+import { MarketAtCutoff, marketBadges } from "../replay/MarketAtCutoff";
+import { NotYetPublic } from "../replay/NotYetPublic";
+import { CutoffLine, FailureNote, Hash, InFlight, TextButton, caseProvenance } from "../replay/ReplayParts";
+import { TimeMachine } from "../replay/TimeMachine";
+import { Vault } from "../replay/Vault";
 import { useCaseEvidence, useReplayCases, useReplayRoutes, useSelectedCase, type EvidenceState } from "../replay/hooks";
+import m from "../replay/motion.module.css";
 import { ScreenHeader } from "./ScreenHeader";
-import { EVIDENCE_PATH_TEMPLATE, formatCutoffUtc, type ReplayCasePublic } from "@/lib/replay";
+import { EVIDENCE_PATH_TEMPLATE, formatCutoffUtc, formatInstantUtc, type ReplayCasePublic } from "@/lib/replay";
 import type { Step } from "@/lib/steps";
 
 /**
@@ -39,7 +44,7 @@ export function RewindScreen({ step }: { step: Step }) {
         }
       />
 
-      <CaseTimeline c={selected} />
+      <TimeMachine key={selected ? `${selected.event_id}|${selected.as_of}` : "none"} c={selected} evidence={evidence} />
 
       <div className="grid grid-cols-1 gap-6 xl:grid-cols-12">
         <Panel
@@ -70,10 +75,21 @@ export function RewindScreen({ step }: { step: Step }) {
             {selected ? <Cutoff c={selected} /> : <NoCase />}
           </Panel>
 
+          <Panel
+            code="A.5"
+            title="Market at cutoff"
+            provenance={selected ? marketBadges(selected, null, evidence) : "NOT AVAILABLE"}
+          >
+            <MarketAtCutoff c={selected} run={null} evidence={evidence} />
+          </Panel>
+
           <Panel code="A.4" title="Sealed future" provenance="SEALED" bodyClassName="hatch">
-            <div className="flex items-center gap-3">
-              <span aria-hidden="true" className="inline-block size-3 rounded-sm border border-risk bg-risk/30" />
-              <p className="font-mono text-lg uppercase tracking-[0.14em] text-risk">Sealed future</p>
+            <div className="flex items-center gap-4" data-testid="sealed-vault">
+              <Vault key={selected?.event_id ?? "none"} className="size-12 shrink-0 text-risk" />
+              <div className="min-w-0">
+                <p className="font-mono text-lg uppercase tracking-[0.14em] text-risk">Sealed future</p>
+                <p className="mt-0.5 text-sm text-text">Sealed: the outcome is locked until reveal</p>
+              </div>
             </div>
             <p className="mt-3 text-xs leading-relaxed text-text-2">
               The outcome is not in agent input and is not served by any pre-reveal endpoint. It unlocks on REVEAL,
@@ -108,58 +124,6 @@ function NoCase() {
   );
 }
 
-/** A.0: the cutoff splits the strip; everything right of it is sealed. Dates are the served ones, not inferred. */
-function CaseTimeline({ c }: { c: ReplayCasePublic | null }) {
-  const cutoff = c ? formatCutoffUtc(c.as_of) : null;
-  return (
-    <section aria-labelledby="rewind-timeline" className="overflow-hidden rounded-lg border border-line bg-elevated">
-      <div className="flex min-h-11 flex-wrap items-center justify-between gap-2 border-b border-line px-5 py-2.5">
-        <h2 id="rewind-timeline" className="font-mono text-[11px] uppercase tracking-[0.14em] text-text-2">
-          <span className="text-muted">A.0</span> {c?.synthetic ? "Fictional timeline" : "Case timeline"}
-        </h2>
-        {c ? <CaseBadges c={c} /> : <ProvenanceBadge kind="NOT AVAILABLE" detail="No case loaded" />}
-      </div>
-      <div className="grid grid-cols-1 sm:grid-cols-[3fr_2fr] md:grid-cols-[2fr_1fr]">
-        <div className="relative min-w-0 px-5 py-6">
-          <p className="kicker">Known by cutoff</p>
-          <div className="mt-4 h-px bg-line-strong" aria-hidden="true" />
-          {c ? (
-            <>
-              <p className="display mt-4 text-3xl leading-tight text-text md:text-4xl">{c.title}</p>
-              <p className="mt-3 font-mono text-[11px] uppercase tracking-[0.12em] text-muted">
-                {c.evidence_ids.length} evidence {c.evidence_ids.length === 1 ? "id" : "ids"} on the case record
-              </p>
-            </>
-          ) : (
-            <p className="mt-3 font-mono text-[11px] uppercase tracking-[0.12em] text-muted">Dates not available</p>
-          )}
-        </div>
-        <div className="hatch relative border-t border-risk/70 px-5 py-6 sm:border-l sm:border-t-0">
-          <span
-            aria-hidden="true"
-            className="absolute -top-[4.5px] left-5 size-2 rounded-full border border-risk bg-bg sm:-left-[4.5px] sm:top-[2.9rem]"
-          />
-          <p className="kicker text-risk">Sealed future</p>
-          <div className="mt-4 h-px bg-risk/40" aria-hidden="true" />
-          {c ? (
-            <>
-              <p className="num mt-4 text-sm text-text">
-                <span className="text-muted">Cutoff </span>
-                {cutoff ?? "not available"}
-              </p>
-              <p className="num mt-1 text-sm text-text-2">
-                <span className="text-muted">Horizon </span>
-                {c.horizon_days} days after cutoff
-              </p>
-            </>
-          ) : null}
-          <p className="mt-3 font-mono text-[11px] uppercase tracking-[0.12em] text-risk">Withheld until reveal</p>
-        </div>
-      </div>
-    </section>
-  );
-}
-
 function Cutoff({ c }: { c: ReplayCasePublic }) {
   const text = formatCutoffUtc(c.as_of);
   const [date, time] = text ? [text.slice(0, 10), text.slice(11)] : [null, null];
@@ -189,6 +153,19 @@ function Cutoff({ c }: { c: ReplayCasePublic }) {
   );
 }
 
+/** Hostname of a served source URL, for the card's source line. Display only. */
+function sourceHost(url: string): string {
+  try {
+    return new URL(url).hostname.replace(/^www\./, "");
+  } catch {
+    return url;
+  }
+}
+
+/**
+ * A.2: the documents the temporal gate admitted at the cutoff. Each card flies in once the evidence response has
+ * landed (never before), in served order; the sealed placeholders after them are counts only.
+ */
 function KnownByCutoff({
   c,
   evidence,
@@ -199,7 +176,9 @@ function KnownByCutoff({
   onOpen: () => void;
 }) {
   const served = evidence.kind === "done" && evidence.result.ok ? evidence.result.data : null;
-  const titles = new Map((served?.items ?? []).map((e) => [e.evidence_id, e.title]));
+  const byId = new Map((served?.items ?? []).map((e) => [e.evidence_id, e]));
+  // Cards wait for the A.0 scrub to land (about 1.7 s), so the documents arrive "at" the cutoff.
+  const base = 900;
   return (
     <div className="flex flex-col gap-4">
       <CutoffLine asOf={c.as_of} className="text-sm" />
@@ -218,28 +197,57 @@ function KnownByCutoff({
       {c.evidence_ids.length === 0 ? (
         <p className="font-mono text-sm uppercase tracking-[0.08em] text-muted">No evidence ids on this case.</p>
       ) : (
-        <ol className="flex flex-col">
-          {c.evidence_ids.map((id, i) => (
-            <li key={id} className="flex items-baseline gap-4 border-b border-line/70 py-2.5 last:border-b-0">
-              <span className="num text-xs text-muted">[{i + 1}]</span>
-              <span className="min-w-0 flex-1">
-                <span className="num block break-all text-xs text-text-2">{id}</span>
-                <span className="block text-sm text-text">
-                  {titles.get(id) ?? (
-                    <span className="font-mono text-[11px] uppercase tracking-[0.1em] text-muted">
-                      Document not available
+        <ol className="flex flex-col gap-2" data-testid="known-evidence">
+          {c.evidence_ids.map((id, i) => {
+            const doc = byId.get(id);
+            return (
+              <li
+                key={`${id}-${served ? "doc" : "id"}`}
+                className={`flex items-start gap-3 rounded-md border border-line bg-bg/40 px-3.5 py-3 ${served ? m.flyIn : ""}`}
+                style={served ? { animationDelay: `${base + i * 130}ms` } : undefined}
+              >
+                <span className="num mt-0.5 text-xs text-accent">[{i + 1}]</span>
+                <span className="min-w-0 flex-1">
+                  <span className="block text-sm leading-snug text-text">
+                    {doc?.title ?? (
+                      <span className="font-mono text-[11px] uppercase tracking-[0.1em] text-muted">
+                        Document not available
+                      </span>
+                    )}
+                  </span>
+                  <span className="num mt-1 block break-all text-[11px] text-muted">
+                    {id}
+                    {doc ? (
+                      <>
+                        {" "}
+                        · available {formatInstantUtc(doc.available_at) ?? "NOT AVAILABLE"} · {sourceHost(doc.source_url)}
+                      </>
+                    ) : null}
+                  </span>
+                  {doc ? (
+                    <span className="mt-1.5 block sm:hidden">
+                      <ProvenanceBadge kind={doc.provenance} />
                     </span>
-                  )}
+                  ) : null}
                 </span>
-              </span>
-            </li>
-          ))}
+                {doc ? (
+                  <span className="hidden shrink-0 sm:block">
+                    <ProvenanceBadge kind={doc.provenance} />
+                  </span>
+                ) : null}
+              </li>
+            );
+          })}
         </ol>
       )}
 
+      <div className="border-t border-line pt-4">
+        <NotYetPublic evidence={evidence} delayMs={base + c.evidence_ids.length * 130} />
+      </div>
+
       <p className="font-mono text-[10px] leading-relaxed text-muted">
         Ids as served by GET /api/cases: only the items the temporal gate admits at the cutoff
-        (EvidenceStore.public_case). Titles from GET /api/cases/{"{case_id}"}/evidence.
+        (EvidenceStore.public_case). Documents and exclusion counts from GET /api/cases/{"{case_id}"}/evidence.
       </p>
       <div>
         <TextButton onClick={onOpen} aria-haspopup="dialog">

@@ -3,13 +3,15 @@
 import Link from "next/link";
 import { useEffect, useRef, useState } from "react";
 import { EvidenceDrawer } from "../EvidenceDrawer";
-import { FinancialReadout } from "../FinancialReadout";
 import { IntegrityPanel } from "../integrity/IntegrityPanel";
 import { Field, Panel } from "../Panel";
 import { SplitView } from "../decision/SplitView";
 import { MarketAtCutoff, marketSource } from "../replay/MarketAtCutoff";
+import { ForecastGauge } from "../replay/ForecastGauge";
 import { ModelReadiness } from "../replay/ModelReadiness";
 import { RecordedRun, recordedForecast, recordedPublicMode, useRecordedRun } from "../replay/RecordedRun";
+import { ReadingState } from "../replay/ReadingState";
+import fx from "../replay/motion.module.css";
 import { CaseBadges, CutoffLine, FailureNote, Hash, InFlight, TextButton } from "../replay/ReplayParts";
 import { useCaseEvidence, useReplayCases, useReplayRoutes, useSelectedCase, type EvidenceState } from "../replay/hooks";
 import { useReplayRun, type RunState } from "../replay/useReplayRun";
@@ -17,6 +19,7 @@ import { ScreenHeader } from "./ScreenHeader";
 import {
   CASES_PATH,
   REPLAY_RUN_PATH,
+  RUN_TIMEOUT_MS,
   RUN_VARIANTS,
   formatInstantUtc,
   isSyntheticQuote,
@@ -116,7 +119,7 @@ export function DecisionScreen({ step }: { step: Step }) {
             <div className="border-t border-line pt-5">
               <p className="kicker">Chosen path</p>
               <div className="mt-2">
-                <ChosenPath state={state} rejected={rejected} />
+                <ChosenPath state={state} rejected={rejected} documents={selected?.evidence_ids.length ?? 0} />
               </div>
             </div>
           </div>
@@ -135,12 +138,13 @@ export function DecisionScreen({ step }: { step: Step }) {
             </Panel>
           ) : null}
           <Panel code="B.1" title="Agent probability" provenance={forecastBadges}>
-            <FinancialReadout
+            <ForecastGauge
               label="P(YES) · forecast"
               value={valid ? valid.prediction.p_yes : null}
-              format="probability"
-              provenance="FORECAST"
+              runKey={valid ? valid.prediction.prediction_id : "none"}
+              provenance={valid ? ["FORECAST", valid.prediction.provenance] : []}
               sublabel={valid ? `${valid.prediction.agent_model} · ${valid.prediction.variant}` : undefined}
+              market={valid ? marketInput(selected, run, evidence) : null}
             />
             {valid && savedAfterReveal(valid) ? (
               <p className="mt-3 font-mono text-[11px] uppercase tracking-[0.1em] text-risk">
@@ -342,8 +346,10 @@ function RunControls({
   }
   return (
     <div className="flex flex-col gap-4">
-      <fieldset className="flex flex-col gap-2">
-        <legend className="kicker mb-2">Variant</legend>
+      <fieldset className="flex flex-col gap-2 rounded-md border border-line-strong p-3" data-testid="variant-picker">
+        <legend className="px-1.5 font-mono text-[12px] uppercase tracking-[0.14em] text-text">
+          Variant · choose before running
+        </legend>
         <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
           {RUN_VARIANTS.map((v) => (
             <label
@@ -362,9 +368,9 @@ function RunControls({
                   className="sr-only"
                 />
                 <span aria-hidden="true" className={`size-2 rounded-full border ${variant === v.id ? "border-accent bg-accent" : "border-line-strong"}`} />
-                <span className="font-mono text-[11px] uppercase tracking-[0.14em] text-text">{v.label}</span>
+                <span className="font-mono text-[12px] font-medium uppercase tracking-[0.14em] text-text">{v.label}</span>
               </span>
-              <span className="text-[11px] leading-snug text-muted">{v.detail}</span>
+              <span className="text-xs leading-snug text-text-2">{v.detail}</span>
             </label>
           ))}
         </div>
@@ -454,7 +460,7 @@ function RunControls({
 
 const DECISION_LABEL = { act: "Act", wait: "Wait", hedge: "Hedge" } as const;
 
-function ChosenPath({ state, rejected }: { state: RunState; rejected: boolean }) {
+function ChosenPath({ state, rejected, documents }: { state: RunState; rejected: boolean; documents: number }) {
   if (state.kind === "idle") {
     return (
       <div className="flex flex-col gap-1.5">
@@ -467,7 +473,15 @@ function ChosenPath({ state, rejected }: { state: RunState; rejected: boolean })
     );
   }
   if (state.kind === "running") {
-    return <InFlight request={state.request} note="A local model can take a while. Nothing is shown until it answers." />;
+    return (
+      <ReadingState
+        documents={documents}
+        startedAt={state.startedAt}
+        limitSeconds={RUN_TIMEOUT_MS / 1000}
+        request={state.request}
+        model={null}
+      />
+    );
   }
   if (state.kind === "failed") {
     const f = state.failure;
@@ -503,13 +517,23 @@ function ChosenPath({ state, rejected }: { state: RunState; rejected: boolean })
           <p className="text-xs text-muted">Error-level problems below; this output is not a valid forecast.</p>
         </div>
       ) : (
-        <div className="flex flex-wrap items-baseline gap-x-4 gap-y-1">
+        <div className={`flex flex-wrap items-baseline gap-x-4 gap-y-1 ${fx.fadeUp}`} style={{ animationDelay: "1200ms" }}>
           <p className="display text-6xl italic text-accent md:text-7xl">{DECISION_LABEL[prediction.decision]}</p>
           <span className="font-mono text-[11px] uppercase tracking-[0.14em] text-muted">
             decision: {prediction.decision}
           </span>
         </div>
       )}
+      {!rejected ? (
+        <Link
+          href={{ pathname: "/reveal", query: { prediction_id: prediction.prediction_id } }}
+          className="inline-flex items-center gap-2 self-start rounded-md border border-accent px-3 py-2 font-mono text-[11px] uppercase tracking-[0.14em] text-text hover:bg-accent hover:text-bg"
+          data-testid="reveal-this-forecast"
+        >
+          Reveal this forecast <span aria-hidden="true">→</span>
+          <span className="sr-only">({prediction.prediction_id}); the outcome stays sealed until you click Reveal there</span>
+        </Link>
+      ) : null}
       <div>
         <p className="kicker">Rationale</p>
         <p className="mt-1.5 whitespace-pre-line text-sm leading-relaxed text-text-2">{prediction.rationale}</p>
@@ -566,15 +590,27 @@ function RevealCaveat({ run }: { run: ReplayRun }) {
 }
 
 function SkepticList({ problems }: { problems: ReplayRun["skeptic"]["problems"] }) {
+  // Rows tick in one after another once the run has landed; every row is a problem the API returned.
   if (problems.length === 0) {
-    return <p className="font-mono text-[11px] uppercase tracking-[0.1em] text-viable">Skeptic: no problems reported</p>;
+    return (
+      <p className={`font-mono text-[11px] uppercase tracking-[0.1em] text-viable ${fx.fadeUp}`} style={{ animationDelay: "1500ms" }}>
+        <span aria-hidden="true">✓ </span>Skeptic: no problems reported
+      </p>
+    );
   }
   return (
     <div>
-      <p className="kicker">Skeptic</p>
+      <p className="kicker">Skeptic · {problems.length} {problems.length === 1 ? "problem" : "problems"} reported</p>
       <ul className="mt-1.5 flex flex-col gap-1.5">
         {problems.map((p, i) => (
-          <li key={`${p.code}-${i}`} className="text-xs leading-relaxed">
+          <li
+            key={`${p.code}-${i}`}
+            className={`text-xs leading-relaxed ${fx.fadeUp}`}
+            style={{ animationDelay: `${1500 + i * 160}ms` }}
+          >
+            <span aria-hidden="true" className={`mr-1.5 ${p.severity === "error" ? "text-fail" : "text-risk"}`}>
+              {p.severity === "error" ? "✗" : "!"}
+            </span>
             <span
               className={`mr-2 font-mono text-[10px] uppercase tracking-[0.1em] ${
                 p.severity === "error" ? "text-fail" : "text-risk"
@@ -628,12 +664,14 @@ function Citations({
   return (
     <ol className="flex flex-col">
       {ids.map((id, i) => (
-        <li key={id} className="border-b border-line/70 last:border-b-0">
+        <li key={`${run.prediction.prediction_id}-${id}`} className="border-b border-line/70 last:border-b-0">
           <button
             type="button"
             onClick={() => onOpen(id)}
             aria-haspopup="dialog"
-            className="flex w-full items-baseline gap-4 rounded-sm py-2.5 text-left hover:bg-hover"
+            data-cited="true"
+            className={`flex w-full items-baseline gap-4 rounded-sm px-2 py-2.5 text-left hover:bg-hover ${fx.cited}`}
+            style={{ animationDelay: `${700 + i * 180}ms` }}
           >
             <span className="num text-xs text-muted">[{i + 1}]</span>
             <span className="min-w-0 flex-1">

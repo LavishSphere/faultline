@@ -14,6 +14,8 @@ import type { ApiResult } from "@/lib/api";
 import { Panel } from "../Panel";
 import { WIRE_PROVENANCE, type ProvenanceInput, type WireProvenance } from "../ProvenanceBadge";
 import { useSelectedCaseId } from "../replay/hooks";
+import { useStagger } from "../replay/motion";
+import m from "../replay/motion.module.css";
 
 /**
  * INTEGRITY panel (issue #81): what the AI was NOT allowed to see, and which guarantees held, for the selected
@@ -38,7 +40,7 @@ function StatusMark({ status }: { status: CheckStatus }) {
   const s = STATUS_STYLE[status];
   return (
     <span
-      className={`inline-flex shrink-0 items-center gap-1.5 whitespace-nowrap rounded-sm border px-1.5 py-[3px] font-mono text-[10px] font-medium uppercase leading-none tracking-[0.1em] ${s.className}`}
+      className={`inline-flex shrink-0 items-center gap-1.5 whitespace-nowrap rounded-sm border px-1.5 py-[3px] font-mono text-[10px] font-medium uppercase leading-none tracking-[0.1em] ${s.className} ${m.popIn}`}
       data-status={status}
     >
       <span aria-hidden="true">{s.glyph}</span>
@@ -47,42 +49,81 @@ function StatusMark({ status }: { status: CheckStatus }) {
   );
 }
 
+/** A check the API has not reported yet on this request. Never styled or worded like a result. */
+function PendingMark() {
+  return (
+    <span
+      className={`inline-flex shrink-0 items-center gap-1.5 whitespace-nowrap rounded-sm border border-dashed border-line-strong px-1.5 py-[3px] font-mono text-[10px] font-medium uppercase leading-none tracking-[0.1em] text-muted ${m.pending}`}
+      data-status="PENDING"
+    >
+      <span aria-hidden="true">◌</span>
+      <span>Pending</span>
+    </span>
+  );
+}
+
 function wireProvenance(value: string | null): ProvenanceInput | null {
   return value !== null && value in WIRE_PROVENANCE ? (value as WireProvenance) : null;
 }
 
-function CheckRow({ check }: { check: IntegrityCheck }) {
+/**
+ * One check. `check` is the API's row on this request; with `pending` set it is the previous response's row,
+ * shown only by title while the new request is in flight (its old status and facts are not shown).
+ */
+function CheckRow({ check, pending }: { check: IntegrityCheck; pending: boolean }) {
   return (
-    <li className="flex flex-col gap-2 border-b border-line/70 py-4 last:border-b-0" data-check={check.id}>
+    <li
+      className="flex flex-col gap-2 border-b border-line/70 py-4 last:border-b-0"
+      data-check={check.id}
+      data-scan={pending ? "pending" : "reported"}
+    >
       <div className="flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1.5">
         <h3 className="flex min-w-0 items-baseline gap-3 text-sm font-medium text-text">
-          <StatusMark status={check.status} />
-          <span className="min-w-0">{check.title}</span>
+          {pending ? <PendingMark /> : <StatusMark status={check.status} />}
+          <span className={`min-w-0 ${pending ? "text-text-2" : ""}`}>{check.title}</span>
         </h3>
         <span className="font-mono text-[10px] uppercase tracking-[0.14em] text-muted">{SCOPE_LABEL[check.scope]}</span>
       </div>
-      <p className="text-xs leading-relaxed text-text-2">{check.explanation}</p>
-      {check.facts.length > 0 ? (
-        <dl className="grid grid-cols-1 gap-x-6 gap-y-1 sm:grid-cols-2">
-          {check.facts.map((f, i) => (
-            <div key={`${f.label}-${i}`} className="flex min-w-0 items-baseline justify-between gap-3 border-b border-line/40 py-1">
-              <dt className="text-[11px] text-muted">{f.label}</dt>
-              <dd className="num min-w-0 break-all text-right font-mono text-[11px] text-text">{f.value}</dd>
-            </div>
-          ))}
-        </dl>
-      ) : null}
-      <details className="text-[11px] text-muted">
-        <summary className="cursor-pointer font-mono uppercase tracking-[0.12em]">Enforced by</summary>
-        <ul className="mt-1.5 flex flex-col gap-0.5 font-mono">
-          {check.enforced_by.map((e) => (
-            <li key={e} className="break-all">
-              {e}
-            </li>
-          ))}
-        </ul>
-      </details>
+      {pending ? null : (
+        <div className={`flex flex-col gap-2 ${m.fadeUp}`}>
+          <p className="text-xs leading-relaxed text-text-2">{check.explanation}</p>
+          {check.facts.length > 0 ? (
+            <details className="text-[11px] text-muted" data-testid="check-facts">
+              <summary className="cursor-pointer font-mono uppercase tracking-[0.12em] hover:text-text">
+                Facts ({check.facts.length})
+              </summary>
+              <dl className="mt-1.5 grid grid-cols-1 gap-x-6 gap-y-1 sm:grid-cols-2">
+                {check.facts.map((f, i) => (
+                  <div key={`${f.label}-${i}`} className="flex min-w-0 items-baseline justify-between gap-3 border-b border-line/40 py-1">
+                    <dt className="text-[11px] text-muted">{f.label}</dt>
+                    <dd className="num min-w-0 break-all text-right font-mono text-[11px] text-text">{f.value}</dd>
+                  </div>
+                ))}
+              </dl>
+            </details>
+          ) : null}
+          <details className="text-[11px] text-muted">
+            <summary className="cursor-pointer font-mono uppercase tracking-[0.12em] hover:text-text">Enforced by</summary>
+            <ul className="mt-1.5 flex flex-col gap-0.5 font-mono">
+              {check.enforced_by.map((e) => (
+                <li key={e} className="break-all">
+                  {e}
+                </li>
+              ))}
+            </ul>
+          </details>
+        </div>
+      )}
     </li>
+  );
+}
+
+/** Indeterminate scan bar: shown only while GET /api/integrity is in flight or its rows are still being listed. */
+function ScanBar({ active }: { active: boolean }) {
+  return (
+    <div className="relative h-px w-full overflow-hidden bg-line" aria-hidden="true">
+      {active ? <div className={`absolute inset-y-0 w-1/3 bg-gradient-to-r from-transparent via-accent to-transparent ${m.sweep}`} /> : null}
+    </div>
   );
 }
 
@@ -109,6 +150,8 @@ export function IntegrityPanel({
   const [appliedPrediction, setAppliedPrediction] = useState<string | null>(null);
   const [nonce, setNonce] = useState(0);
   const [load, setLoad] = useState<Load<IntegrityResponse>>(null);
+  /** The last response that loaded: its check titles are listed as PENDING while a new request is in flight. */
+  const [previous, setPrevious] = useState<IntegrityResponse | null>(null);
 
   useEffect(() => {
     const controller = new AbortController();
@@ -130,7 +173,9 @@ export function IntegrityPanel({
     if (!casesSettled) return;
     const controller = new AbortController();
     void getIntegrity({ caseId, predictionId }, controller.signal).then((result) => {
-      if (!controller.signal.aborted) setLoad({ key, result });
+      if (controller.signal.aborted) return;
+      setLoad({ key, result });
+      if (result.ok) setPrevious(result.data);
     });
     return () => controller.abort();
     // `key` captures caseId, predictionId and the re-run nonce.
@@ -211,9 +256,19 @@ export function IntegrityPanel({
         ) : null}
 
         {current === null ? (
-          <p className="font-mono text-xs uppercase tracking-[0.12em] text-muted" aria-live="polite">
-            Requesting {INTEGRITY_REQUEST}…
-          </p>
+          <div className="flex flex-col gap-3" data-testid="integrity-scanning">
+            <ScanBar active />
+            <p className="font-mono text-xs uppercase tracking-[0.12em] text-muted" aria-live="polite">
+              Scanning · requesting {INTEGRITY_REQUEST}… no check is reported until it answers
+            </p>
+            {previous ? (
+              <ol className="flex flex-col" aria-label="Checks awaiting this request">
+                {previous.checks.map((c) => (
+                  <CheckRow key={c.id} check={c} pending />
+                ))}
+              </ol>
+            ) : null}
+          </div>
         ) : !current.ok ? (
           <div className="flex flex-col gap-1.5" aria-live="polite">
             <p className="font-mono text-lg font-medium uppercase tracking-[0.08em] text-muted">Not available</p>
@@ -223,24 +278,37 @@ export function IntegrityPanel({
             <p className="text-xs leading-relaxed text-muted">No check is shown as passed when the API did not report it.</p>
           </div>
         ) : (
-          <IntegrityBody data={current.data} />
+          <IntegrityBody data={current.data} scanKey={key} />
         )}
       </div>
     </Panel>
   );
 }
 
-function IntegrityBody({ data }: { data: IntegrityResponse }) {
+/**
+ * The response is in hand; its rows are listed one by one (a presentation stagger of ~0.14 s per row, skipped
+ * under reduced motion). A row reads PENDING until its turn, then exactly the API's status: never PASS before.
+ */
+function IntegrityBody({ data, scanKey }: { data: IntegrityResponse; scanKey: string }) {
+  const reported = useStagger(data.checks.length, `${scanKey}|${data.computed_at}`, 140, 60);
+  const scanning = reported < data.checks.length;
   return (
     <div className="flex flex-col gap-5">
+      <ScanBar active={scanning} />
       <div className="flex flex-wrap items-baseline gap-x-6 gap-y-2" aria-live="polite">
-        <p className="num text-sm text-text">
+        {scanning ? (
+          <p className="num text-sm text-muted" data-testid="integrity-scan-progress">
+            Listing the API&apos;s results · {reported} of {data.checks.length} checks shown
+          </p>
+        ) : (
+        <p className={`num text-sm text-text ${m.fadeUp}`} data-testid="integrity-counts">
           <span className="text-viable">{data.counts.passed} passed</span>
           <span className="mx-2 text-line-strong">·</span>
           <span className={data.counts.failed > 0 ? "text-fail" : "text-text-2"}>{data.counts.failed} failed</span>
           <span className="mx-2 text-line-strong">·</span>
           <span className="text-muted">{data.counts.not_available} not available</span>
         </p>
+        )}
         <p className="font-mono text-[11px] text-muted">
           {data.case_id ? <>case {data.case_id}</> : <>no case selected</>}
           {data.prediction_id ? <> · run {data.prediction_id}</> : null}
@@ -269,8 +337,8 @@ function IntegrityBody({ data }: { data: IntegrityResponse }) {
       ) : null}
 
       <ol className="flex flex-col">
-        {data.checks.map((c) => (
-          <CheckRow key={c.id} check={c} />
+        {data.checks.map((c, i) => (
+          <CheckRow key={c.id} check={c} pending={i >= reported} />
         ))}
       </ol>
 

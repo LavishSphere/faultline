@@ -32,11 +32,24 @@ export interface ApiFailure {
 
 export type ApiResult<T> = { ok: true; data: T } | ApiFailure;
 
-/** Raw `/api/health` payload as described by issue #1. All fields optional until the contract is fixed. */
+/**
+ * Raw `/api/health` payload: `models.HealthResponse` (services/api/routes/health.py). Fields stay optional so an
+ * older or partial build is read tolerantly; nothing missing is filled in.
+ */
 export interface HealthResponse {
   status?: string;
-  /** Issue #1: "ollama reachable (+ installed model tags)". Either a boolean or a nested object. */
+  /** Ollama reachable at OLLAMA_BASE_URL (a boolean in models.HealthResponse; an object in early drafts). */
   ollama?: boolean | { reachable?: boolean; models?: string[] };
+  /** Ollama reachable AND the configured replay model is installed: the authoritative readiness flag. */
+  model_ready?: boolean;
+  ollama_status?: {
+    reachable?: boolean;
+    models?: string[];
+    required_model?: string;
+    required_model_present?: boolean;
+    error?: string | null;
+  };
+  notices?: string[];
   models?: string[];
   ollama_models?: string[];
   [key: string]: unknown;
@@ -48,7 +61,12 @@ export type ModelAvailability = "available" | "unavailable" | "unknown";
 export interface HealthSummary {
   status: string | null;
   model: ModelAvailability;
+  /** Every model tag installed in Ollama, as listed. */
   modelTags: string[];
+  /** The replay model the API is configured to run (`ollama_status.required_model`); null when not reported. */
+  requiredModel: string | null;
+  /** The Ollama probe's own error text, when it sent one. */
+  modelError: string | null;
   checkedAt: Date;
 }
 
@@ -56,9 +74,15 @@ function asStringArray(value: unknown): string[] {
   return Array.isArray(value) ? value.filter((v): v is string => typeof v === "string") : [];
 }
 
+/**
+ * Readiness comes from `model_ready` whenever the API sends it (#163). This used to read only `ollama` and a
+ * top-level model list; `models.HealthResponse` nests the list under `ollama_status`, so with `ollama: true` the
+ * list looked empty and a ready model was reported as "Local model unavailable".
+ */
 export function summarizeHealth(raw: HealthResponse, checkedAt: Date = new Date()): HealthSummary {
   let reachable: boolean | undefined;
   let tags: string[] = [];
+  const st = raw.ollama_status && typeof raw.ollama_status === "object" ? raw.ollama_status : null;
 
   if (typeof raw.ollama === "boolean") {
     reachable = raw.ollama;
@@ -66,17 +90,23 @@ export function summarizeHealth(raw: HealthResponse, checkedAt: Date = new Date(
     if (typeof raw.ollama.reachable === "boolean") reachable = raw.ollama.reachable;
     tags = asStringArray(raw.ollama.models);
   }
+  if (reachable === undefined && typeof st?.reachable === "boolean") reachable = st.reachable;
+  if (tags.length === 0) tags = asStringArray(st?.models);
   if (tags.length === 0) tags = asStringArray(raw.ollama_models);
   if (tags.length === 0) tags = asStringArray(raw.models);
 
   let model: ModelAvailability = "unknown";
-  if (reachable === false) model = "unavailable";
+  if (typeof raw.model_ready === "boolean") model = raw.model_ready ? "available" : "unavailable";
+  else if (typeof st?.required_model_present === "boolean") model = st.required_model_present ? "available" : "unavailable";
+  else if (reachable === false) model = "unavailable";
   else if (reachable === true) model = tags.length > 0 ? "available" : "unavailable";
 
   return {
     status: typeof raw.status === "string" ? raw.status : null,
     model,
     modelTags: tags,
+    requiredModel: typeof st?.required_model === "string" && st.required_model ? st.required_model : null,
+    modelError: typeof st?.error === "string" && st.error ? st.error : null,
     checkedAt,
   };
 }
