@@ -16,6 +16,11 @@ Choices (documented so a finance reviewer can disagree with them):
   must list exactly L_p pre-horizon values: a shorter lag keeps the most recent ones (P_0 last); a longer lag
   prepends copies of the oldest known value (the §10 steady-state assumption P_{-1} = P_0).
 - φ (outage share) lives on the scenario's supplier outage. With no outage in the scenario it is NOT_APPLICABLE.
+- NOT_APPLICABLE also marks inputs that cannot move min cash in this run (issue #115), so a 0.00 swing is never read
+  as "this doesn't matter": B-bar always (only the optimizer reads it); π and F_b when the plan does not use the backup
+  supplier (x_b = 0); s_R when the revolver is never drawn (B_0 = 0 and no draws in the plan); and any input equal
+  to 0, which a relative step cannot move.
+- Each computable entry also reports max_abs_delta = max(|delta low|, |delta high|), next to the swing.
 - Opening balances (C_0, S_0, prior purchases, I_0, D_1, B_0) are not perturbed: they are balances known at the
   start of the plan, not forward-looking assumptions. C_min and I_min are not perturbed either: they are optimizer
   floors (§4) that simulate() does not use. Per-case placeholders (K_t, E_t, X_t, A_t) are zero in the demo business.
@@ -69,6 +74,7 @@ class TornadoEntry(_Model):
     low: SensitivityPoint | None  # input moved down
     high: SensitivityPoint | None  # input moved up
     swing: float | None  # |high.min_cash - low.min_cash|; None unless both sides are OK
+    max_abs_delta: float | None = None  # max(|low.delta_vs_base|, |high.delta_vs_base|); None unless both sides OK
     note: str | None = None
 
 
@@ -98,7 +104,8 @@ class _Driver:
     build: Callable[[BusinessParams, ScenarioShock, int, float], Inputs]
     integer_step: bool = False
     note: str | None = None
-    not_applicable: Callable[[BusinessParams, ScenarioShock], str | None] = lambda p, s: None
+    # (params, shock, plan) -> why the driver cannot move min cash in this run, or None
+    not_applicable: Callable[[BusinessParams, ScenarioShock, ActionPlan], str | None] = lambda p, s, a: None
 
 
 def _scale(value: Series, factor: float) -> Value:
@@ -116,7 +123,11 @@ def _rebuild(params: BusinessParams, **update) -> BusinessParams:
     return BusinessParams.model_validate(data)
 
 
-def _field_driver(field: str, label: str, symbol: str, note: str | None = None) -> _Driver:
+PlanCheck = Callable[[BusinessParams, ScenarioShock, ActionPlan], str | None]
+
+
+def _field_driver(field: str, label: str, symbol: str, note: str | None = None,
+                  unused_when: PlanCheck | None = None) -> _Driver:
     def base(params: BusinessParams, shock: ScenarioShock) -> Value:
         return _scale(getattr(params, field), 1.0)
 
@@ -126,7 +137,9 @@ def _field_driver(field: str, label: str, symbol: str, note: str | None = None) 
     def build(params: BusinessParams, shock: ScenarioShock, d: int, rel: float) -> Inputs:
         return _rebuild(params, **{field: moved(params, shock, d, rel)}), shock
 
-    def not_applicable(params: BusinessParams, shock: ScenarioShock) -> str | None:
+    def not_applicable(params: BusinessParams, shock: ScenarioShock, plan: ActionPlan) -> str | None:
+        if unused_when is not None and (why := unused_when(params, shock, plan)) is not None:
+            return why
         if _is_zero(_scale(getattr(params, field), 1.0)):
             return f"{symbol} is 0, so a relative step does not move it"
         return None
@@ -192,11 +205,27 @@ def _phi_build(params: BusinessParams, shock: ScenarioShock, d: int, rel: float)
     return params, ScenarioShock.model_validate(data)
 
 
-def _phi_not_applicable(params: BusinessParams, shock: ScenarioShock) -> str | None:
+def _phi_not_applicable(params: BusinessParams, shock: ScenarioShock, plan: ActionPlan) -> str | None:
     if shock.supplier is None:
         return "the scenario has no supplier outage, so the outage share φ does not enter the cash path"
     if shock.supplier.dependent_share == 0.0:
         return "φ is 0, so a relative step does not move it"
+    return None
+
+
+def _optimizer_only(params: BusinessParams, shock: ScenarioShock, plan: ActionPlan) -> str | None:
+    return ("used only by the optimizer: simulate() never reads it, so a 0.00 swing would wrongly suggest the credit "
+            "line does not matter")
+
+
+def _no_backup(params: BusinessParams, shock: ScenarioShock, plan: ActionPlan) -> str | None:
+    return None if plan.use_backup_supplier else "the plan does not use the backup supplier (x_b = 0)"
+
+
+def _no_revolver(params: BusinessParams, shock: ScenarioShock, plan: ActionPlan) -> str | None:
+    draws = plan.revolver_draw if isinstance(plan.revolver_draw, list) else [plan.revolver_draw]
+    if params.revolver_balance_0 == 0.0 and all(d == 0.0 for d in draws):
+        return "the revolver is never drawn (B_0 = 0 and no draws in the plan)"
     return None
 
 
@@ -216,15 +245,16 @@ DRIVERS: tuple[_Driver, ...] = (
     _field_driver("base_rate", "Base rate (all-in, term loan)", "r",
                   note="Relative step on r^base; a scenario rate shock Δr is added on top unchanged."),
     _field_driver("revolver_spread", "Revolver spread", "s_R",
-                  note="Revolver interest is B_{t-1}(r_t + s_R)/52, so it acts only when the revolver is drawn."),
+                  note="Revolver interest is B_{t-1}(r_t + s_R)/52, so it acts only when the revolver is drawn.",
+                  unused_when=_no_revolver),
     _field_driver("revolver_limit", "Revolver limit", "B-bar",
-                  note="An optimizer constraint (§4.2); simulate() does not use it."),
+                  note="An optimizer constraint (§4.2); simulate() does not use it.", unused_when=_optimizer_only),
     _Driver("dependent_share", "Outage-dependent share of sales", "φ", _phi_base, _phi_moved, _phi_build,
             note="Taken from the scenario's supplier outage.", not_applicable=_phi_not_applicable),
     _field_driver("backup_premium", "Backup-supplier premium", "π",
-                  note="Acts only when the plan uses the backup supplier (x_b = 1)."),
+                  note="Acts only when the plan uses the backup supplier (x_b = 1).", unused_when=_no_backup),
     _field_driver("backup_switch_fee", "Backup switching fee", "F_b",
-                  note="Acts only when the plan uses the backup supplier (x_b = 1)."),
+                  note="Acts only when the plan uses the backup supplier (x_b = 1).", unused_when=_no_backup),
 )
 
 _ORDER = {d.key: i for i, d in enumerate(DRIVERS)}
@@ -270,7 +300,7 @@ def tornado(params: BusinessParams, shock: ScenarioShock, rel: float = 0.10,
     for drv in DRIVERS:
         step = "-1 / +1 week" if drv.integer_step else f"-{pct} / +{pct}"
         common = dict(key=drv.key, label=drv.label, symbol=drv.symbol, step=step, base_value=drv.base(params, shock))
-        why_not = drv.not_applicable(params, shock)
+        why_not = drv.not_applicable(params, shock, plan)
         if why_not is not None:
             entries.append(TornadoEntry(**common, status="NOT_APPLICABLE", low=None, high=None, swing=None,
                                         note=why_not if drv.note is None else f"{why_not}. {drv.note}"))
@@ -279,8 +309,9 @@ def tornado(params: BusinessParams, shock: ScenarioShock, rel: float = 0.10,
         high = _point(drv, params, shock, plan, +1, rel, base.min_cash)
         ok = low.status == "OK" and high.status == "OK"
         swing = abs(high.min_cash - low.min_cash) if ok else None  # type: ignore[operator]
+        max_abs = max(abs(low.delta_vs_base), abs(high.delta_vs_base)) if ok else None  # type: ignore[arg-type]
         entries.append(TornadoEntry(**common, status="OK" if ok else "INFEASIBLE", low=low, high=high, swing=swing,
-                                    note=drv.note))
+                                    max_abs_delta=max_abs, note=drv.note))
 
     entries.sort(key=lambda e: (
         _STATUS_ORDER[e.status],

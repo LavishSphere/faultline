@@ -30,9 +30,17 @@ Decisions (one variable vector, §4):
   (8, 10 and the 0 in 3 are the §3 physical rules simulate() enforces: no negative purchases, sales or stock.)
 
 Objective (minimize disruption, tie-break toward more cash):
-    c_b x_b + c_c x_c + c_e x_e + c_v sum_t v_t + c_y sum_t y_t + c_z sum_t z_t W_t + c_u sum_t u_t - epsilon mu
+    J = c_b x_b + c_c x_c + c_e x_e + c_v sum_t v_t + c_y sum_t y_t + c_z sum_t z_t W_t + c_u sum_t u_t - epsilon mu
   c_u > 0 makes u_t = max(0, I^svc_t - I_t) at the optimum (a larger u_t only costs harm and cash), so the solver's
   stock-out lost sales theta u_t equal the ones simulate() computes.
+
+Lexicographic tie-break (issue #104): several plans can have the same minimal J (e.g. a purchase cut in week 3 or week
+5 bridges the same trough). Stage 1 solves the MILP above for J*. Stage 2 keeps J(x) <= J* as a constraint and
+minimizes
+    TB = sum_t [ (T + 1 - t)/T * (v_t + y_t + z_t W_t) + t/(2T) * q_t ]
+over the same constraints (yes/no decisions free again): among equally cheap plans, act as late as possible and
+borrow for as short a time as possible. The stage-2 plan is accepted only if its J is within max(1e-9 |J*|, 1e-7) of
+J*; otherwise the stage-1 plan is reported and solver_message says so. NO FEASIBLE PLAN is decided by stage 1 alone.
 
 Rules: pure functions only. No I/O, no randomness, no LLM calls, no clock. Dollars are plain floats and are never
 rounded here (round only for display). The returned cash path is the solver's C_t; optimize() re-simulates the chosen
@@ -66,7 +74,15 @@ BINDING_TOL = 1e-6
 # Solver path vs simulate() path: the largest allowed gap in dollars before OPTIMAL is refused.
 AGREEMENT_TOL = 1e-6
 # Solver values smaller than this are treated as zero when the plan is read back (removes round-off like -1e-12).
-ZERO_TOL = 1e-9
+ZERO_TOL = 1e-7
+# Stage-2 tie-break acceptance (§4): the tie-broken plan's J may exceed the stage-1 optimum J* by at most
+# max(COST_TIE_REL_TOL * |J*|, COST_TIE_ABS_TOL) (solver round-off); otherwise the stage-1 plan is reported.
+COST_TIE_REL_TOL = 1e-9
+COST_TIE_ABS_TOL = 1e-7
+# min_cash_week reports the FIRST week whose cash is within max(MIN_WEEK_ABS_TOL, MIN_WEEK_REL_TOL * |min_cash|) of
+# min_cash, so a 4e-12 round-off difference between two weeks sitting on the floor does not move the reported week.
+MIN_WEEK_ABS_TOL = 1e-6
+MIN_WEEK_REL_TOL = 1e-9
 
 NonNeg = Annotated[float, Field(ge=0.0)]
 Fraction = Annotated[float, Field(ge=0.0, le=1.0)]
@@ -155,7 +171,7 @@ class OptimizationResult(_Model):
     revolver_balance: list[float] | None = None  # B_t
     inventory: list[float] | None = None  # I_t
     min_cash: float | None = None  # min_t C_t
-    min_cash_week: int | None = None  # first t attaining min_cash
+    min_cash_week: int | None = None  # first t with C_t within max(1e-6, 1e-9 |min_cash|) of min_cash
     binding_constraints: list[str] | None = None  # e.g. "liquidity floor, week 9"
     objective: float | None = None  # the full §4 objective, including -epsilon mu
     disruption_cost: float | None = None  # the objective without the tie-break term
@@ -334,15 +350,50 @@ class _Problem:
             c[ix("y", t)] = costs.revolver_draw_per_dollar
             c[ix("z", t)] = costs.payroll_cut_per_dollar * W[t - 1]
             c[ix("u", t)] = costs.stock_shortfall_per_dollar_week  # c_u (§4, issue #103)
+        self.c_disruption = c.copy()  # the §4 objective without the -epsilon mu term
         self.epsilon = settings.tie_break_epsilon
         c[ix.mu] = -settings.tie_break_epsilon
         self.c = c
 
+        # §4 stage-2 tie-break TB: a dollar of purchase cut, draw or payroll cut weighs more the earlier it happens;
+        # a dollar of repayment weighs more the later it happens, at half the slope, so moving a whole draw-and-repay
+        # pair one week later lowers TB (by 1/(2T) per dollar) instead of tying.
+        tb = np.zeros(ix.n)
+        for t in range(1, T + 1):
+            late = (T + 1 - t) / T
+            tb[ix("v", t)] = late
+            tb[ix("y", t)] = late
+            tb[ix("z", t)] = late * W[t - 1]  # per dollar of payroll cut z_t W_t
+            tb[ix("q", t)] = t / (2 * T)
+        self.c_tie_break = tb
+
         self.integrality = np.zeros(ix.n)
         self.integrality[[ix.xb, ix.xc, ix.xe]] = 1
 
-    def solve(self, c: np.ndarray, lb: np.ndarray, ub: np.ndarray, integrality: np.ndarray):
-        return milp(c, integrality=integrality, bounds=Bounds(lb, ub), constraints=self.constraints)
+    def solve(
+        self,
+        c: np.ndarray,
+        lb: np.ndarray,
+        ub: np.ndarray,
+        integrality: np.ndarray,
+        extra: tuple[LinearConstraint, ...] = (),
+        options: dict[str, Any] | None = None,
+    ):
+        return milp(
+            c, integrality=integrality, bounds=Bounds(lb, ub), constraints=[self.constraints, *extra], options=options
+        )
+
+    def objective(self, sol: np.ndarray) -> float:
+        """The §4 objective J of a solution, with mu at its value for the plan, min_t C_t."""
+        min_cash = min(float(sol[self.ix("C", t)]) for t in range(1, self.T + 1))
+        return float(self.c_disruption @ sol) - self.epsilon * min_cash
+
+    def fixed_binaries(self, sol: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
+        """Bounds with x_b, x_c, x_e fixed at the 0/1 values in ``sol`` (the MILP may return 0.9999999)."""
+        lb, ub = self.lb.copy(), self.ub.copy()
+        for j in (self.ix.xb, self.ix.xc, self.ix.xe):
+            lb[j] = ub[j] = float(round(sol[j]))
+        return lb, ub
 
 
 # --------------------------------------------------------------------------- reading the solution
@@ -356,6 +407,21 @@ def _value(expr: _Affine, sol: np.ndarray) -> float:
 def _clean(value: float) -> float:
     """Drop solver round-off: |value| < ZERO_TOL -> 0, never negative (ActionPlan requires v, y, q, z >= 0)."""
     return 0.0 if value < ZERO_TOL else float(value)
+
+
+def _snap(value: float) -> float:
+    """Reported C_t / B_t / I_t: |value| < ZERO_TOL -> exactly 0.0 (e.g. B_t = -4e-13), otherwise unchanged.
+
+    Unlike _clean this keeps the sign of real values; it only removes round-off around zero. Display only: the
+    agreement check, min_cash and the objective use the unsnapped solver values.
+    """
+    return 0.0 if abs(value) < ZERO_TOL else float(value)
+
+
+def _min_cash_week(cash: list[float], min_cash: float) -> int:
+    """First week t (1-based) with C_t - min_cash <= max(MIN_WEEK_ABS_TOL, MIN_WEEK_REL_TOL |min_cash|)."""
+    tol = max(MIN_WEEK_ABS_TOL, MIN_WEEK_REL_TOL * abs(min_cash))
+    return next(t for t, c in enumerate(cash, start=1) if c - min_cash <= tol)
 
 
 def _binding(prob: _Problem, sol: np.ndarray) -> list[str]:
@@ -419,6 +485,8 @@ def optimize(
     shock: ScenarioShock,
     protect_payroll: bool,
     settings: OptimizerSettings | None = None,
+    *,
+    tie_break: bool = True,
 ) -> OptimizationResult:
     """Solve the §4 MILP for this scenario.
 
@@ -426,6 +494,8 @@ def optimize(
     status NO FEASIBLE PLAN: no combination of actions keeps every §4 constraint; reports the highest cash floor that
     some plan could keep (``max_feasible_cash_floor``). status SOLVER ERROR: the solver's own message, no plan.
     ``settings`` defaults to the MATH_MODEL §10 values (see OptimizerSettings).
+    ``tie_break`` (default True) runs the §4 stage-2 tie-break, so equally cheap plans resolve to one fixed plan.
+    False returns whichever stage-1 optimum the solver found (same cost; used by tests to check the cost is unchanged).
     """
     settings = settings if settings is not None else OptimizerSettings()
     prob = _Problem(params, shock, protect_payroll, settings)
@@ -440,9 +510,7 @@ def optimize(
 
     # Fix the binaries at their 0/1 values and re-solve the remaining LP, so the continuous values are exact for
     # those decisions (the MILP may return x = 0.9999999 within its integrality tolerance).
-    lb, ub = prob.lb.copy(), prob.ub.copy()
-    for j in (ix.xb, ix.xc, ix.xe):
-        lb[j] = ub[j] = float(round(res.x[j]))
+    lb, ub = prob.fixed_binaries(res.x)
     polished = prob.solve(prob.c, lb, ub, np.zeros(ix.n))
     if polished.status != 0 or polished.x is None:
         return OptimizationResult(
@@ -451,6 +519,11 @@ def optimize(
             **common,
         )
     sol = polished.x
+    message = str(res.message)
+    if tie_break:
+        sol, note = _tie_break(prob, sol)
+        if note:
+            message = f"{message}; {note}"
 
     plan, actions = _plan_and_actions(prob, sol)
     cash = [float(sol[ix("C", t)]) for t in range(1, T + 1)]
@@ -468,23 +541,55 @@ def optimize(
             **common,
         )
 
+    # min_cash is the exact solver value (e.g. 24999.999999999996 when the plan sits on C_min = 25,000); it is not
+    # snapped to the floor, so the objective below is unchanged. Only the week is tolerance-based (_min_cash_week).
     min_cash = min(cash)
-    objective = float(prob.c @ sol)
+    disruption_cost = float(prob.c_disruption @ sol)
     return OptimizationResult(
         status=OPTIMAL,
-        solver_message=str(res.message),
+        solver_message=message,
         plan=plan,
         actions=actions,
-        cash=cash,
-        revolver_balance=[float(sol[ix("B", t)]) for t in range(1, T + 1)],
-        inventory=[float(sol[ix("I", t)]) for t in range(1, T + 1)],
+        cash=[_snap(c) for c in cash],
+        revolver_balance=[_snap(float(sol[ix("B", t)])) for t in range(1, T + 1)],
+        inventory=[_snap(float(sol[ix("I", t)])) for t in range(1, T + 1)],
         min_cash=min_cash,
-        min_cash_week=cash.index(min_cash) + 1,
+        min_cash_week=_min_cash_week(cash, min_cash),
         binding_constraints=_binding(prob, sol),
-        objective=objective,
-        disruption_cost=objective + prob.epsilon * float(sol[ix.mu]),
+        objective=disruption_cost - prob.epsilon * min_cash,  # J with mu = min_t C_t (its value for this plan)
+        disruption_cost=disruption_cost,
         **common,
     )
+
+
+def _tie_break(prob: _Problem, sol1: np.ndarray) -> tuple[np.ndarray, str | None]:
+    """§4 stage 2: among plans with J <= J* (the stage-1 optimum), the one with the smallest tie-break TB.
+
+    The row is J(x) <= J* with no allowance on purpose: any positive allowance would let TB buy sub-cent changes
+    (e.g. a $0.0000001 payroll cut), which would then show up as actions. The yes/no decisions are free again in the
+    MILP, then fixed at its 0/1 values for an exact LP polish (falling back to the stage-1 yes/no values if that LP
+    fails). A stage-2 plan is accepted only if its own J is within max(COST_TIE_REL_TOL |J*|, COST_TIE_ABS_TOL) of J*.
+    Returns (solution, None), or (stage-1 solution, note) when no stage-2 plan passes.
+    """
+    j_star = prob.objective(sol1)
+    tol = max(COST_TIE_REL_TOL * abs(j_star), COST_TIE_ABS_TOL)
+    cost_row = (LinearConstraint(prob.c.reshape(1, -1), -np.inf, j_star),)
+    tb = prob.c_tie_break
+    stage2 = prob.solve(tb, prob.lb, prob.ub, prob.integrality, cost_row, options={"mip_rel_gap": 0.0})
+    starts = [stage2.x] if stage2.status == 0 and stage2.x is not None else []
+    starts.append(sol1)  # stage-1 yes/no values as the fallback
+    failure = f"stage 2 MILP: {stage2.message}"
+    for start in starts:
+        lb, ub = prob.fixed_binaries(start)
+        polished = prob.solve(tb, lb, ub, np.zeros(prob.ix.n), cost_row, options={"presolve": False})
+        if polished.status != 0 or polished.x is None:
+            failure = f"stage 2 LP: {polished.message}"
+            continue
+        excess = prob.objective(polished.x) - j_star
+        if excess <= tol:
+            return polished.x, None
+        failure = f"stage 2 plan costs {excess:.3g} more than J* (> {tol:.3g})"
+    return sol1, f"tie-break not applied ({failure}); an equally cheap stage-1 plan is reported"
 
 
 def _infeasible(prob: _Problem, message: str, common: dict[str, Any]) -> OptimizationResult:

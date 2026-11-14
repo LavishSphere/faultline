@@ -167,6 +167,37 @@ finance owner** (non-cash harm: operational risk, lost goodwill, morale), on top
 week (by $a\,\theta$, then $\theta$, then $g\,\theta$ per \$) and never relaxes a constraint. So at the optimum
 $u_t = \max(0, I^{svc}_t - I_t)$, the same value `simulate()` computes, and the solver's cash path matches the simulator's.
 
+Call this objective $J(x)$.
+
+**Tie-break between equally cheap plans (issue #104). *Proposal, pending finance-owner sign-off.*** Several plans can
+reach the same minimal $J$: with $L_p = 2$, a purchase cut in week 3, 4 or 5 is paid out two weeks later and so raises
+week-7 cash by the same amount, at the same $c_v$ per dollar. The solver then returns whichever it meets first, so flipping *Protect payroll* could move
+the cuts even when payroll is never cut. *Preference:* among plans that are exactly as cheap, act as late as possible
+and borrow for as short a time as possible, so that options stay open. It is applied lexicographically, in two stages:
+
+1. Solve the MILP above. Infeasible → `NO FEASIBLE PLAN` (stage 2 never runs). Otherwise $J^* = J(x^{(1)})$.
+2. Re-solve over the same constraints (the yes/no decisions free again), plus $J(x) \le J^*$, minimizing
+   $$
+   TB(x) = \sum_t \Bigl[\tfrac{T+1-t}{T}\,\bigl(v_t + y_t + z_t W_t\bigr) + \tfrac{t}{2T}\,q_t\Bigr].
+   $$
+   A dollar of purchase cut, revolver draw or payroll cut weighs more the earlier it happens; a dollar of repayment
+   weighs more the later it happens. Repayments use half the slope, so moving a whole draw-and-repay pair one week later
+   lowers $TB$ by $\tfrac{1}{2T}$ per dollar instead of tying.
+
+*Guarantee.* Stage 2 can only choose among plans that are optimal on cost: $J(\text{reported plan}) \le J^* + \delta$
+with $\delta = \max(10^{-9}\,\lvert J^*\rvert,\ 10^{-7})$, i.e. solver round-off only. The stage-2 row is $J(x) \le J^*$
+with no allowance on purpose: any positive allowance would let $TB$ buy sub-cent changes in the plan (e.g. a
+\$0.0000001 payroll cut, which would then be listed as an action). After stage 2 the code recomputes $J$ for the
+plan; if it exceeds $J^* + \delta$, or stage 2 fails, the stage-1 plan is reported (still optimal on cost) and the
+solver message says the tie-break was not applied. A single objective $J + \eta\,TB$ was not used: it keeps cost
+first only if $\eta$ is below the smallest cost gap between two distinct candidate plans, a data-dependent number we
+cannot bound in advance for every scenario. The two-stage solve needs no such bound.
+*Uniqueness.* Distinct weights per week make a remaining tie need an exact coincidence of the weights with the
+constraints. It is not impossible in principle; if it happens, HiGHS still returns the same plan for the same inputs.
+Worked example (70% demand drop, weeks 5-8): stage 1 alone gave cost $677.34$ in both modes but cut
+$v_3 = 10{,}000,\ v_5 = 1{,}024.73$ with payroll protected and $v_4 = 461.54,\ v_5 = 9{,}750,\ v_6 = 813.19$ without.
+With the tie-break both modes give the second plan, at the same cost.
+
 **Outputs:** status ∈ {`OPTIMAL`, `NO FEASIBLE PLAN`}, the chosen actions, $C_t$ path, $\min_t C_t$, binding
 constraints (slack ≈ 0), and the objective value. If infeasible, report it: no LLM may override it. Useful
 diagnostic: re-solve with $C_{min}$ relaxed to find the smallest floor that *is* feasible, and show it.
@@ -196,6 +227,61 @@ For outcome $y \in \{0,1\}$ and forecast $p \in [0,1]$:
 - $5 \le n < 30$: show the numbers with a `small sample` caveat
 - Say "agent better than market" **only if** the CI upper bound $< 0$. Otherwise `No improvement measured`.
 
+### Calibration: reliability bins and Brier decomposition (`calibration.py`, issue #86)
+
+*Descriptive only; it ranks no forecaster.* Computed per forecaster (naive, market, agent) from the scorecard's
+per-event scores, after the reveal. Same display rules: $n < 5$ events gives `INSUFFICIENT DATA` and no table;
+$5 \le n < 30$ carries the `small sample` caveat. Real-historical and synthetic events are never pooled.
+
+**Bins.** $K = 5$ equal-width bins: bin $k = [k/K, (k+1)/K)$ for $k < K-1$, last bin $[(K-1)/K, 1]$
+(so $0.2 \to$ bin 2 of 5 and $p = 1 \to$ bin 5). For bin $k$ with $n_k$ forecasts: mean forecast $\bar p_k$, observed
+frequency $\bar o_k = (\#\text{YES})/n_k$, and the Wilson 95% interval ($z = 1.96$) on $\bar o_k$:
+
+$$
+\frac{\bar o_k + \frac{z^2}{2n_k}}{1 + \frac{z^2}{n_k}} \;\pm\; \frac{z}{1 + \frac{z^2}{n_k}}\sqrt{\frac{\bar o_k(1-\bar o_k)}{n_k} + \frac{z^2}{4n_k^2}},
+\quad\text{clamped to } [0, 1].
+$$
+
+Bins with $n_k < 3$ are listed but flagged "too few to read"; empty bins show count 0 and no values.
+
+**Decomposition** (Murphy 1973), $N$ events, base rate $\bar o = \frac1N\sum_i y_i$:
+
+$$
+\text{BS} = \tfrac1N\textstyle\sum_i (p_i - y_i)^2,\quad
+\text{REL} = \tfrac1N\sum_k n_k(\bar p_k - \bar o_k)^2,\quad
+\text{RES} = \tfrac1N\sum_k n_k(\bar o_k - \bar o)^2,\quad
+\text{UNC} = \bar o(1 - \bar o).
+$$
+
+With binning, $\text{BS} = \text{REL} - \text{RES} + \text{UNC}$ holds exactly **only if the forecasts within each bin are
+equal**. In general (Stephenson et al. 2008)
+$\text{BS} = \text{REL} - \text{RES} + \text{UNC} + (\text{WBV} - 2\,\text{WBC})$, with
+$\text{WBV} = \frac1N\sum_k\sum_{i\in k}(p_i - \bar p_k)^2$ and $\text{WBC} = \frac1N\sum_k\sum_{i\in k}(p_i - \bar p_k)(y_i - \bar o_k)$;
+the within-bin term $\text{WBV} - 2\,\text{WBC}$ is reported so the numbers reconcile exactly.
+
+**Forecasts from a scorecard.** The scorecard stores per-event Brier $b$, not $p$. With one snapshot,
+$p = \sqrt b$ if $y = 0$ and $p = 1 - \sqrt b$ if $y = 1$ (exact; rounded to 12 decimals so a price on a bin edge stays
+in its bin). An event averaged over several snapshots has no single $p$: it is excluded and listed.
+
+**Hand-worked example** (SYNTHETIC; reproduced in `tests/test_calibration.py`). Six $(p, y)$: (0.1, 0), (0.3, 0),
+(0.3, 1), (0.7, 1), (0.8, 0), (0.9, 1). $\bar o = 0.5$, $\text{UNC} = 0.25$,
+$\text{BS} = (0.01 + 0.09 + 0.49 + 0.09 + 0.64 + 0.01)/6 = 1.33/6 = 0.221667$.
+
+| bin | $n_k$ | $\bar p_k$ | $\bar o_k$ | $n_k(\bar p_k-\bar o_k)^2$ | $n_k(\bar o_k-\bar o)^2$ | Wilson 95% |
+|---|---|---|---|---|---|---|
+| [0, 0.2) | 1 | 0.1 | 0 | 0.01 | 0.25 | [0, 0.793457] ($= z^2/(1+z^2)$) |
+| [0.2, 0.4) | 2 | 0.3 | 0.5 | 0.08 | 0 | [0.094529, 0.905471] |
+| [0.4, 0.6) | 0 | | | | | empty |
+| [0.6, 0.8) | 1 | 0.7 | 1 | 0.09 | 0.25 | [0.206543, 1] |
+| [0.8, 1.0] | 2 | 0.85 | 0.5 | 0.245 | 0 | [0.094529, 0.905471] |
+
+(Every bin has $n_k < 3$, so all are flagged "too few to read". For $n_k = 2$, one YES: centre
+$(0.5 + 0.9604)/2.9208 = 0.5$, half-width $(1.96/2.9208)\sqrt{0.125 + 0.2401} = 0.405471$.)
+$\text{REL} = 0.425/6 = 0.070833$, $\text{RES} = 0.5/6 = 0.083333$, so $\text{REL} - \text{RES} + \text{UNC} = 1.425/6 = 0.2375 \ne \text{BS}$.
+Only bin [0.8, 1.0] mixes forecasts (0.8 with NO, 0.9 with YES; $\bar p = 0.85$, $\bar o = 0.5$):
+$\text{WBV} = 0.005/6$, $\text{WBC} = (0.025 + 0.025)/6 = 0.05/6$, within-bin term $= (0.005 - 0.1)/6 = -0.095/6 = -0.015833$,
+and $0.2375 - 0.015833 = 0.221667 = \text{BS}$.
+
 ### What n ≈ 15 can and can't tell us (statistical review, issue #80)
 
 *Explanatory only: no formula or rule above changes. The model below is `[assumed]` and every number in this
@@ -222,6 +308,8 @@ $\approx \sigma_d/\sqrt n$. A true mean improvement (agent − market, in Brier)
 
 - half the time if it is at least $\text{MDE}_{50} = z_{0.975}\,\sigma_d/\sqrt n = 1.96\,\sigma_d/\sqrt n$ (this is also the typical CI half-width);
 - 80% of the time if it is at least $\text{MDE}_{80} = (z_{0.975} + z_{0.80})\,\sigma_d/\sqrt n \approx 2.80\,\sigma_d/\sqrt n$.
+
+Both are a normal approximation; the real $d$ is two-valued and skewed, so true power at $n \approx 15$ may differ.
 
 | $n$ | $\sigma_d = 0.036$: MDE$_{50}$ / MDE$_{80}$ | $\sigma_d = 0.071$ (central) | $\sigma_d = 0.107$ |
 |---|---|---|---|

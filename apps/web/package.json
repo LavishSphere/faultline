@@ -2,13 +2,16 @@
   "name": "faultline-web",
   "version": "0.1.0",
   "private": true,
+  "engines": {
+    "node": ">=22"
+  },
   "scripts": {
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
     "lint": "eslint .",
     "typecheck": "tsc --noEmit",
-    "test": "node --import ./lib/test-hooks.mjs --test components/cascade/scenarioInputs.test.mjs lib/contracts.test.mjs lib/decision.test.mjs lib/explore.test.mjs",
+    "test": "node --import ./lib/test-hooks.mjs --test components/cascade/scenarioInputs.test.mjs lib/contracts.test.mjs lib/decision.test.mjs lib/explore.test.mjs lib/glossary.test.mjs",
     "e2e": "playwright test"
   },
   "dependencies": {
