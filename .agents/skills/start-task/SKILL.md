@@ -8,6 +8,11 @@ argument-hint: "[issue number]"
 
 Read `.agents/team.json` for `leads`, `partners`, and `delegation_label`.
 
+## 0. Open PRs that need fixes come first
+If the session banner lists PRs under "FIX THESE FIRST" (changes requested or red CI), say so and run the `address-review`
+procedure on them before starting anything new, unless the human explicitly wants the new task now. A PR that cannot
+merge blocks every task that starts after it.
+
 ## 1. Find and verify the task
 - If an issue number was given: `gh issue view <N> --json number,title,body,author,assignees,labels,state,comments`.
 - Otherwise list candidates: `gh issue list --state open --label delegated --assignee @me --json number,title,author`.
@@ -15,6 +20,7 @@ Read `.agents/team.json` for `leads`, `partners`, and `delegation_label`.
 - **Check it isn't blocked:** if the body has a `**Starts after:** #A, #B` line, each of those must be closed or merged
   (`gh issue view A --json state`; it works for PRs too, and a merged PR reports `MERGED`). If not, say "this task is waiting on #A" and offer an unblocked
   task instead. Starting early builds on code that doesn't exist yet.
+- **Check nobody is already on it:** the banner marks a task "in review: PR #N" when an open PR closes it. Do not start a second branch for it.
 - Several unblocked tasks with separate files? Offer `/my-sprint` to run them in parallel.
 - **Partner session and verification fails →** do not implement. Say plainly:
   "This task wasn't delegated by a lead, so I can't build it. I can help you write a comment asking <lead> to file it."

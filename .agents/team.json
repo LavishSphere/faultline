@@ -27,5 +27,103 @@
     "ws:research",
     "ws:eval"
   ],
-  "max_pr_commits": 3
+  "max_pr_commits": 3,
+  "deadlines": [
+    {
+      "at": "2026-11-14T13:00:00-05:00",
+      "name": "practice demos",
+      "when": "Sat Nov 14, 1pm ET",
+      "after": "Practice demos are done: polish and harden the golden path, no new scope."
+    },
+    {
+      "at": "2026-11-15T11:00:00-05:00",
+      "name": "code freeze",
+      "when": "Sun Nov 15, 11am ET",
+      "after": "CODE FREEZE: nothing merges and no new PRs unless a lead says so in this session."
+    },
+    {
+      "at": "2026-11-15T13:00:00-05:00",
+      "name": "Demo Day 1.0",
+      "when": "Sun Nov 15, 1pm ET"
+    }
+  ],
+  "workstreams": {
+    "ws:backend": {
+      "agent": "backend-engineer",
+      "paths": [
+        "services/api/main.py",
+        "services/api/models.py",
+        "services/api/errors.py",
+        "services/api/routes/",
+        "services/api/agents/",
+        "Makefile",
+        ".env.example",
+        "README.md"
+      ]
+    },
+    "ws:replay": {
+      "agent": "backend-engineer",
+      "paths": [
+        "services/api/core/temporal_gate.py",
+        "services/api/core/provenance.py",
+        "services/api/core/forecasting.py",
+        "services/api/data/demo_cases/",
+        "services/api/data/sealed_outcomes/",
+        "docs/CASES.md"
+      ]
+    },
+    "ws:eval": {
+      "agent": "backend-engineer",
+      "paths": [
+        "services/api/core/evaluator.py",
+        "scripts/run_benchmark.py",
+        "docs/EVALUATION_PROTOCOL.md"
+      ]
+    },
+    "ws:finance": {
+      "agent": "finance-modeler",
+      "paths": [
+        "services/api/core/financials.py",
+        "services/api/core/optimizer.py",
+        "services/api/data/demo_business.json",
+        "docs/MATH_MODEL.md"
+      ]
+    },
+    "ws:markets": {
+      "agent": "market-data-engineer",
+      "paths": [
+        "services/api/markets/",
+        "services/api/data/raw/",
+        "scripts/collect_market_snapshots.py"
+      ]
+    },
+    "ws:frontend": {
+      "agent": "frontend-designer",
+      "paths": [
+        "apps/web/"
+      ]
+    },
+    "ws:research": {
+      "agent": "research-curator",
+      "paths": [
+        "services/api/data/research_lenses.json",
+        "docs/DATA_PROVENANCE.md",
+        "docs/curation/"
+      ]
+    }
+  },
+  "shared_files": [
+    "services/api/main.py",
+    "services/api/models.py",
+    "apps/web/lib/api.ts"
+  ],
+  "integrity_core": [
+    "services/api/core/",
+    "services/api/agents/",
+    "services/api/routes/",
+    "services/api/data/sealed_outcomes/",
+    "services/api/data/demo_cases/",
+    "services/api/markets/normalize.py",
+    "docs/MATH_MODEL.md"
+  ]
 }
