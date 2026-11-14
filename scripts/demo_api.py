@@ -10,6 +10,8 @@ if it names the official store, otherwise exports it as FAULTLINE_PREDICTIONS_DB
 route, the evaluator's vault check and the computed-scorecards directory use the scratch file. With neither variable
 set the API uses the official store and this launcher says so loudly. `scripts/record_runs.py` never goes through
 this launcher, so the official run keeps using the official store unless FAULTLINE_PREDICTIONS_DB is set for it.
+Whenever the store is not the official one, FAULTLINE_DEMO_STORE is left set for the app, so no scorecard it computes
+or serves can be OFFICIAL (#155); the official result is the committed RECORDED RUN.
 """
 
 from __future__ import annotations
@@ -59,6 +61,9 @@ def main() -> int:
             flush=True,
         )
     else:
+        # Any scratch store this launcher serves is a demo scratch store (#155): FAULTLINE_DEMO_STORE set means no
+        # scorecard computed or served by this process is OFFICIAL (core/evaluator.py, routes/benchmark.py).
+        os.environ["FAULTLINE_DEMO_STORE"] = str(settings.predictions_db)
         settings.predictions_db.parent.mkdir(parents=True, exist_ok=True)
         print(
             f"[demo] prediction store: SCRATCH {settings.predictions_db} "

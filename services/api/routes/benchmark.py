@@ -571,6 +571,9 @@ def verify_snapshot(
         problems.append(f"{DRY_RUN_AGENT_MODEL} (dry-run mock) is never a scored model")
     problems += scorecard_problems(record.scorecard)
     problems += cases_sha256_problems(record)
+    if origin == "computed" and record.scorecard.label.startswith("OFFICIAL") and get_settings().demo_store_set:
+        # #155: a demo scratch process never serves an OFFICIAL computed card (committed runs are checked from files).
+        problems.append("an OFFICIAL computed card is not served while FAULTLINE_DEMO_STORE is set (demo scratch)")
     if origin == "committed" and not problems:
         if file_name is None or runs_root is None:
             problems.append("a committed snapshot needs its file name and the runs folder to be verified")

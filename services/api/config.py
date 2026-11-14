@@ -36,6 +36,9 @@ class Settings:
     # The ONE prediction store (and reveal ledger) every route, the evaluator's vault check and record_runs.py
     # open; computed scorecards live next to it. Absolute. Default: DEFAULT_PREDICTIONS_DB (the official store).
     predictions_db: Path
+    # FAULTLINE_DEMO_STORE is set (scripts/demo_api.py, `make demo-scratch`): this process serves a demo scratch
+    # store, so no scorecard computed or served from it may be OFFICIAL (#155). Presence only, read per call.
+    demo_store_set: bool
 
     @property
     def predictions_db_is_official(self) -> bool:
@@ -75,4 +78,5 @@ def get_settings() -> Settings:
         data_dir=Path(data_dir).expanduser() if data_dir else API_DIR / "data",
         web_origins=tuple(origins),
         predictions_db=predictions_db_from_env(),
+        demo_store_set=_is_set("FAULTLINE_DEMO_STORE"),
     )
