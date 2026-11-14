@@ -81,6 +81,15 @@ test.describe("CASCADE shockwave (motion on)", () => {
     const res = await picked;
     // While the pulse runs, at least one node is still on its way (the wave is real, not a fixed delay).
     await expect(page.locator('[data-testid^="graph-node-"][data-wave="running"]').first()).toBeAttached();
+    // Before the pulse reaches Cash, the readout already says "below it" and the Cash node must not contradict it:
+    // a neutral "updating…" state, never the old response's "above the floor" or "unchanged".
+    const cash = page.getByTestId("graph-node-Cash");
+    await expect(cash).toHaveAttribute("data-wave", "running");
+    await expect(page.getByTestId("graph-pending-Cash")).toBeVisible();
+    await expect(page.getByTestId("floor-line").first()).toContainText("below it in week");
+    await expect(cash).not.toContainText(/above the/i);
+    await expect(cash).not.toContainText(/unchanged/i);
+    await expect(cash).toContainText("floor · updating…");
     const api = await directSim(page, res.request().postDataJSON());
     expect(api.first_week_below_floor, "the bad quarter goes below the floor").not.toBeNull();
     await expectGraphEqualsApi(page, api);

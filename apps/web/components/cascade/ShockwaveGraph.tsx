@@ -88,7 +88,6 @@ interface CascadeNodeData extends Record<string, unknown> {
   view: View;
   prev: View;
   floor: FloorView | null | undefined;
-  prevFloor: FloorView | null | undefined;
   hit: WaveHit | null;
   reduce: boolean;
   shield: boolean;
@@ -330,11 +329,14 @@ function CascadeNodeView({ data }: NodeProps<CascadeNode>) {
   const prevPeak = data.prev && data.prev.maxAbs > 0 ? data.prev.peak : data.prev ? 0 : null;
   const target = data.view ? data.view.peak : null;
   const wave = useWave(data.hit, data.reduce, prevPeak, target);
-  // Until the pulse reaches this node it shows the previous response, exactly as it was.
+  // Until the pulse reaches this node it is "updating": the previous response's figure, dimmed, and none of that
+  // response's status (no "unchanged", no floor badge), so the node never contradicts the readouts above it.
+  // Every status shown is the current response's.
+  const waiting = !wave.arrived;
   const view = wave.arrived ? data.view : data.prev;
-  const floor = wave.arrived ? data.floor : data.prevFloor;
-  const below = isSink && !!floor && floor.firstBelow !== null;
-  const changed = !!view && view.maxAbs > 0;
+  const floor = wave.arrived ? data.floor : undefined;
+  const below = isSink && !waiting && !!floor && floor.firstBelow !== null;
+  const changed = !waiting && !!view && view.maxAbs > 0;
   const shown = wave.arrived && view && view.maxAbs > 0 && wave.value !== null ? wave.value : view?.peak ?? 0;
 
   const border = below ? "border-fail" : changed ? "border-risk/80" : style.border;
@@ -383,7 +385,16 @@ function CascadeNodeView({ data }: NodeProps<CascadeNode>) {
           <span className="font-mono text-[10px] text-muted">{data.symbol}</span>
         </div>
         <p className={`mt-1 font-medium ${below ? "text-fail" : "text-text"} ${isSink ? "text-2xl" : "text-lg"}`}>{data.label}</p>
-        {view === undefined ? (
+        {waiting ? (
+          <div className="num mt-1 leading-tight text-muted" data-testid={`graph-pending-${data.label}`}>
+            {view && view.maxAbs > 0 ? (
+              <span className={`font-medium opacity-50 ${isSink ? "text-lg" : "text-sm"}`}>{formatDelta(view.peak, data.unit)}</span>
+            ) : null}
+            <span className="ml-1.5 font-mono text-[10px] uppercase tracking-[0.12em]">
+              {view && view.maxAbs > 0 ? "updating…" : "Δ · updating…"}
+            </span>
+          </div>
+        ) : view === undefined ? (
           <p className="mt-1 font-mono text-[10px] uppercase tracking-[0.12em] text-muted">Δ not available</p>
         ) : view === null ? (
           <p className="mt-1 font-mono text-[10px] uppercase tracking-[0.12em] text-muted">Δ not in response</p>
@@ -403,7 +414,11 @@ function CascadeNodeView({ data }: NodeProps<CascadeNode>) {
             </div>
           </>
         )}
-        {isSink ? <CashFloorCallout floor={floor} /> : null}
+        {isSink && waiting ? (
+          <p className="mt-2 font-mono text-[10px] uppercase tracking-[0.12em] text-muted">floor · updating…</p>
+        ) : isSink ? (
+          <CashFloorCallout floor={floor} />
+        ) : null}
         <Handle type="source" position={Position.Right} className="!size-1.5 !min-h-0 !min-w-0 !border-0 !bg-edge" />
       </div>
       {data.plan ? <PlanChip items={data.plan.items} applied={data.plan.applied} place={data.plan.place} /> : null}
@@ -540,7 +555,6 @@ export function ShockwaveGraph({
             view: snapshot.views.get(n.id),
             prev: prev ? prev.views.get(n.id) : snapshot.views.get(n.id),
             floor: snapshot.floor,
-            prevFloor: prev ? prev.floor : snapshot.floor,
             hit: hits.get(n.id) ?? null,
             reduce,
             shield: n.id === "Payroll" && protect,
