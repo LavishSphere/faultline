@@ -71,7 +71,7 @@ financial advice, lend, trade, or change anyone's employment. It shows consequen
 ## Three pitch-ready sentences (for the demo script, #46)
 
 1. "Firms with fewer than 250 employees account for slightly less than half of America's private-sector jobs, according
-   to the Bureau of Labor Statistics, and in JPMorgan Chase Institute's 2016 study the median small business held enough
+   to the Bureau of Labor Statistics, and, in a separate JPMorgan Chase Institute study of its small-business customers, the median held enough
    cash to cover only 27 days of its typical outflows if money stopped coming in."
 2. "FAULTLINE lets an operator run a rate shock, a demand drop or a supplier outage through the business before it
    happens and see the exact week cash hits its low point, computed by a deterministic engine on a synthetic business

@@ -186,6 +186,8 @@ $\approx \sigma_d/\sqrt n$. A true mean improvement (agent − market, in Brier)
 - half the time if it is at least $\text{MDE}_{50} = z_{0.975}\,\sigma_d/\sqrt n = 1.96\,\sigma_d/\sqrt n$ (this is also the typical CI half-width);
 - 80% of the time if it is at least $\text{MDE}_{80} = (z_{0.975} + z_{0.80})\,\sigma_d/\sqrt n \approx 2.80\,\sigma_d/\sqrt n$.
 
+Both are a normal approximation; the real $d$ is two-valued and skewed, so true power at $n \approx 15$ may differ.
+
 | $n$ | $\sigma_d = 0.036$: MDE$_{50}$ / MDE$_{80}$ | $\sigma_d = 0.071$ (central) | $\sigma_d = 0.107$ |
 |---|---|---|---|
 | 4 (shown as `INSUFFICIENT DATA`) | 0.035 / 0.050 | 0.070 / 0.100 | 0.105 / 0.150 |

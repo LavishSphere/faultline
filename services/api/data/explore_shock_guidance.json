@@ -1,6 +1,7 @@
 {
   "provenance": "ILLUSTRATIVE",
   "label": "ILLUSTRATIVE: modelling guidance, not forecasts",
+  "scope": "Used only by LIVE EXPLORE; never read by the Blind Replay pipeline or any as_of-gated path.",
   "description": "Guard-rails for LIVE EXPLORE (issue #61): when the model reads today's news and suggests a stress scenario, these are the plausible sizes for each ScenarioShock field by news category. They are modelling choices for the SYNTHETIC demo business (MATH_MODEL §1, §10), not forecasts of what any event will do. A cited source supports only the order of magnitude it names; the exact min/default/max are modelling judgment.",
   "issue": 79,
   "horizon_weeks": 26,
@@ -33,7 +34,7 @@
         }
       },
       "timing_guidance": "Start at the floating loan's next reset (week 1 if it resets weekly); at most about one meeting gap later (52 / 8 meetings = 6.5 weeks). No recovery within the horizon: the higher rate stays.",
-      "rationale": "Policy moves come in 25bp steps and 75bp was the largest single move of 2022-2025, so one surprise plus a follow-up move gives +25 to +100bp on the floating term loan.",
+      "rationale": "Policy moves come in 25bp steps and 75bp was the largest single move of 2022-2025, and a floating loan reprices on the whole move, so a rate rise not in the baseline is +25 to +100bp on the floating term loan.",
       "basis": "sourced order of magnitude; exact range is modelling judgment",
       "sources": [
         {

@@ -144,12 +144,49 @@ def test_timing_only_drivers_have_zero_swing_on_the_flat_baseline(base):
         assert e.swing == pytest.approx(0.0, abs=TOL)
 
 
-def test_inputs_that_act_only_through_actions_have_zero_swing_without_a_plan(base):
-    # No revolver balance or draw (B_0 = 0), backup supplier unused, and simulate() does not use B-bar.
-    for key in ("revolver_spread", "revolver_limit", "backup_premium", "backup_switch_fee"):
+def test_inputs_that_act_only_through_actions_are_not_applicable_without_a_plan(base):
+    """Review of #98 (issue #115): a 0.00 swing would read as "this input doesn't matter". With no revolver balance or
+    draw (B_0 = 0), no backup supplier, and B-bar never read by simulate(), these four are NOT_APPLICABLE instead."""
+    expected = {
+        "revolver_spread": "revolver is never drawn",
+        "revolver_limit": "used only by the optimizer",
+        "backup_premium": "does not use the backup supplier",
+        "backup_switch_fee": "does not use the backup supplier",
+    }
+    for key, why in expected.items():
         e = entry(base, key)
-        assert e.status == "OK"
-        assert e.swing == 0.0
+        assert e.status == "NOT_APPLICABLE", key
+        assert e.low is None and e.high is None and e.swing is None and e.max_abs_delta is None
+        assert why in e.note
+
+
+def test_revolver_limit_is_not_applicable_even_when_the_plan_draws():
+    plan = ActionPlan(revolver_draw=[0.0, 0.0, 0.0, 10_000.0] + [0.0] * 22)
+    res = tornado(BUSINESS, ScenarioShock(), plan=plan)
+    assert entry(res, "revolver_limit").status == "NOT_APPLICABLE"
+    # s_R now acts: 10,000 outstanding from week 5 to week 26 = 22 weeks of B_{t-1} s_R / 52 interest.
+    # A +-10% step on s_R = 0.02 moves it by 0.002: 10,000 x 0.002 x 22 / 52 = 8.4615 a side, so swing = 16.923.
+    e = entry(res, "revolver_spread")
+    assert e.status == "OK"
+    assert e.swing == pytest.approx(2 * 10_000 * 0.002 * 22 / 52, abs=TOL)
+    assert e.max_abs_delta == pytest.approx(10_000 * 0.002 * 22 / 52, abs=TOL)
+
+
+def test_backup_terms_act_when_the_plan_uses_the_backup_supplier(bad):
+    res = tornado(BUSINESS, BAD_QUARTER, plan=ActionPlan(use_backup_supplier=True))
+    for key in ("backup_premium", "backup_switch_fee"):
+        e = entry(res, key)
+        assert e.status == "OK" and e.swing > 0.0, key
+        assert e.max_abs_delta == pytest.approx(max(abs(e.low.delta_vs_base), abs(e.high.delta_vs_base)), abs=TOL)
+    # F_b = 2,000 is paid once in week 1, before the low point, so +-10% moves min cash by 200 a side.
+    assert entry(res, "backup_switch_fee").swing == pytest.approx(400.0, abs=TOL)
+
+
+def test_max_abs_delta_reports_the_larger_side(base):
+    # Payroll +-10% = +-1,200 a week for 26 weeks: min cash moves by 31,200 each way, so the swing is 62,400.
+    e = entry(base, "payroll")
+    assert e.swing == pytest.approx(62_400.0, abs=1e-3)
+    assert e.max_abs_delta == pytest.approx(31_200.0, abs=1e-3)
 
 
 def test_phi_is_not_applicable_without_an_outage(base):
