@@ -225,7 +225,7 @@ random draw.
 | `as_of` | `2026-09-14T12:00:00Z` (a synthetic timeline, not a real event) |
 | `horizon_days` | 21 |
 | Evidence | 5 invented documents, all with `published_at = available_at <= as_of` |
-| Market price | `NOT AVAILABLE` (see below) |
+| Market price | SYNTHETIC 0.35 on the `synthetic` venue (see below) |
 | `contamination_flag` | `unlikely` (never "none") |
 
 ### What the case is about
@@ -305,19 +305,33 @@ python -c "import hashlib,json,re;c=json.load(open('services/api/data/demo_cases
 
 Expected output: `commitment ok: True | draw ok: True`.
 
-### Market price: NOT AVAILABLE
+### Market price: SYNTHETIC 0.35
 
-The case file has `market_quotes: []`. A `synthetic` venue now exists in the quote contract
-(`markets.base.NormalizedQuote`, #111): a quote on it must carry `provenance = SYNTHETIC` and a SYNTHETIC label,
-and the gate accepts it only on a case marked `synthetic: true`. No price has been written for this case yet
-(that is #105), so for now:
-- the gate reports the market baseline `NOT AVAILABLE`;
-- the `agent_plus_market` variant does not run (`MarketNotAvailable`); `agent_only` runs;
-- `build_scorecard` excludes the case with reason `market_not_available` (a data reason, not an operator
-  reason, so it never blocks the OFFICIAL label of the real cases).
+The case carries one SYNTHETIC quote (issue #105), on the `synthetic` venue added in #111:
 
-When #105 adds the price, it goes in as a `synthetic`-venue quote labelled SYNTHETIC, never as a Kalshi or
-Polymarket price. Until then no price is typed into the file.
+| Field | Value |
+|---|---|
+| `market_quote_id` | `synthetic:FAULTLINE-SYN-DEPOT` |
+| Price | 0.35 (`raw_price` "0.35", decimal) |
+| `ts` | 2026-09-14T11:00:00Z, 1 hour before `as_of`, inside the gate's 24 h window |
+| Labels | `provenance = SYNTHETIC`, `quote_kind = synthetic`, SYNTHETIC quote label, URLs on `synthetic.invalid` |
+| `collected_at` | 2026-11-14T15:00:00Z: when the price was written into the file (nothing was fetched) |
+
+**Why 0.35, and when it was fixed.** 0.35 is `p_draw`, the probability in the published draw rule
+(YES if 100 × h < 35 × 2^256). The case file merged in #92 (squash commit `0f8407d`) already stated it before any
+forecast: `services/api/data/demo_cases/synthetic_distributor-depot.json`, line 110,
+`curation_notes.market.intended_synthetic_price`: "the intended SYNTHETIC price is p_draw = 0.35 (calibrated by
+construction). No price was typed into this file." The price was **written** into the file later (2026-11-14), and
+git cannot prove its order relative to the seed (see the honest timeline above). It cannot leak the answer either
+way: the draw does not depend on anything a market could know, so 0.35 is the calibrated price whatever was drawn.
+
+What changes:
+- the gate reports a SYNTHETIC market baseline of 0.35 for this case;
+- the `agent_plus_market` variant now runs; `agent_only` is unchanged and never sees the price (its snapshot hash
+  is still `sha256:125e3b56…`);
+- `build_scorecard` gives the case a row with a SYNTHETIC market baseline. Alone (n = 1) it reads
+  `INSUFFICIENT DATA` (MATH_MODEL §6, n < 5); it is never OFFICIAL and never pooled with the real cases;
+- `case_sha256` changed (now `69aa7ab6…`). No forecast or recorded run had been saved for the old content.
 
 ### Never pooled with real cases
 
