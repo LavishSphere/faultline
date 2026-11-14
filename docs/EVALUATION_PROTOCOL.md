@@ -267,6 +267,45 @@ file, is refused at load. Case files must not be hard links.
   (4) publish the scorecard with its exclusions and `official_blockers`.
 - Recorded demo runs are labeled `RECORDED RUN` and carry model id, digest, temperature, seed and both hashes.
 
+### Pre-registered analysis for the first official run (2026-11-14)
+
+Written on 2026-11-14, before the first official run. At this commit `services/api/data/recorded_runs/` holds only
+its README: no forecast row, manifest or scorecard has been recorded, so no official result exists yet. Nothing
+below may be changed after any official reveal; a change needs a new dated subsection written before a fresh run.
+
+- **Population (primary).** One pooled card per variant over **all** committed `REAL_HISTORICAL` cases, scored as
+  in §6: at this commit 28 cases, 15 FOMC (`docs/CASES.md` Part 3) and 13 CPI (Part 4), the set `GET /api/cases`
+  serves (29 cases including the synthetic one). The run follows the official run procedure above
+  (`scripts/record_runs.py`; the real set is scored as `case_set: "real"`). The synthetic case is scored as its own
+  set and is never pooled (§6). The card is labelled `OFFICIAL` only if every OFFICIAL condition (§3) holds;
+  otherwise it carries the label §6 gives it.
+- **Primary statistic.** $\Delta = \overline{\text{Brier}}_{agent} - \overline{\text{Brier}}_{market}$ over events,
+  with the paired bootstrap of §6: $B = 10{,}000$, seed `20261115`, 95% percentile CI. The verdict and caveats are
+  exactly the §6 display rules (n = 28 < 30, so the small-sample caveat is shown; "agent better than market" only if
+  the CI upper bound is below 0). Brier is the only verdict metric; log loss and accuracy at 0.5 are secondary.
+- **Primary variant: `agent_only`.** Its card is the headline result. `agent_plus_market` is reported alongside it,
+  with its own card and CI, as the secondary comparison. This follows MATH_MODEL §6 review finding 5 (name one primary
+  variant before the reveal) and the finance owner's recommendation on #115. The choice is not revisited after the
+  reveal, whichever variant scores better.
+- **Model.** `ollama/llama3.1:8b` only, run locally through `LocalOllamaProvider`: temperature 0 and the provider's
+  fixed seed (`DEFAULT_SEED = 20261115` in `agents/local_ollama.py`), with the Ollama digest recorded in every row.
+  No other model and no hosted comparator is part of this analysis. A run with any other model is a different
+  analysis and is not reported under this subsection.
+- **Exploratory, descriptive only (label: `EXPLORATORY`).** For each variant, per family (FOMC: `event_id` starting
+  `fomc-`; CPI: starting `cpi-`): the number of scored events and the mean Brier of the agent, the market and the
+  naive forecaster ($p = 0.5$), computed in Python from the committed card's `per_event` rows (`brier[...]`). No CI, no
+  bootstrap, no verdict, no significance claim and no "better" or "worse" wording; it is shown only next to the primary
+  card, never on its own. It cannot change the primary population, variant or verdict.
+- **Known limits.**
+  - The two families have different base rates. The CPI questions are mostly tail buckets the market priced well
+    below 0.5 (`docs/CASES.md` Part 4), so a pooled mean mixes two kinds of question, and a family mean of 13 or 15
+    events is noisier still.
+  - Events share evidence across cases and families (`docs/CASES.md`, "Cross-case visibility"), and consecutive
+    decisions and prints share shocks. The bootstrap resamples events as if they were independent, so that assumption
+    is only approximate, and the CI is likely too narrow (see also MATH_MODEL §6 review finding 4).
+  - #115 also recommends no "better" verdict unless both outcomes occur among the scored events. That rule is not in
+    `evaluator.py` at this commit, so it is not part of this pre-registration unless it merges before the run.
+
 ---
 
 ## 9. HTTP routes (#44 part A)

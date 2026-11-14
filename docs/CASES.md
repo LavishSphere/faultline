@@ -400,7 +400,8 @@ blind.
 
 ### Known limits of the extended set
 
-- **Scored n = 15 real cases** in each variant. Since #153 all 15 committed files have a Kalshi market baseline at
+- **Scored n = 15 real cases** in each variant for Part 3 alone (Part 4 adds 13 CPI cases; the OFFICIAL card
+  pools all 28, see Part 4). Since #153 all 15 committed files have a Kalshi market baseline at
   `as_of`, so neither `agent_only` nor `agent_plus_market` excludes any case as `market_not_available`, and the
   agent-vs-market comparison also has n = 15 (provided each case has exactly one forecast per variant persisted
   before any reveal; otherwise the scorecard lists the exclusion and its reason). MATH_MODEL §6: n ≥ 5, so the
@@ -667,9 +668,10 @@ more" and Kalshi's "strictly greater than b − 0.1" give the same answer. Case 
 
 ### Known limits of the CPI cases
 
-- **n = 13 CPI cases; 28 real cases with Part 3.** Under 30, so the small-sample caveat stays, and "better" only
-  if the bootstrap CI excludes 0. CPI and FOMC cases should be reported separately as well as pooled: they are
-  different questions with different base rates.
+- **n = 13 CPI cases; 28 real cases with Part 3.** The OFFICIAL card pools all 28 real cases (EVALUATION_PROTOCOL
+  §6); a per-family breakdown is pre-registered as exploratory and descriptive only (EVALUATION_PROTOCOL §8,
+  "Pre-registered analysis for the first official run"). Under 30, so the small-sample caveat stays, and "better"
+  only if the bootstrap CI excludes 0.
 - **Top buckets are tail events.** The market priced most of these questions well below 0.5, so a forecaster that
   always says "low" scores well on Brier. Compare against the market and a base-rate baseline, not against 0.5.
 - **Cross-case visibility runs across families.** Each CPI case's first item settles the previous CPI case, and the
