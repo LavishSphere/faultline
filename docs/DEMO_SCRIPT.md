@@ -3,7 +3,7 @@
 **Presenter (finance voice):** Yaseen. **Length:** 280 spoken words on the main path (the **Say** lines of steps 0–7), about 112 s at 150 words a minute, inside the 90–120 s target (SPEC §2). **Measured with a stopwatch:** NOT YET TIMED. Write the time of the first full run-through here.
 **Status of this script:** written 2026-11-13 against `main` at commit `1190671` and updated on 2026-11-14 against `4a1f2c2` (after the DECISION screen #134, the optimizer endpoint and Protect payroll switch #127, and the LIVE EXPLORE screen #135 merged); the recovery-plan numbers (step 3) were re-run against `80deee2`, after the optimizer tie-break #136. On-screen labels
 in steps 1, 3, 4 and 5 were updated for the finance-review fixes (#157), and the case, research-lens and integrity
-counts re-checked against `c675c6e` with this branch's API. Every number below came from the API running locally (calls listed in [Where the numbers come from](#where-the-numbers-come-from)).
+counts re-checked against `c675c6e` with this branch's API; the case counts again against `d29820f` (after #160, 13 CPI cases). Every number below came from the API running locally (calls listed in [Where the numbers come from](#where-the-numbers-come-from)).
 The web app itself was **not** run while writing this (Node.js was not installed on the writing machine), so the
 click paths and on-screen labels were read from the `apps/web` code. Do the [dry-run checklist](#dry-run-checklist)
 before going on stage.
@@ -35,7 +35,7 @@ THEN / DECISION / REVEAL / NOW; LIVE EXPLORE (`/explore`) is the NOW screen.
 | # | Step | What to click | Label on screen | Words (≈ s) | Status |
 |---|---|---|---|---|---|
 | 0 | Open | Nothing; app is on `/rewind` | (title only) | 17 (≈ 7 s) | works on main |
-| 1 | REWIND | Pick `fomc-2026-jul` in panel **A.1 Replay cases** | `REAL HISTORICAL`, `AS-OF`, `SEALED`; header `Case fomc-2026-jul` | 32 (≈ 13 s) | **works on main** (15 real cases, #54, #67) |
+| 1 | REWIND | Pick `fomc-2026-jul` in panel **A.1 Replay cases** | `REAL HISTORICAL`, `AS-OF`, `SEALED`; header `Case fomc-2026-jul` | 32 (≈ 13 s) | **works on main** (28 real cases: 15 FOMC, 13 CPI; #54, #67, #160) |
 | 2 | DECISION | **→** to `/decision` | `RECORDED RUN` or a fresh run, `FORECAST`, market `AS-OF` "market-implied probability (price-derived…)" | 30 (≈ 12 s) | **on main** (#55, #71); needs the local model running |
 | 3 | CASCADE | **→** to `/cascade`; **Preset** dropdown → "Bad quarter…"; then **Protect payroll** | `SIMULATED` + `SYNTHETIC` | 74 (≈ 30 s) | preset and Protect payroll **work on main** (#69, #127) |
 | 4 | REVEAL | **→** to `/reveal`; **Reveal outcome** | Benchmark and both scorecards `NOT AVAILABLE`; outcome `REVEALED` | 41 (≈ 16 s) | **on main** (#76, #64, #91); no recorded scorecard yet |
@@ -67,9 +67,9 @@ Seconds are estimates at 150 spoken words a minute, plus pauses for clicks. If y
   labeled `SYNTHETIC`, never `REAL HISTORICAL`.
 - **If no case is listed:** the screen shows `NOT AVAILABLE` on every panel and the header chip reads
   `Case NOT AVAILABLE: Cases did not load` (request failed) or `Case NOT AVAILABLE: No case served` (empty list).
-  `Case NOT AVAILABLE: No case selected` only means you have not picked one yet: pick it. On 2026-11-14 `GET
-  /api/cases` returned 16 cases (15 `REAL_HISTORICAL` FOMC meetings of 2025 and 2026, plus 1 `SYNTHETIC`), so an
-  empty or failed list means the API did not load its data.
+  `Case NOT AVAILABLE: No case selected` only means you have not picked one yet: pick it. On 2026-11-14 (after #160)
+  `GET /api/cases` returned 29 cases (28 `REAL_HISTORICAL`: 15 FOMC meetings and 13 US CPI prints of 2025 and 2026,
+  plus 1 `SYNTHETIC`), so an empty or failed list means the API did not load its data.
   **Say instead:** "The replay cases didn't load, so this screen honestly says NOT AVAILABLE." Then go straight
   to step 3.
 
@@ -129,8 +129,8 @@ Seconds are estimates at 150 spoken words a minute, plus pauses for clicks. If y
   id. The outcome stays sealed server-side until a persisted forecast is named."
   **Say instead:** "The reveal stays locked until a prediction has been saved. That lock is the point."
 - **Optional, for the +2 AI-alignment criterion (not counted in the timing):** point at panel **D.3 Integrity · what
-  the AI could not see** (also **B.8** on DECISION, #93) and say: "This panel re-checks, live, what the AI was not
-  allowed to see." Read only the ✓ / ✗ / NOT AVAILABLE marks it shows. D.3 now checks the case selected on REWIND
+  the AI could not see** (also **B.8** on DECISION, #93) and say: "This panel re-checks on each request (cached up to
+  60 s) what the AI was not allowed to see." Read only the ✓ / ✗ / NOT AVAILABLE marks it shows. D.3 now checks the case selected on REWIND
   (#157): on 2026-11-14 `GET /api/integrity?case_id=fomc-2026-jul` with no run gave 6 passed, 0 failed,
   3 NOT AVAILABLE; with no case selected it gives 3 passed, 0 failed, 6 NOT AVAILABLE.
 
@@ -224,8 +224,9 @@ Other calls used in this script:
 - `GET /api/vc-lenses?as_of=2026-07-22T00:00:00Z` (the `fomc-2026-jul` cutoff, step 5; re-checked 2026-11-14 on
   this branch) → `point_in_time`, 4 items (Link Ventures 1, a16z 2, Bessemer 1), `excluded_not_yet_public: 2`.
   `as_of=2026-07-01T00:00:00Z` gives the same 4 and 2. With no `as_of` (Live Explore mode): 6 items.
-- `GET /api/cases` (2026-11-14, after #159) → `status: AVAILABLE`, 16 cases: 15 `REAL_HISTORICAL` FOMC meetings
-  (2025 and 2026, `horizon_days` 8) and 1 `SYNTHETIC` (21 days). `fomc-2026-jul`: `as_of` `2026-07-22T00:00:00Z`.
+- `GET /api/cases` (2026-11-14, after #160, `d29820f`) → `status: AVAILABLE`, 29 cases: 28 `REAL_HISTORICAL`
+  (15 FOMC meetings and 13 US CPI prints of 2025 and 2026, all `horizon_days` 8) and 1 `SYNTHETIC` (21 days).
+  `fomc-2026-jul`: `as_of` `2026-07-22T00:00:00Z`.
 - `GET /api/benchmark` (2026-11-14) → `status: NOT AVAILABLE`, "no recorded scorecard yet".
 - `GET /api/health` → `model_ready: false` (Ollama not running on the writing machine), `tavily_api_key: false`.
 
@@ -318,7 +319,7 @@ there isn't one, the screen says `NOT AVAILABLE`, never an estimate.
 Every item carries the time it became publicly available, and the replay only accepts items available at or before the
 cutoff, to the minute. Pages that might have been edited later are checked against archived copies. If we can't prove a
 date, the item is excluded. This point-in-time gate is on `main` and tested today, for the research lenses and the replay
-evidence, including the four real cases (#54).
+evidence, including all 28 real cases (15 FOMC, 13 CPI).
 
 **13. "How is live search (Tavily) kept away from the blind replay?"**
 They are separate modes with a wall between them. Tavily is only used in Live Explore, for decisions today, and its
@@ -362,6 +363,9 @@ not results (`docs/INVESTABILITY.md` §3, labeled `ESTIMATE / HYPOTHESIS`).
 Do this on the demo laptop before going on stage (the script author could not run the web app).
 
 - [ ] `make setup`, then `make api` and `make web` in two terminals; the header chip reads `API online`.
+- [ ] **Reset the scratch store right before the stage demo:** stop the rehearsal and start `make demo-scratch` again.
+      Each launch prints `[demo] scratch prediction store for this launch: …/var/scratch/<UTC stamp>/…` and starts
+      empty, so a case revealed in rehearsal cannot show `SAVED AFTER A REVEAL` or an integrity ✗ on stage.
 - [ ] `/rewind`: pick `fomc-2026-jul`; the header reads `Case fomc-2026-jul` + `REAL HISTORICAL` on every screen.
 - [ ] `/cascade`: with no preset, **Minimum cash** reads **$63,000** ("stays above the $25,000 floor"), week 26,
       **Cash goes negative** "not within 26 weeks".
@@ -374,7 +378,7 @@ Do this on the demo laptop before going on stage (the script author could not ru
       **Min cash after plan $25,000 · week 20**; with the switch off, the same 7 cuts in the same weeks. If C.3
       differs, read the screen and tell the lead.
 - [ ] `/research`: the cutoff reads `2026-07-22T00:00:00Z` (the selected case's) → 4 sources shown, 2 not yet public; Sequoia shows no source.
-- [ ] `/rewind`, `/decision`, `/reveal`: are the 15 real cases listed? Does the DECISION run complete? Is the Reveal button enabled?
+- [ ] `/rewind`, `/decision`, `/reveal`: are the 28 real cases (15 FOMC, 13 CPI) and the 1 synthetic case listed? Does the DECISION run complete? Is the Reveal button enabled?
       For each that isn't, rehearse that step's "Say instead" line.
 - [ ] `/reveal`: the benchmark and both scorecards read `NOT AVAILABLE` (nothing officially scored yet). Never read a score that isn't on screen.
 - [ ] `/explore`: is `TAVILY_API_KEY` set in `.env` and the local model running? If not, use the 5-second line.

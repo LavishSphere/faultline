@@ -115,8 +115,6 @@ Labels: `SIMULATED` (engine output), `SYNTHETIC` (fictional business).
 - Say the honest limits if asked: tamper-evident, not tamper-proof; a model may remember outcomes from training, so
   likely-contaminated cases are flagged and excluded from scoring; the isolation is enforced in code inside the API
   process, not by a separate sandbox.
-- Note: docs/ALIGNMENT.md §2 was written before the optimizer merged and says the panel's payroll check shows
-  NOT AVAILABLE "until then". The optimizer is now on `main` (#69, #127), so again: read the panel, not this note.
 
 **Sources:** docs/ALIGNMENT.md, intro and §1–§5, "Honest limits"; docs/HACKATHON.md, "Judging criteria" (AI
 alignment +2 framing); docs/DEMO_SCRIPT.md step 4, optional INTEGRITY line. No figures
@@ -166,17 +164,18 @@ Labels: M1–M3 `REAL HISTORICAL` (or derived from it); M5 third-party estimate;
 - "The outcome unseals only after the answer is saved, then is scored against the market and a coin flip. Nothing
   has been officially scored yet, so the benchmark says NOT AVAILABLE; with fewer than five cases our rule shows
   INSUFFICIENT DATA."
-- What is on `main` today: 4 real Federal Reserve (FOMC) cases from 2026 and 1 `SYNTHETIC` fallback case. No
-  recorded run or scorecard is committed yet: `services/api/data/recorded_runs/` holds only its README, which says it
-  is "empty on purpose until the lead runs it". So the benchmark on the REVEAL screen reads `NOT AVAILABLE`.
+- What is on `main` today: 29 replay cases, 28 `REAL HISTORICAL` (15 Federal Reserve (FOMC) meetings and 13 US CPI
+  prints, 2025 and 2026) and 1 `SYNTHETIC` fallback case. No recorded run or scorecard is committed yet:
+  `services/api/data/recorded_runs/` holds only its README, which says it is "empty on purpose until the lead runs
+  it". So the benchmark on the REVEAL screen reads `NOT AVAILABLE`.
 - The rule was fixed before any answer was seen. It uses the Brier score (squared error of a probability):
   - fewer than 5 cases: "INSUFFICIENT DATA: No valid comparison";
   - otherwise: "No improvement measured", with the 95% confidence interval;
   - "agent better than market" only if the whole 95% confidence interval of the score difference is below zero;
   - from 5 to 29 cases, a "small sample" caveat is added.
-- What a small sample can and can't tell us: with about 15 cases, only a very large difference is detectable, so
-  "No improvement measured" is the expected honest result unless the agent is much better than the market. It means
-  "not measured", not "no edge".
+- What a small sample can and can't tell us: with 28 real cases (still under 30), only a very large difference is
+  detectable, so "No improvement measured" is the expected honest result unless the agent is much better than the
+  market. It means "not measured", not "no edge".
 - If a scorecard has been recorded by demo time, read only what the screen shows, and drop "Nothing has been
   officially scored yet". If n is shown, say: "With N events we could only have detected a large edge. We did not
   measure one; that is not proof that there is none."
@@ -186,8 +185,9 @@ Labels: M1–M3 `REAL HISTORICAL` (or derived from it); M5 third-party estimate;
 **Sources:** docs/MATH_MODEL.md §6 (display rules; "What n ≈ 15 can and can't tell us", issue #80 / PR #100,
 "Exact wording"); docs/ALIGNMENT.md §4; `services/api/core/evaluator.py` labels (`INSUFFICIENT DATA`,
 `No improvement measured`, `INSUFFICIENT DATA: No valid comparison`); `services/api/data/recorded_runs/README.md`
-(no recorded run committed); docs/DEMO_SCRIPT.md step 4 and hard question 3; the five case
-files in `services/api/data/demo_cases/` (4 FOMC 2026, 1 synthetic; real cases merged in #54, synthetic in #128).
+(no recorded run committed); docs/DEMO_SCRIPT.md step 4 and hard question 3; the 29 case files in
+`services/api/data/demo_cases/` (15 FOMC 2025–2026, #54 and #67; 13 CPI, #160; 1 synthetic, #128), counted with
+`GET /api/cases` on 2026-11-14.
 
 ---
 

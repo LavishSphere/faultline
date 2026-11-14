@@ -68,13 +68,19 @@ web-build:              ## production build of apps/web (served by `make demo`)
 # Scratch prediction store for stage demos (lead policy, #57). The official store is only for scripts/record_runs.py.
 # scripts/demo_api.py refuses FAULTLINE_DEMO_STORE if it names the official store, else exports it as the
 # FAULTLINE_PREDICTIONS_DB setting (#130) that every route, the evaluator and the computed-scorecards dir read.
-SCRATCH_STORE ?= $(abspath $(API_DIR))/var/scratch/predictions.sqlite3
+# Each `make demo-scratch` launch gets a NEW empty store (and computed-scorecards dir) under var/scratch/<UTC stamp>/,
+# so a reveal made in a rehearsal never shows on stage as "SAVED AFTER A REVEAL" or an integrity FAIL (#57 H4).
+# To reuse a store on purpose: `make demo-scratch SCRATCH_STORE=<path>`.
+SCRATCH_STORE ?=
 
 demo:                   ## API + web against local Ollama (store = FAULTLINE_PREDICTIONS_DB, default official; FAULTLINE_DEMO_STORE=<path> for scratch)
 	@$(MAKE) -j2 demo-api demo-web
 
-demo-scratch:           ## same as demo, but on a separate scratch prediction store (use this on stage)
-	@FAULTLINE_DEMO_STORE=$(SCRATCH_STORE) $(MAKE) -j2 demo-api demo-web
+demo-scratch:           ## same as demo, but on a NEW empty scratch prediction store per launch (use this on stage)
+	@store="$(SCRATCH_STORE)"; \
+	 [ -n "$$store" ] || store="$(abspath $(API_DIR))/var/scratch/$$(date -u +%Y%m%dT%H%M%SZ)/predictions.sqlite3"; \
+	 echo "[demo] scratch prediction store for this launch: $$store"; \
+	 FAULTLINE_DEMO_STORE="$$store" $(MAKE) -j2 demo-api demo-web
 
 demo-api:
 	@$(LOAD_ENV) FAULTLINE_MODE=local API_PORT=$(API_PORT) $(API_PY) scripts/demo_api.py

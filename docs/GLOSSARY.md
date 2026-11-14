@@ -101,7 +101,7 @@ that are not on `main` yet.
 | SYNTHETIC | `SYNTHETIC` | Fictional demo data, not a real company. | CASCADE |  |
 | ILLUSTRATIVE | `ILLUSTRATIVE` | Structure or example only, not data. | CASCADE |  |
 | REAL HISTORICAL | `REAL HISTORICAL` | A genuine, dated historical record. | RESEARCH |  |
-| RECORDED RUN | `RECORDED RUN` | A saved, reproducible model run, shown instead of a live one. | DECISION, REVEAL |  |
+| RECORDED RUN | `RECORDED RUN` | A saved run with its model id and prompt/snapshot hashes. | DECISION, REVEAL |  |
 | FORECAST | `FORECAST` | A probability or projection, not an observed fact. | DECISION |  |
 | AS-OF | `AS-OF` | A value as it was known at the stated knowledge cutoff. | REWIND, DECISION, RESEARCH |  |
 | NOT AVAILABLE | `NOT AVAILABLE`, `Not available` | No data is served for this yet, so nothing is shown. | REWIND, DECISION, CASCADE, REVEAL, RESEARCH, EXPLORE |  |
@@ -137,7 +137,7 @@ that are not on `main` yet.
 - **On screen:** `Horizon`
 - **Short:** How many days after the knowledge cutoff the question is decided.
 - **Long:** The forecast window: the question asks what happens within this many days after as_of, and the model's prompt states it ('Horizon: N days after the cutoff'). Forecasters are compared on the same event and cutoff; several horizons of one event are averaged first (MATH_MODEL §6).
-- **Example:** 16 committed cases: the 15 real FOMC cases at 8 days (the window covers the statement release) and the synthetic case at 21.
+- **Example:** 29 committed cases: the 28 real cases (15 FOMC, 13 CPI) at 8 days (the window covers the statement or CPI release) and the synthetic case at 21.
 - **Source:** services/api/data/demo_cases (horizon_days); core/temporal_gate.py prompt line.
 - **Screens:** REWIND
 - **MATH_MODEL:** §6
@@ -341,8 +341,8 @@ that are not on `main` yet.
 ### RECORDED RUN
 
 - **On screen:** `RECORDED RUN`
-- **Short:** A saved, reproducible model run, shown instead of a live one.
-- **Long:** A cached genuine run with its model id, prompt hash and snapshot hash, so anyone can check it was produced as stated. It is never a canned or hand-written response, and it is labelled as recorded, not live.
+- **Short:** A saved run with its model id and prompt/snapshot hashes.
+- **Long:** A saved run with its model id and prompt/snapshot hashes; a fresh run is saved the same way. Anyone can check it was produced as stated. It is never a canned or hand-written response.
 - **Example:** Each recorded run carries 2 SHA-256 hashes: one of the prompt, one of the evidence snapshot.
 - **Source:** SPEC §5; docs/EVALUATION_PROTOCOL.md §3.
 - **Screens:** DECISION, REVEAL
@@ -682,7 +682,7 @@ that are not on `main` yet.
 - **On screen:** `Protect payroll`, `On: the optimizer may not cut payroll (z_t = 0)`, `Off: payroll may be cut by up to`
 - **Short:** A switch that forbids the optimizer from cutting payroll at all.
 - **Long:** When on, the payroll-cut share z_t is fixed at 0 in every week, enforced inside the solver, not by a prompt (MATH_MODEL §4, constraint 5). When off, a cut of up to 10% may be chosen, but only as an explicit, labelled action. Layoffs are never modelled.
-- **Example:** Judge's Challenge 'Local plant closes': on gives NO FEASIBLE PLAN; off gives a plan with payroll cuts of at most 10%, such as 1,200 in week 11.
+- **Example:** Judge's Challenge 'Local plant closes': on gives NO FEASIBLE PLAN; off gives a plan with payroll cuts of at most 10%, such as 1,200 in week 24.
 - **Source:** Engine run computed for this glossary: POST /api/optimize on judge_challenges.json judge-plant-closure, protect payroll on and off, SYNTHETIC demo business.
 - **Screens:** CASCADE
 - **MATH_MODEL:** §4
@@ -712,7 +712,7 @@ that are not on `main` yet.
 - **On screen:** `Purchase cut`
 - **Short:** Buying less stock in a week, drawing down inventory to save cash.
 - **Long:** v_t lowers that week's purchases, paid L_p weeks later, and lowers inventory I_t by the same amount (MATH_MODEL §3). It is capped at 10,000 a week, and the inventory floor caps total cuts at 25,000 (§10). Disruption weight: 0.05 per dollar cut.
-- **Example:** The Bad quarter plan cuts 1,653.85 in week 19, one of its six weeks with cuts.
+- **Example:** The Bad quarter plan cuts 1,653.85 in week 19, one of six weeks at 1,653.85 (seven weeks of cuts from week 18).
 - **Source:** Engine run computed for this glossary: POST /api/optimize on scenarios.json bad-quarter, protect payroll on, SYNTHETIC demo business.
 - **Screens:** CASCADE, EXPLORE
 - **MATH_MODEL:** §3, §4, §10
