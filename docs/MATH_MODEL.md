@@ -121,6 +121,7 @@ Every term is **linear** in the decisions $(x_b, x_c, x_e, v_t, y_t, q_t, z_t)$,
 6. $\mu \le C_t$ for all $t$
 7. **Terminal revolver:** $B_T \le B_0$ (issue #16). The facility must be back to its opening balance by the end of the
    horizon, so no plan can borrow and never repay, which would flatter the cash path.
+8. **Purchases non-negative:** $P_t \ge 0$ for all $t$, i.e. $v_t \le (1-g)S_t + \pi(1-g)S^{core}_t\lambda_t x_b$.
 
 **Objective** (minimize disruption, tie-break toward more cash):
 $$
