@@ -441,6 +441,43 @@ def _context_mismatch(cases: EvidenceStore, event_id: str, as_of: datetime, vari
     )
 
 
+def _synthetic_exempt_events(cases: EvidenceStore | None, all_recs: Sequence[StoredPrediction]) -> set[str]:
+    """Events whose reveals do not count for the cross-event ``late`` check (issue #102).
+
+    Only a committed SYNTHETIC case qualifies: ``cases`` was loaded by ``EvidenceStore.from_dir()`` from the
+    configured case directory, the case says ``synthetic: true`` with provenance SYNTHETIC, and EVERY forecast
+    persisted for that event froze ``synthetic=True`` in its gate context. Its sealed answer is a fictional draw,
+    so revealing it on stage tells nothing about any real event. Anything else (no case list, an in-memory list,
+    a real or uncommitted case, a mixed context) is not exempt, so the check stays as strict as before.
+    """
+    if cases is None or cases.source_dir is None or not _same_path(cases.source_dir, configured_cases_dir()):
+        return set()
+    committed = set(cases.case_ids())
+    frozen: dict[str, set[bool]] = {}
+    for r in all_recs:
+        frozen.setdefault(r.prediction.event_id, set()).add(bool(r.context.synthetic))
+    exempt = set()
+    for event_id, flags in frozen.items():
+        if event_id not in committed or flags != {True}:
+            continue
+        case = cases.public_case(event_id)
+        if case.synthetic and case.provenance == Provenance.SYNTHETIC:
+            exempt.add(event_id)
+    return exempt
+
+
+def _first_reveal_not_exempt(store: PredictionStore, all_recs: Sequence[StoredPrediction], exempt: set[str]):
+    """Earliest reveal in the store of an event not in ``exempt`` (``store.first_reveal_any()`` when none is).
+
+    Every reveal names a persisted prediction of the same event (an audit-log trigger enforces it), so the
+    events of ``all_recs`` cover every revealed event.
+    """
+    if not exempt:
+        return store.first_reveal_any()
+    marks = [store.first_reveal(e) for e in {r.prediction.event_id for r in all_recs} - exempt]
+    return min((m for m in marks if m is not None), key=lambda m: m.seq, default=None)
+
+
 def build_scorecard(
     vault: OutcomeVault,
     *,
@@ -467,7 +504,8 @@ def build_scorecard(
     The OFFICIAL label additionally requires (else ``official_blockers`` says why and the label is ILLUSTRATIVE):
     ``cases`` loaded by ``EvidenceStore.from_dir()`` from the configured case directory; the vault on the
     configured sealed folder (hence the configured store); no ``OPERATOR_REASONS`` exclusion on any real or
-    uncommitted case; and every scored forecast persisted before the FIRST reveal anywhere in the store.
+    uncommitted case; and every scored forecast persisted before the FIRST reveal anywhere in the store, where
+    reveals of committed SYNTHETIC cases (``_synthetic_exempt_events``) do not count.
     """
     if not isinstance(vault, OutcomeVault):
         raise TypeError("build_scorecard needs the OutcomeVault; predictions are read from its store")
@@ -483,7 +521,7 @@ def build_scorecard(
         keys |= {(cid, cases.public_case(cid).as_of.astimezone(UTC)) for cid in cases.case_ids()}
     # First reveal per event and in the whole store, read once before this scorecard reveals anything.
     first_reveal = {event_id: store.first_reveal(event_id) for event_id, _ in keys}
-    first_reveal_any = store.first_reveal_any()
+    first_reveal_any = _first_reveal_not_exempt(store, all_recs, _synthetic_exempt_events(cases, all_recs))
 
     exclusions: list[ScoreExclusion] = []
     ignored: list[IgnoredPrediction] = []

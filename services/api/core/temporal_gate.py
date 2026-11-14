@@ -72,6 +72,10 @@ class UnknownCase(KeyError):
     pass
 
 
+class SyntheticQuoteOnRealCase(ValueError):
+    """A ``venue == "synthetic"`` quote on a case that is not ``synthetic: true`` (issue #102). Never loaded."""
+
+
 class MarketNotAvailable(LookupError):
     """No quote within 24h before as_of: the agent_plus_market variant cannot run (baseline NOT AVAILABLE)."""
 
@@ -391,6 +395,7 @@ class EvidenceStore:
                 raise TypeError("EvidenceStore takes CaseRecord values")
             if rec.case.event_id in self._records:
                 raise ValueError(f"duplicate case id {rec.case.event_id!r}")
+            _check_quote_provenance(rec.case.event_id, rec.case, rec.market_quotes)
             self._records[rec.case.event_id] = rec
             self._case_sha[rec.case.event_id] = case_sha256(rec)
 
@@ -512,8 +517,26 @@ def _load_case_file(path: Path) -> CaseRecord:
             # Never echo the value: it may be the result.
             raise SealedDataError(f"{path.name}: a market quote's 'outcome' must be exactly the side marker 'YES'")
         quotes.append(NormalizedQuote.model_validate(strip_outcome_keys(q, allow_market_side=True)))
+    _check_quote_provenance(path.name, case, quotes)
     _check_market_reference(path.name, case, quotes)
     return CaseRecord(case=case, evidence=evidence, market_quotes=tuple(quotes))
+
+
+def _check_quote_provenance(name: str, case: ReplayCase, quotes: Iterable[NormalizedQuote]) -> None:
+    """A synthetic quote (venue "synthetic", provenance SYNTHETIC) loads only on a ``synthetic: true`` case.
+
+    Checked on every load path (case files and ``EvidenceStore(records)``), so a real case can never be
+    benchmarked against a made-up price. Staleness (24h) and the ``venue:market_id`` reference rule are
+    applied to synthetic quotes exactly as to real ones.
+    """
+    if case.synthetic and case.provenance == "SYNTHETIC":
+        return
+    bad = sorted({f"{q.venue}:{q.market_id}" for q in quotes if q.venue == "synthetic" or q.provenance == "SYNTHETIC"})
+    if bad:
+        raise SyntheticQuoteOnRealCase(
+            f"{name}: synthetic market quotes {bad} on a case that is not synthetic (synthetic: true and "
+            "provenance SYNTHETIC); refused"
+        )
 
 
 def _check_market_reference(name: str, case: ReplayCase, quotes: list[NormalizedQuote]) -> None:
