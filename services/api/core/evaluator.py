@@ -37,7 +37,7 @@ from pathlib import Path
 from typing import Literal
 
 import numpy as np
-from pydantic import AwareDatetime, BaseModel, ConfigDict
+from pydantic import AwareDatetime, BaseModel, ConfigDict, ValidationError
 
 from config import get_settings
 from core import store as store_module
@@ -84,6 +84,10 @@ OPERATOR_REASONS = frozenset(
 class NotRevealable(FaultlineError):
     def __init__(self, message: str) -> None:
         super().__init__(ErrorCode.NOT_REVEALABLE, message, status_code=409)
+
+
+class SealedOutcomeInvalid(ValueError):
+    """The sealed outcome file exists but fails its schema or names another event. Nothing is revealed."""
 
 
 class OutcomeNotAvailable(FaultlineError):
@@ -209,9 +213,13 @@ class OutcomeVault:
         path = self._path_for(event_id)
         if not path.is_file():
             raise OutcomeNotAvailable(f"no sealed outcome for {event_id!r}: NOT AVAILABLE")
-        sealed = SealedOutcome.model_validate_json(path.read_text(encoding="utf-8"))
+        try:
+            sealed = SealedOutcome.model_validate_json(path.read_text(encoding="utf-8"))
+        except ValidationError:
+            # pydantic's message would echo the file's values; name the problem only.
+            raise SealedOutcomeInvalid(f"sealed outcome file for {event_id!r} failed its schema") from None
         if sealed.event_id != event_id:
-            raise ValueError(f"sealed outcome file for {event_id!r} names a different event")
+            raise SealedOutcomeInvalid(f"sealed outcome file for {event_id!r} names a different event")
         mark = self._store.record_reveal(rec.prediction, revealed_at)
         first = self._store.first_reveal(event_id)
         assert first is not None  # the reveal just recorded
@@ -422,7 +430,8 @@ def _context_mismatch(cases: EvidenceStore, event_id: str, as_of: datetime, vari
         bool(mi.synthetic),
         mi.case_sha256,
     ) != (
-        rec.prediction.prompt_sha256,
+        # The gate's prompt hash: prompt_sha256 is what the model answered, which includes a repair turn (#44).
+        rec.prediction.gated_prompt_sha256 or rec.prediction.prompt_sha256,
         rec.prediction.snapshot_sha256,
         ctx.market_baseline_p_yes,
         ctx.market_baseline_ref,

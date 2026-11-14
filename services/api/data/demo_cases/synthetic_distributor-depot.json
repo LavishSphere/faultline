@@ -4,7 +4,7 @@
     "title": "SYNTHETIC: Will the demo grocer's primary distributor (the fictional Brindlewick Provisions) stop deliveries from its North depot for 5 or more consecutive days within 21 days after the cutoff?",
     "as_of": "2026-09-14T12:00:00Z",
     "horizon_days": 21,
-    "resolution_rule": "SYNTHETIC case in a fictional world. YES if, within the 21 days after the cutoff, the fictional Brindlewick Provisions North depot makes no deliveries of the demo grocer's chilled, deli and fresh lines (about 40% of the grocer's base-store sales) to any of its three stores on at least 5 consecutive calendar days, for any reason (strike, lockout, site access or other). NO otherwise. Decision context, not part of the YES/NO criteria: act = move those lines to the backup supplier now; hedge = move part of them now; wait = make no change yet.",
+    "resolution_rule": "SYNTHETIC case in a fictional world. YES if, within the 21 days after the cutoff, the fictional Brindlewick Provisions North depot makes no deliveries of the demo grocer's chilled, deli and fresh lines (about 40% of the grocer's base-store sales) to any of its three stores on at least 5 consecutive calendar days, for any reason (strike, lockout, site access or other). NO otherwise. Decision context, not part of the YES/NO criteria: act = move those lines to the backup supplier now; hedge = arrange a partial response now; wait = make no change yet.",
     "evidence_ids": [
       "synthetic_distributor-depot.contract-bulletin",
       "synthetic_distributor-depot.account-manager-letter",
@@ -94,15 +94,15 @@
   "curation_notes": {
     "synthetic": "Everything in this file is SYNTHETIC: an invented question, invented documents and invented names (Brindlewick Provisions, the Brindlewick North Depot Workers' Association, Corran Valley Foods, Harrowmere, The Harrowmere Ledger, Mill Lane). The demo grocer is FAULTLINE's fictional business in data/demo_business.json. Dates are a synthetic timeline, not real events. source_url values use the reserved .invalid domain (RFC 2606), which cannot resolve, so no real site is presented as a source.",
     "fair_draw": {
-      "scheme": "Commit-then-reveal. A secret 32-byte random seed was generated once with Python secrets.token_bytes(32) after this rule was fixed. Only its SHA-256 commitment is published here; the seed and the drawn answer are in the sealed file, which only core/evaluator.py reads.",
+      "scheme": "Commit-then-reveal. A secret 32-byte random seed was generated with Python secrets.token_bytes(32) at 2026-11-13T20:00:29Z, after this rule was written down (the author's statement; git cannot prove that order). Only its SHA-256 commitment is published here; the seed and the drawn answer are in the sealed file, which only core/evaluator.py reads.",
       "commitment_sha256": "583b87ea7ab1261948541f56ca5a38703efb6cdeef6307a254ab7d3d40d60f38",
       "commitment_input": "the 32 raw seed bytes (bytes.fromhex(seed_hex)), not the hex text",
       "draw_input": "the 32 raw seed bytes followed by the ASCII bytes 'faultline-synthetic-draw:synthetic_distributor-depot'",
       "draw_rule": "h = SHA-256(draw_input) read as a 256-bit big-endian integer (int(hexdigest, 16)). YES if 100 * h < 35 * 2**256, otherwise NO. Exact integer arithmetic, so P(YES) = 0.35 exactly.",
       "p_draw": 0.35,
       "seed_location": "data/sealed_outcomes/synthetic_distributor-depot.json, field notes (seed_hex=...)",
-      "why_p_draw": "0.35 was fixed before the seed was drawn. The documents were written to describe a real but minority risk (strike authorised, talks constructive, mediator booked). The draw does not depend on the text, so no forecaster can beat 0.35 in expectation on this case.",
-      "limitation": "The person who generated the seed saw the drawn answer at that moment. The commitment proves the answer was fixed before any forecast and cannot be changed afterwards; it cannot prove that the seed was drawn only once. It was drawn once, by a script that refuses to overwrite its output."
+      "why_p_draw": "0.35 is part of the draw rule, written down before the seed was generated (the author's statement; git cannot prove that order). The documents were written to describe a real but minority risk (strike authorised, talks constructive, mediator booked). The draw does not depend on the text, so no forecaster can beat 0.35 in expectation on this case.",
+      "limitation": "The person who generated the seed saw the drawn answer at that moment. The commitment proves the answer was fixed before any forecast and cannot be changed afterwards; it cannot prove that the seed was drawn only once. The author states it was drawn once; nothing in the repository can prove that. The case file, evidence included, was committed about 38 minutes after the seed was generated, so this scheme does not prove the evidence was frozen before the draw."
     },
     "market": {
       "status": "NOT AVAILABLE",

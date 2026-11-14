@@ -345,6 +345,54 @@ def test_amortization_above_principal_is_rejected():
         simulate(golden_params(term_loan_principal_1=1_000.0, amortization=600.0), NO_SHOCK, NO_ACTION)
 
 
+# Physically impossible plans (issue #39, MATH_MODEL §3): P_t >= 0 and I_t >= 0 are enforced by simulate().
+# These use the §10 demo business (demo_business.json): base sales 18k + 17k + 15k = 50,000/wk, g = 0.35,
+# I_0 = 65,000, no shock. Normal purchases P_t = (1 - g) S_t - v_t = 0.65 * 50,000 - v_t = 32,500 - v_t,
+# and inventory I_t = I_(t-1) - v_t = 65,000 - (cuts so far).
+
+
+def _demo_params() -> BusinessParams:
+    path = Path(__file__).resolve().parent.parent / "data" / "demo_business.json"
+    return BusinessParams.model_validate(json.loads(path.read_text())["business"])
+
+
+def test_purchase_cut_above_purchases_is_rejected_in_week_1():
+    # v = 100,000/wk: P_1 = 32,500 - 100,000 = -67,500 < 0. Inventory also fails in week 1
+    # (I_1 = 65,000 - 100,000 = -35,000), but purchases are checked first, so the error names purchases.
+    with pytest.raises(ValueError, match=r"^week 1: purchase cut .*purchases cannot be negative$"):
+        simulate(_demo_params(), NO_SHOCK, ActionPlan(purchase_cut=100_000.0))
+
+
+def test_cumulative_purchase_cuts_below_zero_inventory_are_rejected_in_week_3():
+    # v = 30,000/wk: P_t = 32,500 - 30,000 = 2,500 >= 0 every week, so purchases are fine.
+    # I_1 = 65,000 - 30,000 = 35,000 ; I_2 = 35,000 - 30,000 = 5,000 ; I_3 = 5,000 - 30,000 = -25,000 < 0
+    with pytest.raises(ValueError, match=r"^week 3: inventory .*= -25000\.00 < 0; inventory cannot be negative$"):
+        simulate(_demo_params(), NO_SHOCK, ActionPlan(purchase_cut=30_000.0))
+
+
+def test_feasible_purchase_cuts_are_accepted():
+    # v = 10,000 in weeks 1-6, then 0: total cut 60,000 <= I_0 = 65,000 and each week 10,000 <= 32,500.
+    # P_t = 32,500 - 10,000 = 22,500 in weeks 1-6 ; I_t = 65,000 - 10,000 t -> 55,000, ..., I_6 = 5,000, then flat.
+    T_demo = _demo_params().horizon_weeks
+    v = [10_000.0] * 6 + [0.0] * (T_demo - 6)
+    res = simulate(_demo_params(), NO_SHOCK, ActionPlan(purchase_cut=v))
+    assert res.purchases[:7] == [approx(22_500.0)] * 6 + [approx(32_500.0)]
+    assert res.inventory[:6] == [approx(55_000.0), approx(45_000.0), approx(35_000.0), approx(25_000.0),
+                                 approx(15_000.0), approx(5_000.0)]
+    assert res.inventory[-1] == approx(5_000.0)
+
+
+def test_purchases_and_inventory_exactly_zero_are_accepted():
+    # v_1 = v_2 = 32,500: P_1 = P_2 = 0 and I_2 = 65,000 - 65,000 = 0. Zero is allowed (the rule is >= 0).
+    # A further 1e-9 in week 2 (solver round-off) stays inside the 1e-6 tolerance.
+    T_demo = _demo_params().horizon_weeks
+    v = [32_500.0, 32_500.0 + 1e-9] + [0.0] * (T_demo - 2)
+    res = simulate(_demo_params(), NO_SHOCK, ActionPlan(purchase_cut=v))
+    assert res.purchases[:2] == [approx(0.0)] * 2
+    assert res.inventory[1] == approx(0.0)
+    assert res.inventory[-1] == approx(0.0)
+
+
 @pytest.mark.parametrize("bad", [float("nan"), float("inf"), float("-inf")])
 def test_nan_and_inf_inputs_are_rejected(bad):
     with pytest.raises(ValueError):

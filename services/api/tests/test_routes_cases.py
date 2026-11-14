@@ -10,11 +10,12 @@ from __future__ import annotations
 import json
 import re
 import uuid
-from datetime import datetime
+from datetime import UTC, datetime
 from pathlib import Path
 
 import pytest
 from fastapi.testclient import TestClient
+from test_temporal_gate import evidence_dict, quote_dict
 
 from main import create_app
 
@@ -68,7 +69,9 @@ def _file(case: dict, **siblings) -> dict:
     return {"case": case, **siblings}
 
 
-QUOTE = {"venue": "kalshi", "market_id": "TEST-FIXTURE", "outcome": "YES", "p_yes": 0.5}
+# Full NormalizedQuote / EvidenceItem fixtures: since #44 the temporal gate (EvidenceStore) loads every case file.
+QUOTE = quote_dict(datetime(2026, 1, 20, 12, 0, tzinfo=UTC), "0.5000", market_id="TEST-FIXTURE")
+EV_1 = evidence_dict("ev-1", datetime(2026, 1, 20, 0, 0, tzinfo=UTC), "TEST FIXTURE text.", event_id="case-a")
 
 
 def _write_case(data_dir: Path, name: str, payload) -> None:
@@ -113,10 +116,10 @@ def test_empty_case_directory_is_empty_list(client):
 
 
 def test_cases_are_listed_as_public_views_sorted_by_file_name(client, data_dir):
-    _write_case(data_dir, "b.json", _file(_case("case-b")))
+    _write_case(data_dir, "case-b.json", _file(_case("case-b")))
     # Bundled evidence / quotes are allowed (not served here); the quote's YES side marker is allow-listed.
-    _write_case(data_dir, "a.json", _file(_case("case-a"), evidence=[{"evidence_id": "ev-1"}],
-                                          market_quotes=[QUOTE], curation_notes="test fixture"))
+    _write_case(data_dir, "case-a.json", _file(_case("case-a"), evidence=[EV_1],
+                                               market_quotes=[QUOTE], curation_notes="test fixture"))
     body = client.get("/api/cases").json()
     assert body["status"] == "AVAILABLE"
     assert [c["event_id"] for c in body["items"]] == ["case-a", "case-b"]
@@ -126,11 +129,14 @@ def test_cases_are_listed_as_public_views_sorted_by_file_name(client, data_dir):
     assert "evidence" not in first and "market_quotes" not in first
     assert first["provenance"] == "SYNTHETIC"
     assert first["contamination_flag"] == "unlikely"
+    # EvidenceStore.public_case (#44): only ids the gate admits at the cutoff, not the case file's own list.
+    assert first["evidence_ids"] == ["ev-1"]
+    assert body["items"][1]["evidence_ids"] == []
 
 
 def test_response_walk_no_outcome_keys_no_late_dates_no_canary(client, data_dir):
-    _write_case(data_dir, "a.json", _file(_case("case-a"), market_quotes=[QUOTE]))
-    _write_case(data_dir, "b.json", _file(_case("case-b", as_of="2026-03-01T12:00:00+00:00")))
+    _write_case(data_dir, "case-a.json", _file(_case("case-a"), market_quotes=[QUOTE]))
+    _write_case(data_dir, "case-b.json", _file(_case("case-b", as_of="2026-03-01T12:00:00+00:00")))
     resp = client.get("/api/cases")
     assert resp.status_code == 200
     assert CANARY not in resp.text
@@ -157,7 +163,7 @@ def test_response_walk_no_outcome_keys_no_late_dates_no_canary(client, data_dir)
     ],
 )
 def test_case_file_with_outcome_key_anywhere_is_rejected_without_echo(client, data_dir, payload):
-    _write_case(data_dir, "a.json", payload)
+    _write_case(data_dir, "case-a.json", payload)
     resp = client.get("/api/cases")
     assert resp.status_code == 500
     body = resp.json()
@@ -173,7 +179,7 @@ def test_symlink_out_of_demo_cases_is_refused_unread(client, data_dir, target):
     (data_dir / "sealed_outcomes" / "valid-looking.json").write_text(
         json.dumps(_file(_case("case-z", title=CANARY))), encoding="utf-8"
     )
-    _write_case(data_dir, "a.json", _file(_case("case-a")))
+    _write_case(data_dir, "case-a.json", _file(_case("case-a")))
     (data_dir / "demo_cases" / "z.json").symlink_to(data_dir / target)
     resp = client.get("/api/cases")
     assert resp.status_code == 500
@@ -216,7 +222,7 @@ def test_invalid_case_file_is_data_invalid(client, data_dir, payload):
 
 
 def test_duplicate_event_ids_are_data_invalid(client, data_dir):
-    _write_case(data_dir, "a.json", _file(_case("case-a")))
+    _write_case(data_dir, "case-a.json", _file(_case("case-a")))
     _write_case(data_dir, "b.json", _file(_case("case-a")))
     resp = client.get("/api/cases")
     assert resp.status_code == 500

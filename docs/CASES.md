@@ -30,7 +30,8 @@ The "demo grocer" is FAULTLINE's fictional three-store food retailer (`data/demo
 matches the `supplier-outage-3wk` scenario: if the primary distributor stops, the lines behind 40% of base-store
 sales are lost unless the grocer pays the backup supplier's 12% premium and 2,000 switching fee (the same
 `backup_premium` and `backup_switch_fee` as the demo business). The decision is act (switch those lines now),
-hedge (switch part of them) or wait.
+hedge (arrange a partial response now) or wait. The model's backup-supplier choice is yes/no (MATH_MODEL §4), so
+"partial" means some other partial step, not switching a share of the lines.
 
 Every name is invented: Brindlewick Provisions, the Brindlewick North Depot Workers' Association, Corran Valley
 Foods, Harrowmere, The Harrowmere Ledger, Mill Lane. Each evidence text starts with "SYNTHETIC DOCUMENT:
@@ -47,9 +48,10 @@ fictional, written for the FAULTLINE demo". `source_url` values use the reserved
 
 ### How the answer was fixed: a committed fair draw
 
-The answer was not chosen by anyone. It comes from a random seed and a rule that were fixed in this order:
+The answer was not chosen by anyone. It comes from a random seed and a fixed rule:
 
-1. **The rule was written down first** (before any seed existed):
+1. **The rule** (written down before the seed was generated; that is the author's statement, see the honest
+   timeline below):
    - seed = 32 random bytes from Python `secrets.token_bytes(32)` (the operating system's cryptographic random
      generator);
    - commitment = SHA-256 of the 32 raw seed bytes;
@@ -57,7 +59,7 @@ The answer was not chosen by anyone. It comes from a random seed and a rule that
      read as a 256-bit whole number;
    - **YES if 100 × h < 35 × 2^256, otherwise NO.** Since h is uniform on [0, 2^256), P(YES) = 0.35 exactly.
      The comparison uses whole numbers only, so there is no rounding.
-2. **The seed was generated once**, by a script that refuses to run a second time.
+2. **The seed was generated** at 2026-11-13T20:00:29Z on the author's machine.
 3. **Only the commitment is in the case file** (`curation_notes.fair_draw.commitment_sha256`
    = `583b87ea7ab1261948541f56ca5a38703efb6cdeef6307a254ab7d3d40d60f38`), together with the rule above. The case
    file has no key that looks like an answer, and the gate never puts `curation_notes` into a prompt.
@@ -65,14 +67,17 @@ The answer was not chosen by anyone. It comes from a random seed and a rule that
    sealed-file format allows no other extra field). Only `OutcomeVault.reveal` reads that file, and only after
    a forecast is saved.
 
-**Why p_draw = 0.35.** It was fixed before the seed was drawn. The documents describe a real but minority risk
+**Why p_draw = 0.35.** 0.35 is part of the rule in step 1, written down before the seed was generated. The documents describe a real but minority risk
 (a strike was authorised, but both sides call the talks constructive and a mediator is booked). The draw does not
 depend on the text, so the best possible forecast for this case is 0.35, and no forecaster can beat that in
 expectation. If a synthetic market price is added later (see below), it should be 0.35, which makes the
 synthetic "market" calibrated by construction.
 
-**Commit order.** The case file (with the commitment and the rule) is committed first and the sealed file in a
-later commit of the same PR. Git commit times are set by the author, so this order is documentation, not proof.
+**Honest timeline.** The seed was generated at 2026-11-13T20:00:29Z. The case file (with the commitment and the
+rule) was committed at 20:38:53Z and the sealed file at 20:38:56Z, in a later commit of the same PR. Git commit
+times are set by the author, so this order is documentation, not proof, and git cannot prove that the rule was
+written down before the seed was generated. The case file, evidence included, was committed about 38 minutes after
+the seed was generated, so this scheme does not prove the evidence was frozen before the draw.
 What does hold: the commitment is in the reviewed PR before any forecast is run, and the store's
 persist-before-reveal ledger stops anyone revealing the answer for a forecast that was not saved first.
 
@@ -80,9 +85,9 @@ persist-before-reveal ledger stops anyone revealing the answer for a forecast th
 - It proves the answer was fixed before any forecast was made and cannot be changed afterwards: a different seed
   would not match the published SHA-256.
 - It does **not** prove the seed was drawn only once. The person who ran the script saw the answer at that
-  moment, and could in principle have re-run it until they liked the answer. The mitigation is process: the
-  script refuses to overwrite its output, it was run once, and this is a synthetic demo case that is never
-  pooled with real cases. A stronger scheme (mixing in a public randomness beacon published after the
+  moment, and could in principle have re-run it until they liked the answer. The only mitigations are
+  that the author states it was run once and that this is a synthetic demo case that is never pooled with real
+  cases. A stronger scheme (mixing in a public randomness beacon published after the
   commitment) is a possible follow-up.
 
 ### How to verify it (from the repository root)
@@ -112,6 +117,10 @@ label on quotes). Until then no price is typed into the file.
 ### Never pooled with real cases
 
 Synthetic results are reported separately from real historical cases and never count toward the real-case `n`.
+
+**Run order.** Save the forecasts for all real cases **before** revealing the synthetic case, or reveal it only in a
+separate scratch store. Any reveal in the configured store blocks OFFICIAL for forecasts saved after it.
+
 `core/evaluator.py` enforces this:
 
 ```python
