@@ -129,6 +129,36 @@ $$
 $$
 with $\varepsilon$ small (e.g. $10^{-4}$) so cash only breaks ties. The $c_\cdot$ are **disruption costs set by the
 finance owner** (non-cash harm: operational risk, lost goodwill, morale), on top of the cash effects already in §3.
+Call this objective $J(x)$.
+
+**Tie-break between equally cheap plans (issue #104). *Proposal, pending finance-owner sign-off.*** Several plans can
+reach the same minimal $J$: with $L_p = 2$, a purchase cut in week 3, 4 or 5 is paid out two weeks later and so raises
+week-7 cash by the same amount, at the same $c_v$ per dollar. The solver then returns whichever it meets first, so flipping *Protect payroll* could move
+the cuts even when payroll is never cut. *Preference:* among plans that are exactly as cheap, act as late as possible
+and borrow for as short a time as possible, so that options stay open. It is applied lexicographically, in two stages:
+
+1. Solve the MILP above. Infeasible → `NO FEASIBLE PLAN` (stage 2 never runs). Otherwise $J^* = J(x^{(1)})$.
+2. Re-solve over the same constraints (the yes/no decisions free again), plus $J(x) \le J^*$, minimizing
+   $$
+   TB(x) = \sum_t \Bigl[\tfrac{T+1-t}{T}\,\bigl(v_t + y_t + z_t W_t\bigr) + \tfrac{t}{2T}\,q_t\Bigr].
+   $$
+   A dollar of purchase cut, revolver draw or payroll cut weighs more the earlier it happens; a dollar of repayment
+   weighs more the later it happens. Repayments use half the slope, so moving a whole draw-and-repay pair one week later
+   lowers $TB$ by $\tfrac{1}{2T}$ per dollar instead of tying.
+
+*Guarantee.* Stage 2 can only choose among plans that are optimal on cost: $J(\text{reported plan}) \le J^* + \delta$
+with $\delta = \max(10^{-9}\,\lvert J^*\rvert,\ 10^{-7})$, i.e. solver round-off only. The stage-2 row is $J(x) \le J^*$
+with no allowance on purpose: any positive allowance would let $TB$ buy sub-cent changes in the plan (e.g. a
+\$0.0000001 payroll cut, which would then be listed as an action). After stage 2 the code recomputes $J$ for the
+plan; if it exceeds $J^* + \delta$, or stage 2 fails, the stage-1 plan is reported (still optimal on cost) and the
+solver message says the tie-break was not applied. A single objective $J + \eta\,TB$ was not used: it keeps cost
+first only if $\eta$ is below the smallest cost gap between two distinct candidate plans, a data-dependent number we
+cannot bound in advance for every scenario. The two-stage solve needs no such bound.
+*Uniqueness.* Distinct weights per week make a remaining tie need an exact coincidence of the weights with the
+constraints. It is not impossible in principle; if it happens, HiGHS still returns the same plan for the same inputs.
+Worked example (70% demand drop, weeks 5-8): stage 1 alone gave cost $677.34$ in both modes but cut
+$v_3 = 10{,}000,\ v_5 = 1{,}024.73$ with payroll protected and $v_4 = 461.54,\ v_5 = 9{,}750,\ v_6 = 813.19$ without.
+With the tie-break both modes give the second plan, at the same cost.
 
 **Outputs:** status ∈ {`OPTIMAL`, `NO FEASIBLE PLAN`}, the chosen actions, $C_t$ path, $\min_t C_t$, binding
 constraints (slack ≈ 0), and the objective value. If infeasible, report it: no LLM may override it. Useful
