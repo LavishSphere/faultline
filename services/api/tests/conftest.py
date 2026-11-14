@@ -21,7 +21,7 @@ def _refusal_reason(exc: BaseException) -> str | None:
     """Skip reason if `exc` means "this OS/user may not create symlinks", else None (the error is a real failure)."""
     if isinstance(exc, OSError) and getattr(exc, "winerror", None) == WINERROR_PRIVILEGE_NOT_HELD:
         return SKIP_REASON_WINERROR_1314
-    if isinstance(exc, (NotImplementedError, PermissionError)):
+    if isinstance(exc, NotImplementedError):
         return f"OS refused to create a symlink: {type(exc).__name__}: {exc}"
     return None
 

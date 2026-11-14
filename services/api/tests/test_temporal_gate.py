@@ -783,8 +783,8 @@ def test_make_symlink_skips_with_a_clear_reason_on_winerror_1314(tmp_path, monke
     )
 
 
-@pytest.mark.parametrize("exc", [NotImplementedError("symlinks unsupported"), PermissionError(1, "not permitted")])
-def test_make_symlink_skips_when_symlinks_are_unsupported_or_not_permitted(tmp_path, monkeypatch, make_symlink, exc):
+@pytest.mark.parametrize("exc", [NotImplementedError("symlinks unsupported")])
+def test_make_symlink_skips_when_symlinks_are_unsupported(tmp_path, monkeypatch, make_symlink, exc):
     monkeypatch.setattr(Path, "symlink_to", _raise(exc))
     with pytest.raises(pytest.skip.Exception) as skipped:
         make_symlink(tmp_path / "link", tmp_path / "target")
@@ -807,7 +807,14 @@ def test_make_symlink_does_not_skip_when_creation_succeeds(tmp_path, monkeypatch
 
 @pytest.mark.parametrize(
     "exc",
-    [FileExistsError(17, "File exists"), OSError(28, "No space left on device"), FileNotFoundError(2, "missing")],
+    [
+        FileExistsError(17, "File exists"),
+        OSError(28, "No space left on device"),
+        FileNotFoundError(2, "missing"),
+        # A plain PermissionError (no winerror 1314) is a real failure: on macOS/Linux skipping it would silently
+        # skip the sealed-folder protection tests (review of PR #139).
+        PermissionError(1, "not permitted"),
+    ],
 )
 def test_make_symlink_fails_instead_of_skipping_on_other_errors(tmp_path, monkeypatch, make_symlink, exc):
     monkeypatch.setattr(Path, "symlink_to", _raise(exc))
