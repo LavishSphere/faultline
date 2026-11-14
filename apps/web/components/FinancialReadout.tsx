@@ -1,13 +1,17 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
 import { ProvenanceBadge, type ProvenanceInput } from "./ProvenanceBadge";
+import { isHalfDollar, usd } from "@/lib/format";
+
+const CENTS = new Intl.NumberFormat("en-US", { style: "currency", currency: "USD", minimumFractionDigits: 2, maximumFractionDigits: 2 });
 
 /** Display formatters only. They never derive a figure; they render the one the API returned. */
 export type ReadoutFormat = "usd" | "probability" | "weeks" | "percent";
 
 const FORMATTERS: Record<ReadoutFormat, (n: number) => string> = {
-  usd: (n) => new Intl.NumberFormat("en-US", { style: "currency", currency: "USD", maximumFractionDigits: 0 }).format(n),
+  // Whole dollars (never "-$0"); cents only on a half dollar so a figure and its Δ add up (lib/format.ts, F20).
+  usd,
   probability: (n) => n.toFixed(3),
   weeks: (n) => n.toFixed(0),
   percent: (n) => `${(n * 100).toFixed(1)}%`,
@@ -33,8 +37,11 @@ export function FinancialReadout({
   format,
   provenance,
   unit,
+  prefix,
   sublabel,
   size = "lg",
+  dimmed = false,
+  aboveText,
 }: {
   label: string;
   value: ReadoutValue;
@@ -42,14 +49,28 @@ export function FinancialReadout({
   /** Provenance of the value when present. Ignored (NOT AVAILABLE) when value is null. */
   provenance: ProvenanceInput;
   unit?: string;
-  sublabel?: string;
-  size?: "md" | "lg" | "xl";
+  /** Small text before a numeric value, e.g. "week". */
+  prefix?: string;
+  /** Text under the value (inline content only: it renders inside a <p>). */
+  sublabel?: ReactNode;
+  /** "fit": large, but steps down where the readout sits in a narrow side column. */
+  size?: "md" | "lg" | "xl" | "fit";
+  /** A newer request is in flight; the value shown is the previous response's. */
+  dimmed?: boolean;
+  /** Words for a `{ above: T }` value instead of "> T", e.g. (T) => `not within ${T} weeks`. Display only. */
+  aboveText?: (above: number) => string;
 }) {
   const numeric = typeof value === "number" ? value : null;
   const shown = useCountUp(numeric);
   const fmt = FORMATTERS[format];
   const sizeClass =
-    size === "xl" ? "text-5xl md:text-7xl" : size === "lg" ? "text-4xl md:text-5xl" : "text-2xl md:text-3xl";
+    size === "xl"
+      ? "text-5xl md:text-7xl"
+      : size === "lg"
+        ? "text-4xl md:text-5xl"
+        : size === "fit"
+          ? "whitespace-nowrap text-4xl xl:text-[2rem] min-[1700px]:text-5xl"
+          : "text-2xl md:text-3xl";
 
   let body;
   if (value === null) {
@@ -61,14 +82,25 @@ export function FinancialReadout({
       </p>
     );
   } else {
-    const exact = typeof value === "number" ? fmt(value) : `> ${fmt(value.above)}`;
-    const animated = typeof value === "number" ? fmt(shown ?? value) : exact;
+    const exact = typeof value === "number" ? fmt(value) : aboveText ? aboveText(value.above) : `> ${fmt(value.above)}`;
+    // Intermediate frames keep the final value's precision, so the width does not jump on the last frame.
+    const frameFmt = format === "usd" && typeof value === "number" && isHalfDollar(value) ? (n: number) => CENTS.format(n) : fmt;
+    const animated = typeof value === "number" ? frameFmt(shown ?? value) : exact;
+    // A worded "beyond the horizon" value is a sentence, not a figure: a step smaller so it fits the column.
+    const textClass = typeof value !== "number" && aboveText ? "text-2xl md:text-3xl" : sizeClass;
     body = (
-      <p className={`num font-medium leading-none tracking-tight text-text ${sizeClass}`}>
+      <p
+        className={`num font-medium leading-none tracking-tight text-text transition-opacity ${textClass} ${dimmed ? "opacity-50" : ""}`}
+      >
+        {prefix && typeof value === "number" ? (
+          <span className="mr-2 text-base font-normal uppercase tracking-[0.1em] text-muted" aria-hidden="true">
+            {prefix}
+          </span>
+        ) : null}
         {/* Screen readers get the exact value, not intermediate animation frames. */}
         <span aria-hidden="true">{animated}</span>
         <span className="sr-only">
-          {typeof value === "number" ? exact : `more than ${fmt(value.above)}`}
+          {typeof value === "number" ? `${prefix ? `${prefix} ` : ""}${exact}` : aboveText ? exact : `more than ${fmt(value.above)}`}
         </span>
         {unit ? <span className="ml-2 text-base text-muted">{unit}</span> : null}
       </p>

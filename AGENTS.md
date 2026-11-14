@@ -7,6 +7,8 @@ Sunday 2026-11-15). Sources of truth:
 - **docs/SPEC.md**: product spec. Its principles (§1) are non-negotiable.
 - **docs/MATH_MODEL.md**: the formal math (cash recurrence, optimizer MILP, scoring). Code must match it exactly.
 - **docs/WORKFLOW.md**: who does what, branches, PRs, review.
+- **docs/HACKATHON.md**: deadlines (practice demos **Sat Nov 14, 1pm**; code freeze **Sun Nov 15, 11am**), judging criteria
+  (incl. the **+2 AI-alignment bonus**), and sponsors (Anthropic, Link Ventures, Tavily). Read it; plan against it.
 
 ## 0. First thing in every session (any agent)
 ```bash
@@ -26,7 +28,10 @@ delegated tasks / PRs to review. Obey its output. If it reports a failed fetch, 
 - **Only leads merge. Only leads deploy to production** (production = what is built from `main`).
 - Never bypass hooks: no `--no-verify`, no changing `core.hooksPath`, never set `FAULTLINE_LEAD_OVERRIDE`.
 - Branches: `<owner>/<issue#>-<slug>`, e.g. `yaseen/14-cash-recurrence`. One issue → one branch → one PR, inside one workstream's directories.
-- **Max 3 commits per PR** (guard blocks a 4th; CI fails >3). Use `git commit --amend` for follow-up fixes.
+- **Max 3 commits per PR** (guard blocks a 4th; CI fails >3). Use `git commit --amend` for follow-up fixes, then
+  `git push --force-with-lease origin HEAD` (plain `--force` is blocked).
+- **Merged is the only state that counts.** A PR with changes requested or red CI is fixed before any new task starts
+  (`address-review`); a lead with three or more green PRs waiting clears them before dispatching new agents (`merge-queue`).
 - **No `Co-Authored-By: Claude` (or any AI co-author) trailers** in commits. The `.githooks/commit-msg` hook strips them and CI rejects them.
 - Don't modify `.agents/`, `.claude/`, `.github/`, `.githooks/`, `scripts/guardrails/`, `AGENTS.md`, `CLAUDE.md`, `CODEOWNERS`, or
   `docs/SPEC.md` unless a lead explicitly asked in this session.
@@ -61,9 +66,11 @@ follow it** when the trigger applies (e.g. the user says "start task 12" → rea
 | `sync` | start of work, branch behind, before PR | everyone |
 | `start-task` | beginning any implementation task | everyone (mandatory for partners) |
 | `my-sprint` | several unblocked delegated tasks → one agent each, in parallel, separate PRs | everyone |
-| `ship-pr` | work is done → verify, rebase, push branch, open PR | everyone |
+| `ship-pr` | work is done → rebase, verify, push branch, open PR, wait for green CI | everyone |
+| `address-review` | your PR has changes requested or red CI → fix it before any new task | everyone |
 | `delegate` | turn a lead's request into a scoped GitHub issue | leads only |
-| `review-pr` | review a PR against spec + honesty rules | leads only |
+| `merge-queue` | several PRs are open → triage, overlap check, merge order | leads only |
+| `review-pr` | review one PR against spec + honesty rules, at a depth that matches its risk | leads only |
 | `sprint` | run parallel specialist agents on a phase | leads only |
 | `finance-engine` | `core/financials.py`, `core/optimizer.py`, demo business | domain |
 | `replay-integrity` | temporal gate, sealed outcomes, provider, scoring | domain |
@@ -74,6 +81,8 @@ follow it** when the trigger applies (e.g. the user says "start task 12" → rea
 | `honesty-audit` | before any PR, before demos | everyone |
 
 Specialist roles (for orchestrating several agents) are defined in `.claude/agents/*.md`; any agent can adopt one by reading it.
+Which specialist owns which workstream label and paths, the files every workstream shares, the integrity-core paths that
+get a full audit, and the deadlines are data in `.agents/team.json`; skills and the session banner read them from there.
 
 ## 6. Repo layout (target, SPEC §8) and ownership
 ```

@@ -1,9 +1,12 @@
-/** The presenter flow (SPEC §2): five screens grouped under the THEN / DECISION / REVEAL timeline. */
+/**
+ * The presenter flow (SPEC §2): five Blind Replay screens grouped under THEN / DECISION / REVEAL, then LIVE EXPLORE
+ * (issue #61) under NOW. NOW is current web content, separate from the replay: nothing there feeds the screens before it.
+ */
 
-export type Phase = "THEN" | "DECISION" | "REVEAL";
+export type Phase = "THEN" | "DECISION" | "REVEAL" | "NOW";
 
 export interface Step {
-  slug: "rewind" | "decision" | "cascade" | "reveal" | "research";
+  slug: "rewind" | "decision" | "cascade" | "reveal" | "research" | "explore";
   index: number;
   label: string;
   short: string;
@@ -14,7 +17,7 @@ export interface Step {
   lede: string;
 }
 
-export const PHASES: readonly Phase[] = ["THEN", "DECISION", "REVEAL"] as const;
+export const PHASES: readonly Phase[] = ["THEN", "DECISION", "REVEAL", "NOW"] as const;
 
 export const STEPS: readonly Step[] = [
   {
@@ -64,6 +67,16 @@ export const STEPS: readonly Step[] = [
     titlePre: "Research",
     titleEm: "Lens",
     lede: "Four dated, sourced public research perspectives: which theses bear on this decision, what was known by the cutoff, and where the model agreed or disagreed.",
+  },
+  {
+    slug: "explore",
+    index: 5,
+    label: "Live Explore",
+    short: "Explore",
+    phase: "NOW",
+    titlePre: "Live",
+    titleEm: "Explore",
+    lede: "Test a decision today. Tavily searches current news, the local model turns the results into cited evidence and suggests stress inputs, you confirm them, and the deterministic engine computes the cascade. Separate from the Blind Replay.",
   },
 ] as const;
 

@@ -171,11 +171,12 @@ class SimulationResult(_Model):
     rate: list[float]  # r_t
 
     # Sales and stock (§2, §3)
-    demand: list[float]  # S^dem_t
+    core_demand: list[float]  # S^core_t = m_t Σ_ℓ S^base_{ℓ,t}, base-store demand (the outage and premium base)
+    demand: list[float]  # S^dem_t = S^core_t + (1-x_e) X_t, total demand
     sales: list[float]  # S_t
-    lost_sales: list[float]  # S^dem_t - S_t
+    lost_sales: list[float]  # S^dem_t - S_t = S^core_t λ_t (1-x_b)
     receipts: list[float]  # R_t
-    backup_premium: list[float]  # π (1-g) S^dem_t λ_t x_b
+    backup_premium: list[float]  # π (1-g) S^core_t λ_t x_b
     purchases: list[float]  # P_t
     payables_paid: list[float]  # P_{t-L_p}
     inventory: list[float]  # I_t
@@ -245,7 +246,8 @@ def lost_sales_fractions(shock: SupplierOutage | None, horizon: int) -> tuple[li
 # --------------------------------------------------------------------------- §2-§3 simulator
 
 
-# Dollar tolerance for the financing sanity checks, so optimizer round-off (e.g. B_t = -1e-9) is not rejected.
+# Dollar tolerance for the financing and physical sanity checks, so optimizer round-off (e.g. B_t = -1e-9 or
+# I_t = -1e-9) is not rejected.
 FINANCING_TOL = 1e-6
 
 
@@ -255,8 +257,10 @@ def simulate(params: BusinessParams, shock: ScenarioShock, plan: ActionPlan) -> 
     C_t = C_{t-1} + R_t - P_{t-L_p} - (1-z_t)W_t - O_t - J_t - A_t - J^R_t
           - (1-x_c)K_t - (1-x_e)E_t - F_b x_b 1[t=1] + y_t - q_t
 
-    Raises ValueError for financing that cannot happen (§3): a revolver repayment above the balance
-    (B_t < 0) or amortization above the remaining principal (D_{t+1} < 0).
+    Raises ValueError, naming the week, for plans that cannot happen (§3): negative purchases (P_t < 0),
+    negative inventory (I_t < 0), a revolver repayment above the balance (B_t < 0) or amortization above the
+    remaining principal (D_{t+1} < 0). Within one week, purchases are checked first, then inventory, then
+    financing. I_min is an optimizer constraint (§4.3) and is not enforced here.
     """
     T = params.horizon_weeks
     g, a, Lp = params.gross_margin, params.same_week_collection, params.supplier_lag_weeks
@@ -282,7 +286,7 @@ def simulate(params: BusinessParams, shock: ScenarioShock, plan: ActionPlan) -> 
     kappa, lam = lost_sales_fractions(shock.supplier, T)
 
     cols: dict[str, list[float]] = {k: [] for k in (
-        "demand", "sales", "lost_sales", "receipts", "backup_premium", "purchases", "payables_paid",
+        "core_demand", "demand", "sales", "lost_sales", "receipts", "backup_premium", "purchases", "payables_paid",
         "inventory", "term_loan_principal", "interest", "revolver_interest", "total_interest",
         "revolver_balance", "payroll", "capex", "expansion_outflow", "backup_fee", "cash",
     )}
@@ -291,14 +295,26 @@ def simulate(params: BusinessParams, shock: ScenarioShock, plan: ActionPlan) -> 
     D = params.term_loan_principal_1
     for i in range(T):
         t = i + 1
-        # §2 demand and sales
-        S_dem = m[i] * base_sales[i] + (1.0 - xe) * X[i]
-        S = S_dem * (1.0 - lam[i] * (1.0 - xb))
+        # §2 demand and sales: the outage hits base-store demand S^core only, never the new store's X_t
+        S_core = m[i] * base_sales[i]
+        S_dem = S_core + (1.0 - xe) * X[i]
+        S = S_core * (1.0 - lam[i] * (1.0 - xb)) + (1.0 - xe) * X[i]
         # §3 receipts, purchases, inventory
         R = a * S + (1.0 - a) * S_prev
-        premium = params.backup_premium * (1.0 - g) * S_dem * lam[i] * xb
+        premium = params.backup_premium * (1.0 - g) * S_core * lam[i] * xb  # same base-store outage share as §2
         P = (1.0 - g) * S - v[i] + premium
         inv = inv_prev - v[i]  # I_t = I_{t-1} + P_t - (1-g)S_t - premium = I_{t-1} - v_t
+        # §3 physical limits: the business cannot buy a negative amount of stock or hold negative stock.
+        if P < -FINANCING_TOL:
+            raise ValueError(
+                f"week {t}: purchase cut v_t = {v[i]:.2f} exceeds that week's purchases before the cut "
+                f"({P + v[i]:.2f}), so P_t would be {P:.2f} < 0; purchases cannot be negative"
+            )
+        if inv < -FINANCING_TOL:
+            raise ValueError(
+                f"week {t}: inventory I_t = I_(t-1) - v_t = {inv_prev:.2f} - {v[i]:.2f} = {inv:.2f} < 0; "
+                "inventory cannot be negative"
+            )
         cols["purchases"].append(P)  # appended before the lag lookup so L_p = 0 pays P_t
         k = t - Lp  # pay P_{t-L_p}; pre-horizon values come from prior_purchases
         paid = cols["purchases"][k - 1] if k >= 1 else params.prior_purchases[t - 1]
@@ -325,7 +341,7 @@ def simulate(params: BusinessParams, shock: ScenarioShock, plan: ActionPlan) -> 
              - capex_paid - expansion_paid - fee + y[i] - q[i])
 
         for key, val in (
-            ("demand", S_dem), ("sales", S), ("lost_sales", S_dem - S), ("receipts", R),
+            ("core_demand", S_core), ("demand", S_dem), ("sales", S), ("lost_sales", S_dem - S), ("receipts", R),
             ("backup_premium", premium), ("payables_paid", paid), ("inventory", inv),
             ("term_loan_principal", D), ("interest", J), ("revolver_interest", JR),
             ("total_interest", J + JR), ("revolver_balance", B), ("payroll", payroll_paid),
@@ -384,7 +400,7 @@ CASCADE_EDGES: tuple[tuple[str, str], ...] = (
     ("Demand", "Sales"),
     ("Supplier", "Sales"),
     ("Supplier", "Purchases"),
-    ("Demand", "Purchases"),  # backup premium π(1-g) S^dem_t λ_t x_b uses demand directly
+    ("Demand", "Purchases"),  # backup premium π(1-g) S^core_t λ_t x_b uses base-store demand directly
     ("Sales", "Receipts"),
     ("Sales", "Purchases"),
     ("Purchases", "Inventory"),

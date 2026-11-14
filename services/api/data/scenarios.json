@@ -1,0 +1,54 @@
+{
+  "provenance": "SYNTHETIC",
+  "description": "Named stress scenarios for the fictional demo business in demo_business.json. SYNTHETIC / ILLUSTRATIVE: invented deterministic stress paths chosen to exercise MATH_MODEL §1, not forecasts and not based on any real company or real event.",
+  "scenarios": [
+    {
+      "id": "rate-plus-200bp",
+      "name": "Rate shock: +200bp from week 1",
+      "rationale": "The term loan floats, so a 2-point rise in the base rate passes straight into interest: 600,000 x 2% / 52 = 230.77 more per week.",
+      "provenance": "SYNTHETIC",
+      "shock": {
+        "name": "Rate shock: +200bp from week 1",
+        "rate": {"delta_rate": 0.02, "start_week": 1}
+      }
+    },
+    {
+      "id": "demand-drop-20pct-6wk",
+      "name": "Demand drop: -20% for 6 weeks, 4-week recovery",
+      "rationale": "A local slowdown cuts footfall by a fifth for six weeks, then customers return gradually; lost sales cost the 35% gross margin while purchases fall with them.",
+      "provenance": "SYNTHETIC",
+      "shock": {
+        "name": "Demand drop: -20% for 6 weeks, 4-week recovery",
+        "demand": {"delta": 0.2, "start_week": 3, "end_week": 8, "recovery_weeks": 4}
+      }
+    },
+    {
+      "id": "supplier-outage-3wk",
+      "name": "Supplier outage: primary distributor down for 3 weeks",
+      "rationale": "The primary distributor cannot deliver in weeks 5-7, so the 40% of base-store sales on its product lines are lost unless the backup supplier is used.",
+      "provenance": "SYNTHETIC",
+      "shock": {
+        "name": "Supplier outage: primary distributor down for 3 weeks",
+        "supplier": {
+          "availability": [1.0, 1.0, 1.0, 1.0, 0.0, 0.0, 0.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0],
+          "dependent_share": 0.4
+        }
+      }
+    },
+    {
+      "id": "bad-quarter",
+      "name": "Bad quarter: rate shock + demand drop + supplier outage",
+      "rationale": "All three shocks above hit in the same quarter, so higher interest, weaker footfall and a supply gap compound on a business that already loses about 1,400 a week.",
+      "provenance": "SYNTHETIC",
+      "shock": {
+        "name": "Bad quarter: rate shock + demand drop + supplier outage",
+        "rate": {"delta_rate": 0.02, "start_week": 1},
+        "demand": {"delta": 0.2, "start_week": 3, "end_week": 8, "recovery_weeks": 4},
+        "supplier": {
+          "availability": [1.0, 1.0, 1.0, 1.0, 0.0, 0.0, 0.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0],
+          "dependent_share": 0.4
+        }
+      }
+    }
+  ]
+}

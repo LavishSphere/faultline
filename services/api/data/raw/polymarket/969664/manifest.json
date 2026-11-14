@@ -1,0 +1,31 @@
+{
+  "entries": [
+    {
+      "bytes": 1995,
+      "collected_at": "2026-11-13T18:01:04.590029+00:00",
+      "endpoint": "polymarket.clob_prices_history",
+      "http_status": 200,
+      "notes": {
+        "collector": "scripts/collect_market_snapshots.py",
+        "plan_group": "CPI YoY 2026-01 (january-inflation-us-annual)",
+        "plan_leg": "\u22653.2% == Kalshi Above 3.1%",
+        "points_in_response_set": 71,
+        "reference_close": "2026-02-11T00:00:00+00:00",
+        "venue_scheduled_close": "2026-02-11T00:00:00+00:00",
+        "window_end": "2026-02-04T00:00:00+00:00",
+        "window_rule": "T-7d: end = 00:00Z of (reference_close - 7d), lookback 3d",
+        "window_start": "2026-02-01T00:00:00+00:00"
+      },
+      "params": {
+        "endTs": 1770163200,
+        "fidelity": 60,
+        "market": "12723981232958720534267584620851860888392524106892407061659013503032809536781",
+        "startTs": 1769904000
+      },
+      "path": "polymarket/969664/20261113T180104590029Z.json",
+      "provenance": "REAL HISTORICAL",
+      "sha256": "43f01a40c53e1ec724588a03c1eda9546f9fb91712a1d65e35bd162bc7189fcf",
+      "url": "https://clob.polymarket.com/prices-history"
+    }
+  ]
+}

@@ -17,7 +17,20 @@ from starlette.types import ASGIApp, Message, Receive, Scope, Send
 
 from config import Settings, admin_token_matches, get_settings
 from errors import FaultlineError, faultline_error_handler
-from routes import health
+from routes import (
+    benchmark,
+    cases,
+    decision,
+    explore,
+    health,
+    integrity,
+    judge_challenges,
+    optimize,
+    replay,
+    research,
+    scenarios,
+    simulate,
+)
 
 # ==== BEGIN edge protection (#13 deploy: CORS, mode header, rate limit, body limit, admin gate) ====
 # Owned by the deploy issue. Router registrations live in create_app() below, outside this block.
@@ -264,6 +277,18 @@ def create_app() -> FastAPI:
     install_edge_protection(app, settings)  # edge protection (#13); keep router registrations below
     app.add_exception_handler(FaultlineError, faultline_error_handler)
     app.include_router(health.router, prefix="/api")
+    app.include_router(simulate.router, prefix="/api")
+    app.include_router(optimize.router, prefix="/api")
+    app.include_router(scenarios.router, prefix="/api")
+    app.include_router(decision.router, prefix="/api")
+    app.include_router(judge_challenges.router, prefix="/api")
+    app.include_router(research.router, prefix="/api")
+    app.include_router(cases.router, prefix="/api")
+    app.include_router(replay.router, prefix="/api")
+    app.include_router(integrity.router, prefix="/api")
+    app.include_router(benchmark.router, prefix="/api")
+    # LIVE EXPLORE (Tavily). Admin-gated inside the route in public mode; never used by the Blind Replay (#60).
+    app.include_router(explore.router, prefix="/api")
     return app
 
 

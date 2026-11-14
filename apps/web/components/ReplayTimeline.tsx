@@ -5,18 +5,19 @@ import { usePathname } from "next/navigation";
 import { PHASES, STEPS, stepFromPath, stepHref } from "@/lib/steps";
 
 /**
- * Top presenter timeline: THEN / DECISION / REVEAL phases over the five screens.
+ * Top presenter timeline: THEN / DECISION / REVEAL / NOW phases over the screens (one column per step).
  * This is navigation, not data: it carries no dates or values.
  */
 export function ReplayTimeline() {
   const pathname = usePathname();
   const current = stepFromPath(pathname) ?? null;
   const progress = current ? (current.index / (STEPS.length - 1)) * 100 : 0;
+  const columns = { gridTemplateColumns: `repeat(${STEPS.length}, minmax(0, 1fr))` };
 
   return (
     <nav aria-label="Presenter timeline" className="border-b border-line">
       <div className="mx-auto w-full max-w-[1760px] px-4 pb-3 pt-3 md:px-10">
-        <div className="grid grid-cols-5 font-mono text-[10px] uppercase tracking-[0.18em] md:text-[11px]">
+        <div className="grid font-mono text-[10px] uppercase tracking-[0.18em] md:text-[11px]" style={columns}>
           {PHASES.map((phase) => {
             const span = STEPS.filter((s) => s.phase === phase).length;
             const active = current?.phase === phase;
@@ -40,7 +41,7 @@ export function ReplayTimeline() {
           />
         </div>
 
-        <ol className="grid grid-cols-5">
+        <ol className="grid" style={columns}>
           {STEPS.map((step) => {
             const active = current?.slug === step.slug;
             const done = current ? step.index < current.index : false;

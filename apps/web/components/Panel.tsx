@@ -18,12 +18,15 @@ export function Panel({
   title: string;
   /** Short mono code shown before the title, e.g. "A.1". */
   code?: string;
-  provenance: ProvenanceInput;
+  /** One label, or several (e.g. SIMULATED figures computed on SYNTHETIC inputs). */
+  provenance: ProvenanceInput | readonly ProvenanceInput[];
+  /** Qualifier shown on the first badge. */
   provenanceDetail?: string;
   children: ReactNode;
   className?: string;
   bodyClassName?: string;
 }) {
+  const kinds: readonly ProvenanceInput[] = Array.isArray(provenance) ? provenance : [provenance as ProvenanceInput];
   return (
     <section className={`flex min-w-0 flex-col rounded-lg border border-line bg-elevated ${className}`}>
       <header className="flex min-h-11 flex-wrap items-center justify-between gap-x-3 gap-y-1.5 border-b border-line px-5 py-2.5">
@@ -31,7 +34,11 @@ export function Panel({
           {code ? <span className="text-muted">{code}</span> : null}
           <span>{title}</span>
         </h2>
-        <ProvenanceBadge kind={provenance} detail={provenanceDetail} />
+        <span className="flex flex-wrap items-center gap-1.5">
+          {kinds.map((k, i) => (
+            <ProvenanceBadge key={`${k}-${i}`} kind={k} detail={i === 0 ? provenanceDetail : undefined} />
+          ))}
+        </span>
       </header>
       <div className={`flex-1 p-5 ${bodyClassName}`}>{children}</div>
     </section>
