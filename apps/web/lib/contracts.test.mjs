@@ -4,7 +4,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import { KNOWN_VERDICTS, checkRevealResponse, isSyntheticRef, notesForVariant, readBenchmark } from "./benchmark.ts";
-import { checkCaseEvidence, isSyntheticQuote } from "./replay.ts";
+import { checkCaseEvidence, checkRecordedResponse, isSyntheticQuote, outcomeKeyPaths } from "./replay.ts";
 
 const SHA = "a".repeat(64);
 
@@ -308,4 +308,39 @@ test("notesForVariant selects the API's notes that name the variant, verbatim (#
   assert.deepEqual(notesForVariant(notes, "agent_plus_market"), [notes[0]]);
   assert.deepEqual(notesForVariant(notes, "agent_only"), [notes[1]]);
   assert.deepEqual(notesForVariant([], "agent_only"), []);
+});
+
+// ---------------------------------------------------------------- GET /api/replay/recorded (#116)
+
+function recordedItem(overrides = {}) {
+  return {
+    provenance: "RECORDED_RUN", run_id: "fixture-run", prediction_id: "pred_fixture", case_id: "fixture_case",
+    agent_variant: "agent_only", as_of: "2025-01-20T00:00:00Z", p_yes: 0.42, decision: "hedge",
+    rationale: "TEST FIXTURE", evidence_ids: ["e1"],
+    cited_evidence: [{ evidence_id: "e1", title: "t", available_at: null, source_url: null, provenance: null }],
+    agent_model: "ollama/fixture", model_tag: null, model_digest: null, temperature: 0, seed: 1, attempts: 1,
+    prompt_sha256: SHA, gated_prompt_sha256: null, snapshot_sha256: SHA, record_sha256: SHA, row_sha256: SHA,
+    recorded_at: "2026-11-13T12:00:00Z", persisted_at: "2026-11-13T12:00:01Z", case_synthetic: true,
+    contamination_flag: "unlikely", model_card_contamination_flag: "unlikely", ...overrides,
+  };
+}
+
+function recordedBody(items = [recordedItem()]) {
+  return { status: items.length ? "AVAILABLE" : "NOT AVAILABLE", provenance: "RECORDED_RUN", case_id: "fixture_case",
+    items, notes: [] };
+}
+
+test("checkRecordedResponse accepts the route's shape and NOT AVAILABLE with no items", () => {
+  assert.equal(checkRecordedResponse(recordedBody(), "fixture_case", "agent_only"), null);
+  assert.equal(checkRecordedResponse(recordedBody([]), "fixture_case", "agent_only"), null);
+  assert.deepEqual(outcomeKeyPaths(recordedBody()), []);
+});
+
+test("checkRecordedResponse refuses another case or variant, a non-RECORDED_RUN row, and an empty AVAILABLE", () => {
+  assert.match(checkRecordedResponse(recordedBody(), "other_case", "agent_only"), /different case/);
+  assert.match(checkRecordedResponse(recordedBody(), "fixture_case", "agent_plus_market"), /different variant/);
+  const simulated = recordedBody([recordedItem({ provenance: "SIMULATED" })]);
+  assert.match(checkRecordedResponse(simulated, "fixture_case", "agent_only"), /not RECORDED_RUN/);
+  assert.match(checkRecordedResponse({ ...recordedBody([]), status: "AVAILABLE" }, "fixture_case", "agent_only"), /no items/);
+  assert.match(checkRecordedResponse(recordedBody([recordedItem({ p_yes: 1.5 })]), "fixture_case", "agent_only"), /p_yes/);
 });

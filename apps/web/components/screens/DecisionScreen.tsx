@@ -9,13 +9,13 @@ import { Field, Panel } from "../Panel";
 import { SplitView } from "../decision/SplitView";
 import { MarketAtCutoff, marketSource } from "../replay/MarketAtCutoff";
 import { ModelReadiness } from "../replay/ModelReadiness";
+import { RecordedRun, recordedForecast, useRecordedRun } from "../replay/RecordedRun";
 import { CaseBadges, CutoffLine, FailureNote, Hash, InFlight, TextButton } from "../replay/ReplayParts";
 import { useCaseEvidence, useReplayCases, useReplayRoutes, useSelectedCase, type EvidenceState } from "../replay/hooks";
 import { useReplayRun, type RunState } from "../replay/useReplayRun";
 import { ScreenHeader } from "./ScreenHeader";
 import {
   CASES_PATH,
-  RECORDED_RUNS_PENDING,
   REPLAY_RUN_PATH,
   RUN_VARIANTS,
   formatInstantUtc,
@@ -53,6 +53,11 @@ export function DecisionScreen({ step }: { step: Step }) {
   const rejected = run ? skepticRejected(run.skeptic.problems) : false;
   const valid = run && !rejected ? run : null;
   const forecastBadges = valid ? (["FORECAST", valid.prediction.provenance] as const) : ("NOT AVAILABLE" as const);
+  // #116: the committed RECORDED RUN forecast for this case + variant. When the live run is admin-gated (public
+  // demo), it becomes the primary view, still labeled RECORDED RUN and never shown as a live answer.
+  const recorded = useRecordedRun(selected, variant);
+  const gated = state.kind === "failed" && state.failure.kind === "admin_required";
+  const recordedPrimary = gated && recordedForecast(recorded) !== null;
 
   return (
     <div className="flex flex-col gap-8">
@@ -94,6 +99,18 @@ export function DecisionScreen({ step }: { step: Step }) {
               onRun={start}
               onCancel={cancel}
             />
+            <div className="border-t border-line pt-5" data-testid="recorded-slot">
+              <p className="kicker">Recorded run · committed forecast</p>
+              <div className="mt-2">
+                {recordedPrimary ? (
+                  <p className="text-[11px] leading-relaxed text-muted">
+                    Live runs are admin-only on the public demo. The committed RECORDED RUN forecast is shown in B.R.
+                  </p>
+                ) : (
+                  <RecordedRun state={recorded} variant={variant} primary={false} />
+                )}
+              </div>
+            </div>
             <div className="border-t border-line pt-5">
               <p className="kicker">Chosen path</p>
               <div className="mt-2">
@@ -104,6 +121,17 @@ export function DecisionScreen({ step }: { step: Step }) {
         </Panel>
 
         <div className="grid grid-cols-1 gap-6 sm:grid-cols-2 xl:col-span-7 xl:content-start">
+          {recordedPrimary ? (
+            <Panel
+              code="B.R"
+              title="Recorded run · committed forecast"
+              provenance="RECORDED_RUN"
+              provenanceDetail="public demo"
+              className="sm:col-span-2"
+            >
+              <RecordedRun state={recorded} variant={variant} primary />
+            </Panel>
+          ) : null}
           <Panel code="B.1" title="Agent probability" provenance={forecastBadges}>
             <FinancialReadout
               label="P(YES) · forecast"
@@ -418,13 +446,6 @@ function RunControls({
           ) : null}
         </div>
       )}
-
-      <div className="flex flex-col gap-1 border-l border-line pl-3">
-        <p className="font-mono text-[11px] uppercase tracking-[0.12em] text-muted">Recorded run: not available</p>
-        <p className="text-[11px] leading-relaxed text-muted">
-          {RECORDED_RUNS_PENDING.message} <code className="text-text-2">{RECORDED_RUNS_PENDING.request}</code>
-        </p>
-      </div>
     </div>
   );
 }

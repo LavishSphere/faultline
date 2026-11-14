@@ -762,17 +762,124 @@ export async function getReplayRoutes(signal?: AbortSignal): Promise<ReplayRoute
   };
 }
 
+/** One evidence item a recorded forecast cited, as it appeared in the exact snapshot the model was given. */
+export interface RecordedCitation {
+  evidence_id: string;
+  title: string | null;
+  available_at: string | null;
+  source_url: string | null;
+  provenance: string | null;
+}
+
 /**
- * Typed stub: retrieving a committed RECORDED RUN prediction for a case before its reveal. #91's `GET /api/benchmark`
- * serves post-reveal scorecards only, which DECISION must not show. Needed: e.g. `GET /api/replay/recorded?case_id=`
- * returning the persisted `Prediction[]` with hashes. Never fetches, never returns data.
+ * One committed RECORDED RUN forecast (routes/recorded.py `RecordedForecast`), served verbatim from a row of
+ * `data/recorded_runs/runs/<run_id>/` whose hashes the server recomputed. The type has no outcome field.
  */
-export const RECORDED_RUNS_PENDING: ReplayFailure = {
-  ok: false,
-  kind: "pending",
-  message: "No pre-reveal route serves committed RECORDED RUN predictions yet (GET /api/benchmark is post-reveal scorecards only).",
-  request: "GET /api/replay/recorded?case_id= (proposed)",
-};
+export interface RecordedForecast {
+  provenance: "RECORDED_RUN";
+  run_id: string;
+  prediction_id: string;
+  case_id: string;
+  agent_variant: ForecastVariant;
+  as_of: string;
+  p_yes: number;
+  decision: Decision;
+  rationale: string;
+  evidence_ids: string[];
+  cited_evidence: RecordedCitation[];
+  agent_model: string;
+  model_tag: string | null;
+  model_digest: string | null;
+  temperature: number;
+  seed: number | null;
+  attempts: number | null;
+  prompt_sha256: string;
+  gated_prompt_sha256: string | null;
+  snapshot_sha256: string;
+  record_sha256: string;
+  row_sha256: string;
+  recorded_at: string;
+  persisted_at: string;
+  case_synthetic: boolean;
+  contamination_flag: string | null;
+  model_card_contamination_flag: string | null;
+}
+
+export interface RecordedResponse {
+  status: "AVAILABLE" | "NOT AVAILABLE";
+  provenance: "RECORDED_RUN";
+  case_id: string;
+  items: RecordedForecast[];
+  notes: string[];
+}
+
+export const RECORDED_PATH = "/api/replay/recorded";
+export const recordedPath = (caseId: string, variant: ForecastVariant) =>
+  `${RECORDED_PATH}?case_id=${encodeURIComponent(caseId)}&agent_variant=${encodeURIComponent(variant)}`;
+
+const DECISIONS: readonly Decision[] = ["act", "wait", "hedge"];
+
+function checkRecordedForecast(f: unknown, at: string, caseId: string, variant: ForecastVariant): string | null {
+  if (!isObj(f)) return `${at} is not an object`;
+  if (f.provenance !== "RECORDED_RUN") return `${at}.provenance is not RECORDED_RUN`;
+  if (f.case_id !== caseId) return `${at} is for a different case`;
+  if (f.agent_variant !== variant) return `${at} is for a different variant`;
+  for (const k of ["run_id", "prediction_id", "rationale", "agent_model"] as const) {
+    if (!isStr(f[k])) return `${at}.${k} is not a string`;
+  }
+  if (!isProb(f.p_yes)) return `${at}.p_yes is not a probability`;
+  if (!DECISIONS.includes(f.decision as Decision)) return `${at}.decision is not act/wait/hedge`;
+  if (!isStrArray(f.evidence_ids)) return `${at}.evidence_ids is not a string list`;
+  if (!Array.isArray(f.cited_evidence) || !f.cited_evidence.every((c) => isObj(c) && isStr(c.evidence_id))) {
+    return `${at}.cited_evidence is not a list of cited items`;
+  }
+  for (const k of ["as_of", "recorded_at", "persisted_at"] as const) {
+    if (!isInstant(f[k])) return `${at}.${k} is not an instant`;
+  }
+  for (const k of ["prompt_sha256", "snapshot_sha256", "record_sha256", "row_sha256"] as const) {
+    if (!isSha(f[k])) return `${at}.${k} is not a sha256`;
+  }
+  if (!isNullOr(f.gated_prompt_sha256, isSha)) return `${at}.gated_prompt_sha256 is not a sha256 or null`;
+  if (!isNullOr(f.model_tag, isStr) || !isNullOr(f.model_digest, isStr)) return `${at} model tag/digest malformed`;
+  if (typeof f.case_synthetic !== "boolean") return `${at}.case_synthetic is not a boolean`;
+  return null;
+}
+
+/** Shape check for GET /api/replay/recorded. Returns a problem string, or null when on contract. */
+export function checkRecordedResponse(body: unknown, caseId: string, variant: ForecastVariant): string | null {
+  if (!isObj(body)) return "not an object";
+  if (body.status !== "AVAILABLE" && body.status !== "NOT AVAILABLE") return "status is not AVAILABLE / NOT AVAILABLE";
+  if (body.provenance !== "RECORDED_RUN") return "provenance is not RECORDED_RUN";
+  if (body.case_id !== caseId) return "response is for a different case";
+  if (!isStrArray(body.notes)) return "notes is not a string list";
+  if (!Array.isArray(body.items)) return "items is not a list";
+  if (body.status === "AVAILABLE" && body.items.length === 0) return "AVAILABLE with no items";
+  if (body.status === "NOT AVAILABLE" && body.items.length > 0) return "NOT AVAILABLE with items";
+  for (let i = 0; i < body.items.length; i++) {
+    const problem = checkRecordedForecast(body.items[i], `items[${i}]`, caseId, variant);
+    if (problem) return problem;
+  }
+  return null;
+}
+
+/**
+ * GET /api/replay/recorded?case_id=&agent_variant= (routes/recorded.py, #116): the committed RECORDED RUN forecasts
+ * for one case and variant, newest run first. Read-only and public; it never runs the model or reveals anything.
+ * Never throws.
+ */
+export async function getRecorded(
+  caseId: string,
+  variant: ForecastVariant,
+  signal?: AbortSignal,
+): Promise<ReplayResult<RecordedResponse>> {
+  const res = await request("GET", recordedPath(caseId, variant), 6000, signal);
+  if (!res.ok) return res;
+  const problem = checkRecordedResponse(res.data, caseId, variant);
+  if (problem) {
+    return { ok: false, kind: "malformed", message: `malformed recorded-run payload: ${problem}`, request: res.request };
+  }
+  return { ok: true, data: res.data as RecordedResponse, request: res.request };
+}
 
 // --------------------------------------------------------------------------------------------- display helpers
 
