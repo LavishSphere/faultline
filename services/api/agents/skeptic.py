@@ -17,6 +17,12 @@ Sentence splitting is a plain heuristic (split after . ! ? followed by whitespac
 are joined to the next sentence), so a warning is a prompt for a human look, not a verdict. Shape matching
 compares tokens with an offered id's prefix up to its last separator (``evid_a`` -> ``evid_``), ignoring case
 and treating ``_ - . :`` alike. Evidence ids are often slugs (``bad-quarter``), so shape alone is only a warning.
+
+Field-label normalisation (pre-run format fix, EVALUATION_PROTOCOL §8, 2026-11-14): inside a citation group, the
+schema field name ``evidence_id`` / ``evidence_ids`` used as a label (optionally quoted, followed by ``:`` or ``=``,
+as in ``(evidence_id: fomc-2026-jul.minutes)``) is dropped before the group's tokens are checked. Only that exact
+label is dropped; every remaining token must still match an offered id exactly (no case folding, no "closest" id),
+the rationale itself is never edited, and dropping a label can only remove the label's own UNKNOWN_CITED_ID error.
 """
 
 from __future__ import annotations
@@ -52,6 +58,8 @@ _ID_TOKEN = re.compile(r"[A-Za-z0-9_\-.:]+")
 _SEPARATORS = re.compile(r"[\-.:]")
 # Citation forms: "(evid_a)", "(evid_a, evid_b)", "[evid_a]".
 _CITATION_GROUP = re.compile(r"[(\[]([^()\[\]]*)[)\]]")
+# The prompt's own JSON key used as a label in a citation: "evidence_id: x", '"evidence_ids": x', "evidence_id=x".
+_FIELD_LABEL = re.compile(r"""(?<![A-Za-z0-9_\-.:"'`])["'`]?evidence_ids?["'`]?\s*[:=]\s*""")
 # An id-shaped piece: id grammar (models.Identifier) with at least one separator or digit.
 _ID_SHAPED = re.compile(r"(?=[A-Za-z0-9_.:\-]*[_\-.:0-9])[A-Za-z0-9_.:\-]+")
 _STRONG_ID_MARK = re.compile(r"[_0-9]")
@@ -133,7 +141,7 @@ def _unoffered_cited_ids(text: str, offered: list[str]) -> tuple[set[str], set[s
     offered_set = set(offered)
     errors: set[str] = set()
     for group in _CITATION_GROUP.finditer(text):
-        content = group.group(1)
+        content = _FIELD_LABEL.sub(" ", group.group(1))
         pieces = [p.rstrip(".:-") for p in re.split(r"[\s,;]+", content.strip()) if p.strip()]
         pure_list = bool(pieces) and all(_ID_SHAPED.fullmatch(p) for p in pieces)
         has_offered = any(p in offered_set for p in pieces)

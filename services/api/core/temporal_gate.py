@@ -40,7 +40,7 @@ from markets.base import MARKET_LABEL, SYNTHETIC_QUOTE_LABEL, SYNTHETIC_VENUE, N
 from markets.normalize import DEFAULT_MAX_STALENESS, select_quote
 from models import OUTCOME_FIELD_PATTERN, EvidenceItem, ReplayCase, ReplayCasePublic
 
-PROMPT_TEMPLATE_VERSION = "replay-v1"
+PROMPT_TEMPLATE_VERSION = "replay-v2"
 PROMPT_VARIANTS = ("agent_only", "agent_plus_market")
 PromptVariant = Literal["agent_only", "agent_plus_market"]
 
@@ -327,6 +327,25 @@ def _pretty(obj: Any) -> str:
     return json.dumps(obj, indent=2, sort_keys=True, ensure_ascii=False, allow_nan=False)
 
 
+def _allowed_ids_block(evidence_ids: list[str], variant: PromptVariant) -> list[str]:
+    """The explicit id list (replay-v2, pre-run format fix of 2026-11-14, EVALUATION_PROTOCOL §8).
+
+    Rehearsal finding: llama3.1:8b cited the JSON key as a label ("(evidence_id: x)") and, with market input, put
+    a quote's market_id into evidence_ids. Built only from the gated evidence ids, so it adds nothing the
+    evidence JSON above does not already show."""
+    lines = [
+        "Allowed evidence ids (evidence_ids may contain only these, copied exactly): "
+        + json.dumps(evidence_ids, ensure_ascii=False)
+    ]
+    if evidence_ids:
+        lines.append(
+            f"In the rationale, cite an id in parentheses exactly as listed, with no label, e.g. ({evidence_ids[0]})."
+        )
+    if variant == "agent_plus_market":
+        lines.append("A market_id is not an evidence id: never put a market_id in evidence_ids or in a citation.")
+    return lines
+
+
 def _render(snap: GatedSnapshot, variant: PromptVariant, payload: dict[str, list[dict[str, Any]]]) -> str:
     case = snap.case
     parts = [
@@ -347,7 +366,7 @@ def _render(snap: GatedSnapshot, variant: PromptVariant, payload: dict[str, list
     if variant == "agent_plus_market":
         synthetic = any(q.get("provenance") == "SYNTHETIC" for q in payload["market_quotes"])
         parts += ["", _SYNTHETIC_MARKET_HEADER if synthetic else _MARKET_HEADER, _pretty(payload["market_quotes"])]
-    parts += ["", _ANSWER_FORMAT]
+    parts += ["", *_allowed_ids_block([e["evidence_id"] for e in payload["evidence"]], variant), "", _ANSWER_FORMAT]
     return "\n".join(parts) + "\n"
 
 

@@ -77,7 +77,8 @@ REPAIR_INSTRUCTION = (
     "\n\n---\nA previous answer to the request above was not valid. Problems:\n{problems}\n"
     "Answer again with exactly one JSON object and nothing else, with exactly these keys: "
     '"p_yes" (a number from 0 to 1), "decision" ("act", "wait" or "hedge"), '
-    '"rationale" (at most 600 characters), "evidence_ids" (only ids of evidence items given above).'
+    '"rationale" (at most 600 characters), "evidence_ids" (only ids from the "Allowed evidence ids" line above, '
+    "copied exactly; a market_id is not an evidence id)."
 )
 
 

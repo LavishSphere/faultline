@@ -167,8 +167,8 @@ tie rule, B and the bootstrap pairing.
   `PredictionStore.verify(prediction_id)` recomputes every hash (prompt, gated prompt, transcript, snapshot,
   record), checks that a repair prompt is the gated prompt plus exactly the provider's repair instruction, and
   checks the `audit_log` persist entry.
-- Prompt template version: `replay-v1` (printed in every prompt). Changing the template changes every
-  `prompt_sha256`, which is intended.
+- Prompt template version: `replay-v2` (printed in every prompt; `replay-v1` until the pre-run format change of
+  2026-11-14, §8). Changing the template changes every `prompt_sha256`, which is intended.
 
 ## 6. Scoring (MATH_MODEL §6)
 
@@ -266,6 +266,41 @@ file, is refused at load. Case files must not be hard links.
   nothing; (3) call `build_scorecard(vault, cases=EvidenceStore.from_dir())` once, which reveals and scores;
   (4) publish the scorecard with its exclusions and `official_blockers`.
 - Recorded demo runs are labeled `RECORDED RUN` and carry model id, digest, temperature, seed and both hashes.
+
+### Pre-run format changes (decided before any official forecast)
+
+**2026-11-14: template `replay-v1` → `replay-v2`, plus a skeptic label rule (#169).** Decided after a
+forecast-only rehearsal: real `ollama/llama3.1:8b`, all committed cases × both variants, a scratch store
+(`FAULTLINE_PREDICTIONS_DB`), nothing revealed and nothing scored. No official forecast existed at the time.
+The change is judged only on whether outputs pass `ForecastOutput` validation and the skeptic. It was never
+judged on whether forecasts were right, and nobody looked at any outcome. The rehearsal found two format
+failures:
+
+1. The rationale cited `(evidence_id: <id>)`, copying the JSON key. The skeptic read the label `evidence_id`
+   as an un-offered id, which gave `UNKNOWN_CITED_ID` and a rejection.
+2. With market input, the model listed a quote's `market_id` in `evidence_ids`, and did it again after the
+   repair turn (`ModelOutputInvalid`).
+
+Changes:
+
+- **Prompt (`core.temporal_gate._allowed_ids_block`).** After the evidence and market sections, the prompt
+  adds three things:
+  - `Allowed evidence ids (evidence_ids may contain only these, copied exactly): [...]`. The list holds exactly
+    the gated `ModelInput.evidence_ids`, so a withheld item's id is never shown (`test_temporal_gate`).
+  - A citation example with no label, `e.g. (<first offered id>)`.
+  - For `agent_plus_market` only: "A market_id is not an evidence id".
+- **Repair footer (`agents.local_ollama.REPAIR_INSTRUCTION`).** `evidence_ids` must come from the "Allowed
+  evidence ids" line, and a market_id is not an evidence id. The footer is still fixed text, so
+  `is_repair_instruction` and the store's repair check are unchanged.
+- **Skeptic normalisation (`agents.skeptic._FIELD_LABEL`).** Inside a `(...)` / `[...]` citation group, the
+  skeptic drops the exact schema label `evidence_id` / `evidence_ids` before the group's tokens are checked.
+  The label may be quoted and must be followed by `:` or `=`. Rules:
+  - Every remaining token must still match an offered id **exactly**. There is no case folding and no
+    "closest id".
+  - The rationale and `evidence_ids` are never edited.
+  - The only effect is that the label itself is no longer reported as an unknown id.
+
+`ForecastOutput` validation of `evidence_ids` is unchanged (exact match). No other prompt text changed.
 
 ---
 

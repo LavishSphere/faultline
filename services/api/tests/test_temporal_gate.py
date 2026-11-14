@@ -611,6 +611,40 @@ def test_public_case_lists_only_admissible_evidence_ids():
     assert store.get_as_of(EVENT, AS_OF - timedelta(days=1)).case.evidence_ids == ["evid_ok"]
 
 
+def _allowed_line(prompt: str) -> list[str]:
+    (line,) = [ln for ln in prompt.splitlines() if ln.startswith("Allowed evidence ids")]
+    return json.loads(line.split(": ", 1)[1])
+
+
+def test_prompt_lists_exactly_the_gated_evidence_ids_replay_v2():
+    # Pre-run format fix (2026-11-14): an explicit allowed-id list. It must name ONLY gated items: a late or
+    # unverified item's id is withheld exactly like its content.
+    for as_of, expected in ((AS_OF, ["evid_ok", "evid_edge"]), (AS_OF - timedelta(days=1), ["evid_ok"])):
+        for variant in ("agent_only", "agent_plus_market"):
+            try:
+                mi = EvidenceStore([standard_record()]).get_as_of(EVENT, as_of).model_input(variant)
+            except MarketNotAvailable:
+                continue
+            assert "template: replay-v2" in mi.prompt
+            assert _allowed_line(mi.prompt) == list(mi.evidence_ids) == expected
+            for withheld in ("evid_future", "evid_unverified", "evid_other"):
+                assert withheld not in mi.prompt
+            assert f"e.g. ({expected[0]})" in mi.prompt
+            assert ("never put a market_id in evidence_ids" in mi.prompt) == (variant == "agent_plus_market")
+
+
+def test_every_committed_prompt_lists_its_offered_ids():
+    cases = EvidenceStore.from_dir()
+    for cid in cases.case_ids():
+        snap = cases.get_as_of(cid, cases.public_case(cid).as_of)
+        for variant in ("agent_only", "agent_plus_market"):
+            try:
+                mi = snap.model_input(variant)
+            except MarketNotAvailable:
+                continue
+            assert _allowed_line(mi.prompt) == list(mi.evidence_ids), (cid, variant)
+
+
 def test_render_prompt_only_accepts_gated_snapshots():
     with pytest.raises(TypeError):
         render_prompt({"evidence": [], "market_quotes": []}, "agent_only")  # type: ignore[arg-type]
