@@ -702,10 +702,10 @@ def test_strip_check_tests_the_protection_even_when_the_case_has_nothing_to_stri
     assert facts(check)["Built-in stripping probe: outcome-like keys that survived"] != "0"
 
 
-def test_sealed_read_through_a_symlink_alias_is_seen(client, data_dir, tmp_path):
+def test_sealed_read_through_a_symlink_alias_is_seen(client, data_dir, tmp_path, make_symlink):
     write_case(data_dir, case_file())
     alias = tmp_path / "harmless_looking_dir"
-    alias.symlink_to(data_dir / "sealed_outcomes", target_is_directory=True)
+    make_symlink(alias, data_dir / "sealed_outcomes", target_is_directory=True)
     (alias / f"{EVENT}.json").read_text(encoding="utf-8")
     check = checks(get(client, case_id=EVENT))["sealed_folder_untouched"]
     assert check["status"] == "FAIL", check
@@ -724,7 +724,7 @@ def test_sealed_relative_read_after_chdir_is_seen(client, data_dir):
     assert check["status"] == "FAIL", check
 
 
-def test_sealed_read_of_the_configured_folder_under_another_name_is_seen(tmp_path, monkeypatch):
+def test_sealed_read_of_the_configured_folder_under_another_name_is_seen(tmp_path, monkeypatch, make_symlink):
     """The configured folder is matched by realpath, not by its name."""
     data = tmp_path / "data"
     (data / "sealed_outcomes").mkdir(parents=True)
@@ -735,7 +735,7 @@ def test_sealed_read_of_the_configured_folder_under_another_name_is_seen(tmp_pat
     assert integrity.is_sealed_path(str(data / "SEALED_OUTCOMES" / "x.json"))
     assert not integrity.is_sealed_path(str(other / "x.json"))
     link = tmp_path / "plain"
-    link.symlink_to(data / "sealed_outcomes", target_is_directory=True)
+    make_symlink(link, data / "sealed_outcomes", target_is_directory=True)
     assert integrity.is_sealed_path(str(link / "x.json"))
 
 

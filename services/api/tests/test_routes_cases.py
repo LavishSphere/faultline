@@ -174,13 +174,13 @@ def test_case_file_with_outcome_key_anywhere_is_rejected_without_echo(client, da
 
 
 @pytest.mark.parametrize("target", ["sealed_outcomes/case-a.json", "sealed_outcomes/valid-looking.json"])
-def test_symlink_out_of_demo_cases_is_refused_unread(client, data_dir, target):
+def test_symlink_out_of_demo_cases_is_refused_unread(client, data_dir, target, make_symlink):
     # The second target is a schema-valid case, so only the path check (not validation) can stop it.
     (data_dir / "sealed_outcomes" / "valid-looking.json").write_text(
         json.dumps(_file(_case("case-z", title=CANARY))), encoding="utf-8"
     )
     _write_case(data_dir, "case-a.json", _file(_case("case-a")))
-    (data_dir / "demo_cases" / "z.json").symlink_to(data_dir / target)
+    make_symlink(data_dir / "demo_cases" / "z.json", data_dir / target)
     resp = client.get("/api/cases")
     assert resp.status_code == 500
     body = resp.json()
@@ -190,12 +190,12 @@ def test_symlink_out_of_demo_cases_is_refused_unread(client, data_dir, target):
     assert str(data_dir) not in resp.text
 
 
-def test_cases_directory_symlinked_to_sealed_outcomes_is_refused(client, data_dir):
+def test_cases_directory_symlinked_to_sealed_outcomes_is_refused(client, data_dir, make_symlink):
     (data_dir / "demo_cases").rmdir()
     (data_dir / "sealed_outcomes" / "valid-looking.json").write_text(
         json.dumps(_file(_case("case-z", title=CANARY))), encoding="utf-8"
     )
-    (data_dir / "demo_cases").symlink_to(data_dir / "sealed_outcomes", target_is_directory=True)
+    make_symlink(data_dir / "demo_cases", data_dir / "sealed_outcomes", target_is_directory=True)
     resp = client.get("/api/cases")
     assert resp.status_code == 500
     assert resp.json()["code"] == "DATA_INVALID"

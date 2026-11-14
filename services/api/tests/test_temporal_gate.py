@@ -661,9 +661,14 @@ class _OpenRecorder:
         if not self.active:
             return
         if event == "open" and args and args[0] is not None:
-            self.paths.append(str(args[0]))
+            self.paths.append(self._slashed(args[0]))
         elif event in ("os.listdir", "os.scandir") and args:
-            self.paths.append(str(args[0]))
+            self.paths.append(self._slashed(args[0]))
+
+    @staticmethod
+    def _slashed(path) -> str:
+        # Windows paths use "\", so checks like "/out/runs/" in p would never match there (#122). No-op elsewhere.
+        return str(path).replace("\\", "/") if os.sep == "\\" else str(path)
 
 
 _RECORDER = _OpenRecorder()
@@ -714,7 +719,7 @@ def test_from_dir_refuses_the_sealed_outcomes_directory(tmp_path):
         EvidenceStore.from_dir(sealed / "nested")
 
 
-def test_from_dir_refuses_a_symlink_into_sealed_outcomes(tmp_path):
+def test_from_dir_refuses_a_symlink_into_sealed_outcomes(tmp_path, make_symlink):
     data = tmp_path / "data"
     sealed = data / "sealed_outcomes"
     sealed.mkdir(parents=True)
@@ -722,7 +727,7 @@ def test_from_dir_refuses_a_symlink_into_sealed_outcomes(tmp_path):
     target.write_text(json.dumps(case_file_dict()), encoding="utf-8")
     cases = data / "demo_cases"
     cases.mkdir()
-    (cases / f"{EVENT}.json").symlink_to(target)
+    make_symlink(cases / f"{EVENT}.json", target)
     with pytest.raises(SealedDataError):
         EvidenceStore.from_dir(cases)
 
@@ -734,7 +739,7 @@ def test_from_dir_refuses_sealed_dir_in_any_letter_case(tmp_path, name):
         EvidenceStore.from_dir(tmp_path / "data" / name)
 
 
-def test_from_dir_refuses_the_configured_sealed_dir_by_inode(tmp_path, monkeypatch):
+def test_from_dir_refuses_the_configured_sealed_dir_by_inode(tmp_path, monkeypatch, make_symlink):
     """Name checks alone are not enough: the configured sealed directory is also matched by (st_dev, st_ino)."""
     from core import temporal_gate
 
@@ -746,10 +751,71 @@ def test_from_dir_refuses_the_configured_sealed_dir_by_inode(tmp_path, monkeypat
     with pytest.raises(SealedDataError):
         EvidenceStore.from_dir(vault_dir / "nested")
     alias = tmp_path / "alias"
-    alias.symlink_to(vault_dir, target_is_directory=True)
+    make_symlink(alias, vault_dir, target_is_directory=True)
     with pytest.raises(SealedDataError):
         EvidenceStore.from_dir(alias)
     assert EvidenceStore.from_dir(tmp_path / "elsewhere").case_ids() == []
+
+
+# The `make_symlink` helper (tests/conftest.py, #122) skips only when the OS refuses to create the link.
+# Path.symlink_to is replaced, so these run the same way on every OS.
+
+
+def _privilege_not_held() -> OSError:
+    exc = OSError(22, "A required privilege is not held by the client")
+    exc.winerror = 1314  # set by hand: the constructor ignores winerror outside Windows
+    return exc
+
+
+def _raise(exc):
+    def fake(self, target, target_is_directory=False):
+        raise exc
+
+    return fake
+
+
+def test_make_symlink_skips_with_a_clear_reason_on_winerror_1314(tmp_path, monkeypatch, make_symlink):
+    monkeypatch.setattr(Path, "symlink_to", _raise(_privilege_not_held()))
+    with pytest.raises(pytest.skip.Exception) as skipped:
+        make_symlink(tmp_path / "link", tmp_path / "target")
+    assert str(skipped.value) == (
+        "OS refused to create a symlink (Windows without Developer Mode/admin): WinError 1314"
+    )
+
+
+@pytest.mark.parametrize("exc", [NotImplementedError("symlinks unsupported"), PermissionError(1, "not permitted")])
+def test_make_symlink_skips_when_symlinks_are_unsupported_or_not_permitted(tmp_path, monkeypatch, make_symlink, exc):
+    monkeypatch.setattr(Path, "symlink_to", _raise(exc))
+    with pytest.raises(pytest.skip.Exception) as skipped:
+        make_symlink(tmp_path / "link", tmp_path / "target")
+    assert str(skipped.value).startswith("OS refused to create a symlink: ")
+
+
+def test_make_symlink_does_not_skip_when_creation_succeeds(tmp_path, monkeypatch, make_symlink):
+    calls = []
+
+    def fake(self, target, target_is_directory=False):
+        calls.append((self, target, target_is_directory))
+
+    monkeypatch.setattr(Path, "symlink_to", fake)
+    try:
+        make_symlink(tmp_path / "link", tmp_path / "target", target_is_directory=True)
+    except pytest.skip.Exception as skipped:  # a skip here would hide the bug, so turn it into a failure
+        pytest.fail(f"skipped although the symlink was created: {skipped}")
+    assert calls == [(tmp_path / "link", tmp_path / "target", True)]
+
+
+@pytest.mark.parametrize(
+    "exc",
+    [FileExistsError(17, "File exists"), OSError(28, "No space left on device"), FileNotFoundError(2, "missing")],
+)
+def test_make_symlink_fails_instead_of_skipping_on_other_errors(tmp_path, monkeypatch, make_symlink, exc):
+    monkeypatch.setattr(Path, "symlink_to", _raise(exc))
+    try:
+        with pytest.raises(type(exc)):
+            make_symlink(tmp_path / "link", tmp_path / "target")
+    except pytest.skip.Exception as skipped:  # a skip here would hide the bug, so turn it into a failure
+        pytest.fail(f"skipped on an error that is not a symlink refusal: {skipped}")
 
 
 def test_from_dir_refuses_hard_linked_case_files(tmp_path):

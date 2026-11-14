@@ -1,6 +1,7 @@
 # FAULTLINE web
 
 Next.js (App Router) + TypeScript + Tailwind v4 + React Flow. Presenter flow for SPEC §2.
+Needs Node.js 22 (`.nvmrc`, `engines` in `package.json`; CI uses 22).
 
 ```bash
 cd apps/web
@@ -39,9 +40,18 @@ port 3799; CORS via `FAULTLINE_WEB_ORIGIN`), then runs `e2e/smoke.spec.ts` in Ch
 - CASCADE with the API unreachable: readouts show NOT AVAILABLE and inputs are disabled;
 - RESEARCH: at cutoff `2026-07-01T00:00:00Z` the not-yet-public count equals the API's (2 for the curated dataset).
 
-Expected figures are fetched from the API inside the test, never written into it. Python comes from
-`FAULTLINE_E2E_PYTHON`, else `services/api/.venv` (`make setup`), else `python3`. Ports: `FAULTLINE_E2E_API_PORT`,
-`FAULTLINE_E2E_WEB_PORT`. Each run rebuilds `out/` (the API base is inlined at build time). Traces of failed tests
+Expected figures are fetched from the API inside the test, never written into it. Ports: `FAULTLINE_E2E_API_PORT`,
+`FAULTLINE_E2E_WEB_PORT`.
+
+The Python that runs the API is the first of:
+
+1. `FAULTLINE_E2E_PYTHON`, a full path to a Python with the API installed, e.g.
+   `export FAULTLINE_E2E_PYTHON=/path/to/python`. Use it for an interpreter outside `services/api/.venv`;
+2. the API venv from the root README (`make setup` or the "Without make" steps):
+   `services/api/.venv/Scripts/python.exe` (Windows), then `services/api/.venv/bin/python` (macOS/Linux);
+3. `python` on `PATH` on Windows (there `python3` is usually the Microsoft Store stub), `python3` elsewhere (CI).
+
+So on Windows, once `services/api/.venv` exists, `npm run e2e` needs no extra setting. Each run rebuilds `out/` (the API base is inlined at build time). Traces of failed tests
 land in `node_modules/.cache/faultline-e2e/`. CI runs this as the `e2e` job.
 
 ## Screens
