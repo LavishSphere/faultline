@@ -104,10 +104,10 @@ the window).
 
 | `event_id` | Question (one binary per meeting) | `as_of` (UTC) | Market quote at `as_of` | Evidence items |
 |---|---|---|---|---|
-| `fomc-2026-jun` | Will the FOMC leave the target range for the federal funds rate unchanged at its June 16-17, 2026 meeting? | 2026-06-10T00:00:00Z | `NOT AVAILABLE` (no saved snapshot) | 4 |
+| `fomc-2026-jun` | Will the FOMC leave the target range for the federal funds rate unchanged at its June 16-17, 2026 meeting? | 2026-06-10T00:00:00Z | `NOT AVAILABLE` when Part 2 was built (no saved snapshot); quotes added by #153 from the #66 snapshots (Part 3 market table) | 4 |
 | `fomc-2026-jul` | ... unchanged at its July 28-29, 2026 meeting? | 2026-07-22T00:00:00Z | Kalshi `KXFEDDECISION-26JUL-H0` ("Fed maintains rate"): bid/ask midpoint **0.855** (bid 0.8500, ask 0.8600), candle ending 2026-07-22T00:00:00Z. Polymarket `1654958` ("no change"): price-history point **0.839** at 2026-07-21T23:00:22Z. Both from the saved #12 snapshots | 4 |
-| `fomc-2026-sep` | ... unchanged at its September 15-16, 2026 meeting? | 2026-09-09T00:00:00Z | `NOT AVAILABLE` (no saved snapshot) | 4 |
-| `fomc-2026-oct` | ... unchanged at its October 27-28, 2026 meeting? | 2026-10-21T00:00:00Z | `NOT AVAILABLE` (no saved snapshot) | 4 |
+| `fomc-2026-sep` | ... unchanged at its September 15-16, 2026 meeting? | 2026-09-09T00:00:00Z | `NOT AVAILABLE` when Part 2 was built (no saved snapshot); quotes added by #153 (Part 3) | 4 |
+| `fomc-2026-oct` | ... unchanged at its October 27-28, 2026 meeting? | 2026-10-21T00:00:00Z | `NOT AVAILABLE` when Part 2 was built (no saved snapshot); quotes added by #153 (Part 3) | 4 |
 
 Market prices are a **market-implied probability (price-derived; affected by fees, spread, liquidity), not a
 true probability**. The July quotes were produced by the #12 parsers and normalizer (`parse_candlesticks`,
@@ -262,10 +262,10 @@ window (January 27-28, March 17-18, April 28-29, June 16-17, July 28-29, Septemb
 | Jan 27-28, 2026 | `fomc-2026-jan` | 2026-01-21T00:00:00Z | yes | included (new) | available | 4 |
 | Mar 17-18, 2026 | `fomc-2026-mar` | 2026-03-11T00:00:00Z | yes | included (new) | available | 4 |
 | Apr 28-29, 2026 | `fomc-2026-apr` | 2026-04-22T00:00:00Z | yes | included (new) | available | 4 |
-| Jun 16-17, 2026 | `fomc-2026-jun` | 2026-06-10T00:00:00Z | yes (#66 snapshots) | included (Part 2, unchanged) | `NOT AVAILABLE` (file built before #66) | 4 |
+| Jun 16-17, 2026 | `fomc-2026-jun` | 2026-06-10T00:00:00Z | yes (#66 snapshots) | included (Part 2; quotes added by #153) | available | 4 |
 | Jul 28-29, 2026 | `fomc-2026-jul` | 2026-07-22T00:00:00Z | yes | included (Part 2, unchanged) | available | 4 |
-| Sep 15-16, 2026 | `fomc-2026-sep` | 2026-09-09T00:00:00Z | yes (#66 snapshots) | included (Part 2, unchanged) | `NOT AVAILABLE` (file built before #66) | 4 |
-| Oct 27-28, 2026 | `fomc-2026-oct` | 2026-10-21T00:00:00Z | yes (#66 snapshots) | included (Part 2, unchanged) | `NOT AVAILABLE` (file built before #66) | 4 |
+| Sep 15-16, 2026 | `fomc-2026-sep` | 2026-09-09T00:00:00Z | yes (#66 snapshots) | included (Part 2; quotes added by #153) | available | 4 |
+| Oct 27-28, 2026 | `fomc-2026-oct` | 2026-10-21T00:00:00Z | yes (#66 snapshots) | included (Part 2; quotes added by #153) | available | 4 |
 
 **Exclusions: none.** All 15 meetings pass rule 3, and none fails rule 7 (a), (b) or (c).
 
@@ -275,13 +275,19 @@ held yet); December 17-18, 2024 (outside the window; its statement and minutes a
 
 **June, September and October 2026.** #66 saved T−7 snapshots for these meetings on both venues (Kalshi
 `KXFEDDECISION-26JUN-H0`, `-26SEP-H0`, `-26OCT-H0`; Polymarket `906974`, `2252244`, `2589812`), so they pass rule 3. Their
-case files were built under Part 2 before those snapshots existed, and this issue reuses them unchanged, so they
-still have `market_quotes: []` and the gate reports their market baseline `NOT AVAILABLE` (Part 1 rule 6). Adding the
-quotes would change each file's `snapshot_hash` and `case_sha256`, so it is left as a follow-up for a lead to decide.
+case files were built under Part 2 before those snapshots existed, and #67 reused them unchanged with
+`market_quotes: []`. **Issue #153 added their quotes** with exactly the procedure used for the 11 new files (below):
+the #66 raw bytes, each checked against its manifest SHA-256 and against `origin/main`, re-parsed with
+`parse_candlesticks` / `parse_prices_history` and `normalize_quotes`, keeping every quote with
+`as_of − 24h ≤ ts ≤ as_of`. Before writing anything, the same code rebuilt the committed quotes of all 12 cases that
+already had them (the 11 new files and `fomc-2026-jul`) and matched every one exactly. All three new quote sets fall
+inside the 24-hour window, so each file now sets `market_quote_id = kalshi:KXFEDDECISION-26{JUN,SEP,OCT}-H0`. This
+changed their `snapshot_hash` (now the `agent_plus_market` payload) and `case_sha256`; no recorded run had been
+committed for them, so nothing recorded is invalidated. `data/raw` was not modified.
 
-### Market quotes in the new case files
+### Market quotes in the case files
 
-Each new file holds every saved quote with `as_of − 24h ≤ ts ≤ as_of` for both markets (Kalshi first, then
+Each of these 14 files (the 11 new ones, plus June, September and October 2026 since #153) holds every saved quote with `as_of − 24h ≤ ts ≤ as_of` for both markets (Kalshi first, then
 Polymarket). The gate selects the last quote per market. The scored baseline is the Kalshi market named in
 `market_quote_id` (`kalshi:<market_id>`), fixed in the file. Prices are a **market-implied probability (price-derived;
 affected by fees, spread, liquidity), not a true probability**. Nothing was typed by hand, interpolated or estimated.
@@ -299,6 +305,15 @@ affected by fees, spread, liquidity), not a true probability**. Nothing was type
 | `fomc-2026-jan` | `KXFEDDECISION-26JAN-H0` ("Fed maintains rate"): midpoint **0.965** (bid 0.9600, ask 0.9700), candle ending 2026-01-21T00:00:00Z | `601699`: price-history point **0.972** at 2026-01-20T23:00:18Z | 25 / 24 |
 | `fomc-2026-mar` | `KXFEDDECISION-26MAR-H0` ("Fed maintains rate"): midpoint **0.985** (bid 0.9800, ask 0.9900), candle ending 2026-03-11T00:00:00Z | `654414`: price-history point **0.9885** at 2026-03-10T23:00:30Z | 25 / 24 |
 | `fomc-2026-apr` | `KXFEDDECISION-26APR-H0` ("Fed maintains rate"): midpoint **0.985** (bid 0.9800, ask 0.9900), candle ending 2026-04-22T00:00:00Z | `669662`: price-history point **0.9935** at 2026-04-21T23:00:43Z | 25 / 11 |
+| `fomc-2026-jun` (#153) | `KXFEDDECISION-26JUN-H0` ("Fed maintains rate"): midpoint **0.985** (bid 0.9800, ask 0.9900), candle ending 2026-06-10T00:00:00Z | `906974`: price-history point **0.9905** at 2026-06-09T23:00:05Z | 25 / 24 |
+| `fomc-2026-sep` (#153) | `KXFEDDECISION-26SEP-H0` ("Fed maintains rate"): midpoint **0.455** (bid 0.4500, ask 0.4600), candle ending 2026-09-09T00:00:00Z | `2252244`: price-history point **0.455** at 2026-09-08T23:00:18Z | 25 / 24 |
+| `fomc-2026-oct` (#153) | `KXFEDDECISION-26OCT-H0` ("Fed maintains rate"): midpoint **0.875** (bid 0.8700, ask 0.8800), candle ending 2026-10-21T00:00:00Z | `2589812`: price-history point **0.855** at 2026-10-20T23:00:22Z | 25 / 24 |
+
+The #153 raw files are `services/api/data/raw/kalshi/KXFEDDECISION-26JUN-H0/20261113T175759977809Z.json`
+(sha256 `48cefbd1…c1d1`), `…/KXFEDDECISION-26SEP-H0/20261113T175808560430Z.json` (`6b27563e…d8b9`),
+`…/KXFEDDECISION-26OCT-H0/20261113T175816953742Z.json` (`42559c0f…39dc`), `polymarket/906974/20261113T175800502149Z.json`
+(`734abff4…2f49`), `polymarket/2252244/20261113T175808962655Z.json` (`b248f4c4…d454`) and
+`polymarket/2589812/20261113T175817475345Z.json` (`5cba1add…403c`), each matching its `manifest.json`.
 
 Venue rules compared with ours: Kalshi YES means "a Hike of 0bps", and Polymarket measures the change in the upper
 bound only. Our rule needs **both** bounds unchanged. The three agree unless one bound moves alone. A cancelled meeting
@@ -356,7 +371,10 @@ How each item was checked (automated; the human check is below):
   part of any case. `VERIFY_67.md` lists them, and adding them would need a rule change recorded here.
 
 `snapshot_hash` was computed exactly as in Part 2 (`agent_plus_market` payload when a quote is selected) and checked
-by reloading every case through `EvidenceStore`. The four Part 2 hashes still match.
+by reloading every case through `EvidenceStore`. The four Part 2 hashes still match. After #153 added the June,
+September and October 2026 quotes, their `snapshot_hash` was recomputed the same way (`agent_plus_market` payload)
+with the loader on `main` at `6698a5f`, and all 16 committed case hashes (15 FOMC plus the synthetic case) were
+re-checked to match.
 
 ### Step 3: sealed outcomes
 
@@ -377,17 +395,21 @@ blind.
 
 ### Known limits of the extended set
 
-- **n = 15 real cases** (MATH_MODEL §6: at least 5, so no longer `INSUFFICIENT DATA`, but well under 30, so the
-  small-sample caveat applies, and "better" only if the bootstrap CI excludes 0). In the committed files 12 cases
-  have a market baseline, so a market comparison has n = 12 until the June, September and October 2026 files are
-  rebuilt with their #66 quotes.
+- **Scored n = 15 real cases** in each variant. Since #153 all 15 committed files have a Kalshi market baseline at
+  `as_of`, so neither `agent_only` nor `agent_plus_market` excludes any case as `market_not_available`, and the
+  agent-vs-market comparison also has n = 15 (provided each case has exactly one forecast per variant persisted
+  before any reveal; otherwise the scorecard lists the exclusion and its reason). MATH_MODEL §6: n ≥ 5, so the
+  scoreboard does not show `INSUFFICIENT DATA`; n < 30, so the small-sample caveat must be shown; and a forecaster may
+  be called "better" only if the bootstrap CI of the score difference excludes 0.
 - **Correlated draws.** 15 consecutive decisions of one committee are not independent, and the market priced
   several of them close to 0 or 1. A small CI computed on them still overstates how much they tell us.
 - **Cross-case visibility now runs through 15 meetings.** Each case's first evidence item is the previous meeting's
   statement, which is the previous case's result (for example `fomc-2025-mar` contains the statement that settles
   `fomc-2025-jan`, and `fomc-2026-jun` contains the one that settles `fomc-2026-apr`). Run every case in a fresh
-  model call. OFFICIAL runs forecast **all** cases before **any** reveal, and the UI must not show a later case's
-  evidence before an earlier case is revealed.
+  model call. OFFICIAL runs forecast **all** cases before **any** reveal (the evaluator enforces this). For live
+  demos: **reveal cases in date order on stage**, so the audience is not shown a later case's evidence (which
+  contains the earlier result) before the earlier case is revealed. This is presentation advice; the UI does not
+  enforce it in code.
 - **The curator read earlier results while building later cases**, as in Part 2. The selection was already fixed by
   rules 1-3.
 
