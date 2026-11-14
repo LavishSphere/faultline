@@ -1,0 +1,8 @@
+{
+  "event_id": "cpi-2025-aug",
+  "outcome": "YES",
+  "resolved_at": "2025-09-11T12:30:00Z",
+  "source_url": "https://www.bls.gov/news.release/archives/cpi_09112025.htm",
+  "provenance": "REAL_HISTORICAL",
+  "notes": "Settled by docs/CASES.md Part 4 rule 3 (YES iff the first-published one-month change in the seasonally adjusted CPI-U, all items, is 0.4 percent or more). Source: the BLS release for August 2025 (https://www.bls.gov/news.release/archives/cpi_09112025.htm; live bls.gov returned HTTP 403 to an automated request on 2026-11-14, so the text was read from the Internet Archive capture https://web.archive.org/web/20260911110826/https://www.bls.gov/news.release/archives/cpi_09112025.htm). Release line: \"8:30 a.m. (ET) Thursday, September 11, 2025\". First sentence: \"The Consumer Price Index for All Urban Consumers (CPI-U) increased 0.4 percent on a seasonally adjusted basis in August, after rising 0.2 percent in July, the U.S.\" Cross-check in the same release: Table A, 'All items', seasonally adjusted change for Aug. 2025 agrees with the first sentence. Venue rules: Polymarket top bucket '0.4% or more' and Kalshi 'Above 0.3%' (strictly greater, one-decimal Underlying) give the same answer."
+}

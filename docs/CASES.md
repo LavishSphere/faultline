@@ -1,11 +1,12 @@
-# Blind Replay cases (issues #20, #48, #67)
+# Blind Replay cases (issues #20, #48, #67, #82)
 
 Real, already-resolved yes/no events used by the Blind Replay (SPEC §4, §5; `docs/EVALUATION_PROTOCOL.md`).
 Case files: `services/api/data/demo_cases/<event_id>.json`. Sealed results: `services/api/data/sealed_outcomes/<event_id>.json`
 (read only by the evaluator). This document never states which way an included case resolved.
 
 Parts 1 and 2 cover the first four real cases (#20). Part 3 (#67) extends the set with one rule to every eligible
-FOMC meeting from January 2025 to October 2026 (15 cases, the first four included). The one synthetic fallback case
+FOMC meeting from January 2025 to October 2026 (15 cases, the first four included). Part 4 (#82) adds 13 US CPI prints
+under one rule (28 real cases in all). The one synthetic fallback case
 (issue #48) is not a real event; it has its own section at the end and is never pooled with the real cases.
 
 ## Part 1: Selection rule (pre-registered)
@@ -461,6 +462,223 @@ forecast had been committed for the old content, so nothing recorded is invalida
 | `fomc-2026-jul` | 2026-07-22T00:00:00Z | 2026-07-30T00:00:00Z | `e54cf9f4…4bf9` | `d65e55c7…` | `d2ca9b2d2a17097ffb4e5137c2173cd8e9b11ab237ceb5501f3e09cfa569c54a` |
 | `fomc-2026-sep` | 2026-09-09T00:00:00Z | 2026-09-17T00:00:00Z | `dd201a12…340d` | `444c9d35…` | `da9eba97e5145c46a8de5bfe5f6b4e3ced31105e3265c40242eebe2aefd59917` |
 | `fomc-2026-oct` | 2026-10-21T00:00:00Z | 2026-10-29T00:00:00Z | `488bafc5…65de` | `48d445d7…` | `795cba2e2c075be9f6a5a89b6562076f5796cf029a6eb986bc97e9b325c54ffc` |
+
+## Part 4: CPI prints (issue #82)
+
+Part 3 gives n = 15, all from one family. Issue #82 adds US CPI prints under one rule, stated here before it was
+applied. It takes every print the rule yields and lists every print it drops, with the reason.
+
+### Rule
+
+1. **Event family:** the monthly U.S. Bureau of Labor Statistics (BLS) Consumer Price Index news release (a "print").
+   The measured quantity is the **one-month percent change in the seasonally adjusted Consumer Price Index for All
+   Urban Consumers (CPI-U), all items**, as first published in that release and rounded to one decimal place as BLS
+   prints it (the first sentence of the release). Later revisions are ignored.
+2. **Window:** every reference month whose release was scheduled between 2025-01-01 and 2026-11-13 (the day #66
+   collected the snapshots): December 2024 to October 2026, 23 reference months.
+3. **One binary question per print: the top bucket.** Polymarket lists mutually exclusive one-decimal buckets for
+   each print. Only its **top bucket "≥ b%"** is the same event as a single Kalshi market, "Above (b − 0.1)%"
+   (`docs/CANDIDATE_MARKETS.md`, pairing rules). The case asks: *"Will the seasonally adjusted CPI-U all items index
+   increase by b% or more in <month>, as first published by the BLS?"*, with b taken from that pair. YES: the
+   one-month change printed by BLS is ≥ b. NO: it is < b. The buckets of a print are not separate events.
+   - The month-over-month measure is used for every print, never the year-over-year one, so the question has the
+     same form for every case. Why month-over-month: (a) it is the figure in the release's first sentence and the
+     Kalshi `KXCPI` contract's Underlying; (b) consecutive 12-month changes share 11 of their 12 months, so
+     year-over-year cases would be far more correlated with each other; (c) Polymarket has exactly one
+     month-over-month event per month, while two months (January and March 2026) have two year-over-year events,
+     whose two "top buckets" would need an extra tie-break.
+4. **Same question on both venues.** The pair must be listed under `pairs` (not `diverging_pairs`) for its CPI MoM
+   group in `services/api/data/raw/candidate_plan_51.json`. #66 marks the September 2025 and October 2025 pairs
+   "definitions diverge under non-release; NOT the same question"; they are excluded for that reason.
+5. **Released on the venues' date.** The BLS release date (read from the BLS CPI archive listing) must be the
+   calendar date of the pair's `reference_close` in the plan. Both venues settle on the same figure only if BLS
+   publishes when their rules expect (Kalshi extends expiry after a shutdown delay; Polymarket from November 2025
+   data falls back to the previous month's figure). A print released on another date is excluded: "release date
+   differs from the venues' scheduled close".
+6. **Cutoff (`as_of`):** 00:00:00 UTC on the calendar date exactly **7 days before** the BLS release date (release
+   time 8:30 a.m. ET, 12:30Z or 13:30Z). `horizon_days = 8`, so the question window (`as_of` + 8 days) ends at 00:00
+   UTC on the day after the release and contains it, for the same reason as Part 3's question-horizon fix (#158).
+   `tests/test_replay_seal.py::test_repo_case_horizon_covers_the_sealed_resolution_time` checks it for every case.
+7. **Priced on both venues at T−7.** A saved #66 snapshot under `services/api/data/raw/` must hold at least one
+   priced quote with `as_of − 24h ≤ ts ≤ as_of` for **both** the Kalshi market and the Polymarket market of the
+   pair, selected with the repo parsers, `normalize_quotes` and `select_quote` from the exact committed bytes (each
+   checked against its manifest SHA-256). Otherwise the print is excluded: "not priced on both venues at T−7". No
+   price is typed, interpolated or estimated, and nothing new is collected.
+8. **Market baseline:** Kalshi is the benchmark, fixed by `case.market_quote_id = kalshi:<ticker>`. The case file
+   holds every saved quote of both markets with `as_of − 24h ≤ ts ≤ as_of` (Kalshi first). Prices are a
+   market-implied probability (price-derived; affected by fees, spread, liquidity), not a true probability.
+9. **Evidence (fixed list, not hand-picked):** for each case, taking for each type the most recent one whose
+   release (or capture) time is at or before `as_of`:
+   1. the BLS CPI news release current at `as_of` (normally the previous month's print): its title line plus every
+      paragraph before "Table A.", the same excerpt rule as Part 1 rule 5;
+   2. the policy statement of the most recent scheduled FOMC meeting (full statement text, as in Part 1 rule 5);
+   3. the minutes of the most recent FOMC meeting whose minutes were released by `as_of` (paragraphs containing
+      "outlook for monetary policy", as in Part 1 rule 5);
+   4. the Federal Reserve Bank of Cleveland's inflation nowcast for the reference month, **only if** an Internet
+      Archive capture of its data file (`nowcast_month.json`, the file the nowcasting page loads) taken before
+      `as_of` contains a chart for that month. The excerpt copies, verbatim, the chart's update stamp and the daily
+      "CPI Inflation" (month-over-month) nowcast values. It is a model forecast, not the print. The capture's
+      "Actual CPI" values for the reference month must be empty, or the item is dropped.
+
+   BLS live pages refuse automated requests (HTTP 403), so BLS text comes from pre-`as_of` Internet Archive captures.
+   Every item records `published_at`, `available_at`, the source URL and a pre-`as_of` archive capture that contains
+   the excerpt. No Fed speech is used: picking speeches would be a hand choice.
+10. **Leak check.** No evidence item may contain the release being forecast. Mechanically: no item is the
+    reference month's own release, and no item contains that release's title line ("CONSUMER PRICE INDEX -
+    <MONTH YEAR>") or any of its opening paragraphs.
+11. **Exclusions (only these reasons):** rule 4 (not the same question), rule 5 (release date differs), rule 7 (not
+    priced on both venues at T−7), no top-bucket pair in the plan, no release for the month, or fewer than 3 evidence
+    items verified (rule 9).
+12. **Contamination and tuning:** as Part 1 rules 8 and 9 (`llama3.1:8b` cutoff December 2023, so
+    `contamination_flag = "unlikely"`; these are held-out cases, no prompt change after seeing results).
+13. **Case ids:** `cpi-<year>-<mon>` names the **reference month** (`cpi-2025-jan` is January 2025 CPI, released in
+    February 2025).
+
+**Order of work, stated plainly.** The rule above was written before any evidence was gathered and before any
+sealed result was looked up. It was not written blind: the curator (Claude) wrote it after #66 (snapshots and
+pairing) was merged and after reading Part 3, and it ran the availability test of rule 7 on both the
+month-over-month and the year-over-year pairs before choosing month-over-month (13 prints vs 14; no outcome was
+looked up for either). The reasons for the choice are in rule 3. The window and the eligibility idea ("same question
+on Kalshi and Polymarket, priced on both 7 days before") come from issue #82, written by a lead.
+
+### Step 1: every print the rule yields (rules 2-7, 11)
+
+Release dates are from the BLS CPI archive listing (Internet Archive capture
+https://web.archive.org/web/20261101113853/https://www.bls.gov/bls/news-release/cpi.htm; each included date was also
+read from the release's own embargo line). The October 2026 date (2026-11-10) is the venues' scheduled date: the
+listing capture predates it, so it is not verified here; that print is excluded by rule 7 either way. The
+pricing test used the saved #66 snapshots, bytes taken from git and checked against each manifest SHA-256.
+
+| Reference month | Pair (Polymarket top bucket = Kalshi market) | BLS release | `as_of` (UTC) | Status | Reason |
+|---|---|---|---|---|---|
+| Dec 2024 | ≥0.5% `518390` = `KXCPI-24DEC-T0.4` | 2025-01-15 | 2025-01-08 | excluded | rule 7: Polymarket has no priced quote in the 24 h before `as_of` |
+| Jan 2025 | ≥0.4% `518796` = `KXCPI-25JAN-T0.3` | 2025-02-12 | 2025-02-05 | **included** `cpi-2025-jan` | |
+| Feb 2025 | ≥0.5% `522192` = `KXCPI-25FEB-T0.4` | 2025-03-12 | 2025-03-05 | **included** `cpi-2025-feb` | (Polymarket end date 2025-03-31 is a #66 "close mismatch"; the reference close is the Kalshi close, the release date) |
+| Mar 2025 | none | 2025-04-10 | | excluded | no top-bucket pair: Polymarket ≥0.5% has no Kalshi "Above 0.4%" market |
+| Apr 2025 | ≥0.5% `535929` = `KXCPI-25APR-T0.4` | 2025-05-13 | 2025-05-06 | **included** `cpi-2025-apr` | |
+| May 2025 | ≥0.4% `544344` = `KXCPI-25MAY-T0.3` | 2025-06-11 | 2025-06-04 | **included** `cpi-2025-may` | |
+| Jun 2025 | ≥0.4% `551583` = `KXCPI-25JUN-T0.3` | 2025-07-15 | 2025-07-08 | **included** `cpi-2025-jun` | |
+| Jul 2025 | ≥0.5% `563695` = `KXCPI-25JUL-T0.4` | 2025-08-12 | 2025-08-05 | **included** `cpi-2025-jul` | |
+| Aug 2025 | ≥0.4% `575242` = `KXCPI-25AUG-T0.3` | 2025-09-11 | 2025-09-04 | **included** `cpi-2025-aug` | |
+| Sep 2025 | ≥0.5% `594157` = `KXCPI-25SEP-T0.4` | 2025-10-24 | | excluded | rule 4: #66 "definitions diverge under non-release; NOT the same question" (shutdown period) |
+| Oct 2025 | ≥0.5% `655625` = `KXCPI-25OCT-T0.4` | not published | | excluded | rule 4 (#66 diverging pair); BLS never published October 2025 CPI |
+| Nov 2025 | none | 2025-12-18 | | excluded | no top-bucket pair: Polymarket ≥0.5% has no Kalshi "Above 0.4%" market |
+| Dec 2025 | ≥0.5% `833219` = `KXCPI-25DEC-T0.4` | 2026-01-13 | 2026-01-06 | excluded | rule 7: no Polymarket snapshot (#66 refused it: venue end date 2025-12-13 is before the window) |
+| Jan 2026 | ≥0.5% `969649` = `KXCPI-26JAN-T0.4` | 2026-02-13 | 2026-02-06 | excluded | rule 5: released 2026-02-13, venues' reference close 2026-02-11; no snapshot covers the 24 h before `as_of` (both end 2026-02-04) |
+| Feb 2026 | ≥0.4% `1373678` = `KXCPI-26FEB-T0.3` | 2026-03-11 | 2026-03-04 | **included** `cpi-2026-feb` | |
+| Mar 2026 | ≥0.8% `1559154` = `KXCPI-26MAR-T0.7` | 2026-04-10 | 2026-04-03 | **included** `cpi-2026-mar` | |
+| Apr 2026 | ≥1.1% `1937996` = `KXCPI-26APR-T1.0` | 2026-05-12 | 2026-05-05 | excluded | rule 7: Kalshi has no priced quote in the 24 h before `as_of` |
+| May 2026 | ≥0.9% `2242053` = `KXCPI-26MAY-T0.8` | 2026-06-10 | 2026-06-03 | **included** `cpi-2026-may` | (see "May 2026" below) |
+| Jun 2026 | none | 2026-07-14 | | excluded | no top-bucket pair: Polymarket ≥0.9% has no Kalshi "Above 0.8%" market |
+| Jul 2026 | ≥0.1% `2925106` = `KXCPI-26JUL-T0.0` | 2026-08-12 | 2026-08-05 | **included** `cpi-2026-jul` | |
+| Aug 2026 | ≥0.5% `3539668` = `KXCPI-26AUG-T0.4` | 2026-09-11 | 2026-09-04 | **included** `cpi-2026-aug` | |
+| Sep 2026 | ≥0.8% `4469465` = `KXCPI-26SEP-T0.7` | 2026-10-14 | 2026-10-07 | **included** `cpi-2026-sep` | |
+| Oct 2026 | ≥0.9% `5691235` = `KXCPI-26OCT-T0.8` | 2026-11-10 (scheduled) | 2026-11-03 | excluded | rule 7: Kalshi returned observations but none priced |
+
+**Result: 13 included, 10 excluded.** The rule was not loosened to raise n. With the 15 FOMC cases of Part 3 the
+real-case set is n = 28, still under 30, so the small-sample caveat of MATH_MODEL §6 stays.
+
+**May 2026.** #66's table shows this Kalshi leg as NOT AVAILABLE because #66 measured T−7 from the scheduled close
+(2026-06-10T08:00Z − 7 days). Rule 6 measures it from 00:00Z on the release date − 7 days (2026-06-03T00:00Z), and
+the saved snapshot has a trade candle at 2026-06-02T06:00Z inside that window. The same convention applies to every
+print; this is the only one where it changes the answer.
+
+### Market quotes in the case files (rule 8)
+
+Each file holds every saved quote with `as_of − 24h ≤ ts ≤ as_of` for both markets (Kalshi first). The gate selects
+the last one per market. The scored baseline is the Kalshi market in `market_quote_id`. Prices are a
+**market-implied probability (price-derived; affected by fees, spread, liquidity), not a true probability**.
+
+| Case | Question threshold | Kalshi quote selected at `as_of` (benchmark) | Polymarket quote selected at `as_of` | Quotes in file (Kalshi / Polymarket) |
+|---|---|---|---|---|
+| `cpi-2025-jan` | ≥ 0.4% | `KXCPI-25JAN-T0.3`: midpoint **0.21** (bid 0.1800, ask 0.2400), 2025-02-04T19:00Z | `518796`: **0.175** at 2025-02-04T23:00:04Z | 6 / 24 |
+| `cpi-2025-feb` | ≥ 0.5% | `KXCPI-25FEB-T0.4`: midpoint **0.13** (bid 0.1000, ask 0.1600), 2025-03-04T22:00Z | `522192`: **0.09** at 2025-03-04T23:00:05Z | 7 / 24 |
+| `cpi-2025-apr` | ≥ 0.5% | `KXCPI-25APR-T0.4`: midpoint **0.085** (bid 0.0700, ask 0.1000), 2025-05-06T00:00Z | `535929`: **0.0725** at 2025-05-05T23:00:05Z | 19 / 24 |
+| `cpi-2025-may` | ≥ 0.4% | `KXCPI-25MAY-T0.3`: midpoint **0.075** (bid 0.0700, ask 0.0800), 2025-06-04T00:00Z | `544344`: **0.065** at 2025-06-03T23:00:05Z | 20 / 24 |
+| `cpi-2025-jun` | ≥ 0.4% | `KXCPI-25JUN-T0.3`: midpoint **0.085** (bid 0.0700, ask 0.1000), 2025-07-08T00:00Z | `551583`: **0.085** at 2025-07-07T23:00:06Z | 22 / 24 |
+| `cpi-2025-jul` | ≥ 0.5% | `KXCPI-25JUL-T0.4`: midpoint **0.025** (bid 0.0200, ask 0.0300), 2025-08-05T00:00Z | `563695`: **0.013** at 2025-08-04T23:00:10Z | 22 / 24 |
+| `cpi-2025-aug` | ≥ 0.4% | `KXCPI-25AUG-T0.3`: midpoint **0.44** (bid 0.4300, ask 0.4500), 2025-09-04T00:00Z | `575242`: **0.43** at 2025-09-03T23:00:13Z | 25 / 24 |
+| `cpi-2026-feb` | ≥ 0.4% | `KXCPI-26FEB-T0.3`: midpoint **0.135** (bid 0.1300, ask 0.1400), 2026-03-04T00:00Z | `1373678`: **0.12** at 2026-03-03T23:00:39Z | 20 / 22 |
+| `cpi-2026-mar` | ≥ 0.8% | `KXCPI-26MAR-T0.7`: midpoint **0.885** (bid 0.8800, ask 0.8900), 2026-04-03T00:00Z | `1559154`: **0.88** at 2026-04-02T23:00:49Z | 25 / 15 |
+| `cpi-2026-may` | ≥ 0.9% | `KXCPI-26MAY-T0.8`: trade candle close **0.02** (bid 0.0000, ask 0.0300), 2026-06-02T06:00Z | `2242053`: **0.0065** at 2026-06-02T23:00:06Z | 1 / 24 |
+| `cpi-2026-jul` | ≥ 0.1% | `KXCPI-26JUL-T0.0`: midpoint **0.625** (bid 0.6200, ask 0.6300), 2026-08-05T00:00Z | `2925106`: **0.67** at 2026-08-04T23:00:13Z | 25 / 24 |
+| `cpi-2026-aug` | ≥ 0.5% | `KXCPI-26AUG-T0.4`: midpoint **0.125** (bid 0.1000, ask 0.1500), 2026-09-04T00:00Z | `3539668`: **0.135** at 2026-09-03T23:00:36Z | 11 / 24 |
+| `cpi-2026-sep` | ≥ 0.8% | `KXCPI-26SEP-T0.7`: midpoint **0.025** (bid 0.0200, ask 0.0300), 2026-10-07T00:00Z | `4469465`: **0.011** at 2026-10-06T23:00:28Z | 24 / 25 |
+
+Polymarket quotes are CLOB price-history points (the docs do not say whether `p` is a midpoint or a last trade).
+Venue rules compared (market text read through the repo adapters on 2026-11-14, not stored; Kalshi `KXCPI` contract
+terms PDF read the same day, today's version): both venues settle on the BLS first-published, one-decimal, seasonally
+adjusted one-month CPI-U change; Polymarket "b% or more" and Kalshi "strictly greater than b − 0.1" are the same
+event on one-decimal values. They differ only if BLS does not publish on schedule, which rule 5 rules out.
+
+### Step 2: evidence (rule 9)
+
+49 items: 10 cases have all four documents, and `cpi-2025-may`, `cpi-2025-jun` and `cpi-2025-aug` have three,
+because the latest pre-`as_of` capture of the Cleveland Fed data file (2025-04-15, 2025-04-15 and 2025-07-27) has
+no chart for that month. For every case the BLS release current at `as_of` was the previous month's CPI.
+
+| Case | BLS CPI release (previous month) | FOMC statement | FOMC minutes (meeting) | Cleveland Fed nowcast capture (file stamp) |
+|---|---|---|---|---|
+| `cpi-2025-jan` | Jan 15 2025 (December 2024) | Jan 29 2025 | Jan 8 2025 (Dec 17-18, 2024) | 2025-01-13T01:48Z ("2025-01-10 14:31") |
+| `cpi-2025-feb` | Feb 12 2025 (January 2025) | Jan 29 2025 | Feb 19 2025 (Jan 28-29) | 2025-02-15T08:00Z ("2025-02-14 00:00") |
+| `cpi-2025-apr` | Apr 10 2025 (March 2025) | Mar 19 2025 | Apr 9 2025 (Mar 18-19) | 2025-04-15T23:32Z ("2025-04-15 00:00") |
+| `cpi-2025-may` | May 13 2025 (April 2025) | May 7 2025 | May 28 2025 (May 6-7) | none (no chart for May) |
+| `cpi-2025-jun` | Jun 11 2025 (May 2025) | Jun 18 2025 | May 28 2025 (May 6-7) | none (no chart for June) |
+| `cpi-2025-jul` | Jul 15 2025 (June 2025) | Jul 30 2025 | Jul 9 2025 (Jun 17-18) | 2025-07-27T01:05Z ("2025-07-25 00:00") |
+| `cpi-2025-aug` | Aug 12 2025 (July 2025) | Jul 30 2025 | Aug 20 2025 (Jul 29-30) | none (no chart for August) |
+| `cpi-2026-feb` | Feb 13 2026 (January 2026) | Jan 28 2026 | Feb 18 2026 (Jan 27-28) | 2026-02-22T03:01Z ("2026-02-20 00:00") |
+| `cpi-2026-mar` | Mar 11 2026 (February 2026) | Mar 18 2026 | Feb 18 2026 (Jan 27-28) | 2026-03-25T05:29Z ("2026-03-24 00:00") |
+| `cpi-2026-may` | May 12 2026 (April 2026) | Apr 29 2026 | May 20 2026 (Apr 28-29) | 2026-05-06T15:22Z ("2026-05-06 00:00") |
+| `cpi-2026-jul` | Jul 14 2026 (June 2026) | Jul 29 2026 | Jul 8 2026 (Jun 16-17) | 2026-08-04T17:20Z ("2026-08-04 00:00") |
+| `cpi-2026-aug` | Aug 12 2026 (July 2026) | Jul 29 2026 | Aug 19 2026 (Jul 28-29) | 2026-09-01T00:24Z ("2026-08-31 00:00") |
+| `cpi-2026-sep` | Sep 11 2026 (August 2026) | Sep 16 2026 | Aug 19 2026 (Jul 28-29) | 2026-10-06T06:26Z ("2026-10-05 00:00") |
+
+How each item was checked (automated; the confirmation record is `docs/curation/VERIFY_82.md`):
+- **Federal Reserve pages** (26 items) were fetched live on 2026-11-14 and each excerpt paragraph was also found in
+  the latest Internet Archive capture of the same URL taken before `as_of`.
+- **BLS pages refuse automated requests (HTTP 403, rechecked 2026-11-14).** The 13 CPI excerpts come from the latest
+  pre-`as_of` capture of the permanent BLS archive URL, and each paragraph was also found in the latest pre-`as_of`
+  capture of `cpi.nr0.htm`, which also decides which release was current. Three excerpts (`cpi-2025-feb`,
+  `cpi-2025-may`, `cpi-2025-aug`) include BLS's boxed methodology notice, as in Part 3.
+- **Cleveland Fed** (10 items, archive-only): values copied as strings from the reference month's chart in the
+  latest pre-`as_of` capture of `nowcast_month.json`; `published_at = available_at` = the capture time; the
+  capture's "Actual CPI Inflation" values for that month were empty. Classified as a model forecast. A capture can be
+  weeks older than `as_of` (`cpi-2025-jan`: 2025-01-13), so it may not be the latest nowcast that existed then.
+- **Leak check (rule 10):** no item is the reference month's own release; no item contains that release's title line
+  or any of its opening paragraphs (checked against each month's own release when sealing; all 13 ok).
+- `retrospective_unverified = false` for all 49 items (each has a pre-`as_of` capture containing its text).
+- **Confirmation:** `docs/curation/VERIFY_82.md`. At the finance owner's request the 49 evidence rows were checked by
+  an independent AI re-check (a separate read-only auditor agent; all passed), **not** by a manual human check, and
+  all 13 sealed answers were re-derived from the BLS releases by code (13/13 ok). Yaseen accepted this rule and the
+  13/10 split himself on 2026-11-14. The lead decides whether that is enough for admission.
+
+`snapshot_hash` was computed as in Parts 2 and 3 (`agent_plus_market` payload) and checked by reloading every case
+through `EvidenceStore` (no evidence excluded by the gate; market baseline available in all 13).
+
+### Step 3: sealed outcomes
+
+Each `services/api/data/sealed_outcomes/cpi-<year>-<mon>.json` was written last, from the reference month's own BLS
+release (Internet Archive copy of the permanent archive URL, because live bls.gov returns 403). It records the
+release URL, the embargo line and the release's first sentence. Checks, printed only as ok/mismatch, all ok for the
+13 cases: the release heading names the reference month; its embargo date equals the case's release date; the
+first sentence agrees with Table A's "All items" seasonally adjusted change for that month; Polymarket's "b% or
+more" and Kalshi's "strictly greater than b − 0.1" give the same answer. Case files, this document and
+`VERIFY_82.md` contain no outcome.
+
+### Known limits of the CPI cases
+
+- **n = 13 CPI cases; 28 real cases with Part 3.** Under 30, so the small-sample caveat stays, and "better" only
+  if the bootstrap CI excludes 0. CPI and FOMC cases should be reported separately as well as pooled: they are
+  different questions with different base rates.
+- **Top buckets are tail events.** The market priced most of these questions well below 0.5, so a forecaster that
+  always says "low" scores well on Brier. Compare against the market and a base-rate baseline, not against 0.5.
+- **Cross-case visibility runs across families.** Each CPI case's first item settles the previous CPI case, and the
+  #67 FOMC cases carry CPI releases that settle CPI cases (for example `fomc-2025-mar` holds the January 2025 CPI
+  release, which settles `cpi-2025-jan`). CPI cases carry FOMC statements that settle FOMC cases. Run every case in
+  a fresh model call; OFFICIAL runs forecast **all** cases before **any** reveal.
+- **Correlated draws.** Monthly prints share shocks (energy, shelter), and consecutive cases share evidence.
+- **The curator read earlier releases while building later cases**, so it saw earlier CPI results before the sealed
+  files were written. Selection was fixed by rules 2-7 before that.
 
 ## Synthetic fallback case (issue #48)
 

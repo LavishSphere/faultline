@@ -1,0 +1,8 @@
+{
+  "event_id": "cpi-2026-may",
+  "outcome": "NO",
+  "resolved_at": "2026-06-10T12:30:00Z",
+  "source_url": "https://www.bls.gov/news.release/archives/cpi_06102026.htm",
+  "provenance": "REAL_HISTORICAL",
+  "notes": "Settled by docs/CASES.md Part 4 rule 3 (YES iff the first-published one-month change in the seasonally adjusted CPI-U, all items, is 0.9 percent or more). Source: the BLS release for May 2026 (https://www.bls.gov/news.release/archives/cpi_06102026.htm; live bls.gov returned HTTP 403 to an automated request on 2026-11-14, so the text was read from the Internet Archive capture https://web.archive.org/web/20261109135507/https://www.bls.gov/news.release/archives/cpi_06102026.htm). Release line: \"8:30 a.m. (ET) Wednesday, June 10, 2026\". First sentence: \"The Consumer Price Index for All Urban Consumers (CPI-U) increased 0.5 percent on a seasonally adjusted basis in May, after rising 0.6 percent in April, the U.S.\" Cross-check in the same release: Table A, 'All items', seasonally adjusted change for May 2026 agrees with the first sentence. Venue rules: Polymarket top bucket '0.9% or more' and Kalshi 'Above 0.8%' (strictly greater, one-decimal Underlying) give the same answer."
+}

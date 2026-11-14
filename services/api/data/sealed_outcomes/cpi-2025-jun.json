@@ -1,0 +1,8 @@
+{
+  "event_id": "cpi-2025-jun",
+  "outcome": "NO",
+  "resolved_at": "2025-07-15T12:30:00Z",
+  "source_url": "https://www.bls.gov/news.release/archives/cpi_07152025.htm",
+  "provenance": "REAL_HISTORICAL",
+  "notes": "Settled by docs/CASES.md Part 4 rule 3 (YES iff the first-published one-month change in the seasonally adjusted CPI-U, all items, is 0.4 percent or more). Source: the BLS release for June 2025 (https://www.bls.gov/news.release/archives/cpi_07152025.htm; live bls.gov returned HTTP 403 to an automated request on 2026-11-14, so the text was read from the Internet Archive capture https://web.archive.org/web/20260927123305/https://www.bls.gov/news.release/archives/cpi_07152025.htm). Release line: \"8:30 a.m. (ET) Tuesday, July 15, 2025\". First sentence: \"The Consumer Price Index for All Urban Consumers (CPI-U) increased 0.3 percent on a seasonally adjusted basis in June, after rising 0.1 percent in May, the U.S.\" Cross-check in the same release: Table A, 'All items', seasonally adjusted change for Jun. 2025 agrees with the first sentence. Venue rules: Polymarket top bucket '0.4% or more' and Kalshi 'Above 0.3%' (strictly greater, one-decimal Underlying) give the same answer."
+}
