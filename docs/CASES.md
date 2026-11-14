@@ -42,7 +42,9 @@ The curator does not choose events; it only applies the rule and records any exc
      already saved by #12 (Kalshi "Fed maintains rate", Polymarket "no change").
 4. **Cutoff (`as_of`):** 00:00:00 UTC on the calendar date exactly **7 days before** the statement release
    date. This is earlier than "7 × 24 hours before the 2:00 p.m. ET announcement", so it errs on the side of
-   less information. `horizon_days = 7`.
+   less information. `horizon_days = 8` (amended by #158; it was 7, see "Question horizon" below): the question
+   window `as_of + horizon_days` then ends at 00:00 UTC on the day **after** the statement, so it contains the
+   2:00 p.m. ET (18:00Z or 19:00Z) release. With 7 it ended at 00:00 UTC on statement day, before the decision.
 5. **Evidence (fixed list, not hand-picked):** for each case, these public documents, taking for each type the
    most recent one whose official release time is at or before `as_of`:
    1. the policy statement of the previous scheduled FOMC meeting (full statement text);
@@ -84,7 +86,9 @@ The curator does not choose events; it only applies the rule and records any exc
 
 ## Part 2: Application of the rule
 
-Applied on 2026-11-13, after Part 1 was committed. **Changes to the rule:** none.
+Applied on 2026-11-13, after Part 1 was committed. **Changes to the rule:** one, on 2026-11-14 (#158): rule 4's
+`horizon_days` went from 7 to 8 so the question window contains the announcement (finance review F11). It changes
+no selection, cutoff, evidence item or quote; see "Question horizon" after Part 3.
 
 ### Step 1: which meetings qualify (rules 1, 2, 7c)
 
@@ -412,6 +416,51 @@ blind.
   enforce it in code.
 - **The curator read earlier results while building later cases**, as in Part 2. The selection was already fixed by
   rules 1-3.
+
+### Question horizon (issue #158, finance review F11)
+
+The finance review (`docs/FINANCE_REVIEW.md`, item R3 and issue F11) found that `horizon_days = 7` ended the
+question window at 00:00 UTC on statement day: `as_of` is 00:00 UTC seven calendar days before the statement, and the
+statement comes out at 2:00 p.m. ET (18:00Z or 19:00Z) that day. The prompt line "Horizon: 7 days after the cutoff",
+the integrity panel's "Question horizon ends" and the contamination check (model card vs. `as_of + horizon_days`,
+`scripts/record_runs.py` and `/api/integrity`) all used that too-early end.
+
+**Rule now:** `horizon_days = 8` for all 15 FOMC cases, so the window ends at 00:00 UTC on the day after the
+statement and contains the release. 8 days was chosen over an exact end instant because the case schema has only
+`horizon_days`, and adding a field for this was not worth it. The `title` and `resolution_rule` texts name the
+meeting, not a number of days, so they did not change. The synthetic case (21 days, "within the 21 days after the
+cutoff") already covers its resolution time and is unchanged.
+
+**How it was checked (no outcome value read or printed):**
+`tests/test_replay_seal.py::test_repo_case_horizon_covers_the_sealed_resolution_time` persists a forecast for every
+committed case into the scratch test store, reveals it through `OutcomeVault.reveal` (the only sealed-folder reader)
+and keeps only booleans: `resolved_at` is present, later than `as_of`, and no later than `as_of + horizon_days`. Only
+case ids reach the assertion. Run on `origin/main` before this change, it failed for all 15 FOMC cases and passed for
+the synthetic case; with 8 days it passes for all 16.
+
+**Hashes.** `snapshot_hash` covers the gated evidence and quotes only, so it did not change; all 16 were recomputed
+(`agent_plus_market` payload) with the loader and still match. `case_sha256` covers the whole case record, so it
+changed for the 15 FOMC cases, and every prompt's `prompt_sha256` changes with the horizon line. No recorded run or
+forecast had been committed for the old content, so nothing recorded is invalidated. The synthetic case's
+`case_sha256` stays `51623d9b…`.
+
+| Case | `as_of` (UTC) | Window ends (`as_of` + 8 d) | `snapshot_hash` (unchanged) | `case_sha256` before | `case_sha256` now |
+|---|---|---|---|---|---|
+| `fomc-2025-jan` | 2025-01-22T00:00:00Z | 2025-01-30T00:00:00Z | `14f56855…3e34` | `03bda4da…` | `8c92f17f6029381a51b6e0cad45660be116fae5360bd81eefb23d5b8d147853d` |
+| `fomc-2025-mar` | 2025-03-12T00:00:00Z | 2025-03-20T00:00:00Z | `c6fc4e00…c6b7` | `c4af6ed0…` | `20750f087abf5640b9696353a55dae60e8c000c387e0b3a3b4621e119c4b690d` |
+| `fomc-2025-may` | 2025-04-30T00:00:00Z | 2025-05-08T00:00:00Z | `a6fd5248…2a4f` | `afc8b4a8…` | `a0984c6ea9eb2761956dd66cf8745e6eaf10249354e7632b92644ea17450382b` |
+| `fomc-2025-jun` | 2025-06-11T00:00:00Z | 2025-06-19T00:00:00Z | `4b49ade4…0639` | `909fe261…` | `e2d6f7d6fb23df3c41dc1659f723c3e9e67c17a96dba1b5df0764d96b3c5512f` |
+| `fomc-2025-jul` | 2025-07-23T00:00:00Z | 2025-07-31T00:00:00Z | `4a836200…1075` | `c5b02866…` | `6ca7cb6f97f9526d4703d55d9ce76304b301101cf69ac37d479977f508919a28` |
+| `fomc-2025-sep` | 2025-09-10T00:00:00Z | 2025-09-18T00:00:00Z | `b9a76428…cea8` | `cbdb65ce…` | `3b91ecf60b4d937983faee7006d7c9eb35509d5d50c94c483cb81baf07e38b08` |
+| `fomc-2025-oct` | 2025-10-22T00:00:00Z | 2025-10-30T00:00:00Z | `53be0774…223c` | `ae4fe23b…` | `817d551f64bb8fbbba030397bbe51dee0203c4a49720bfd1d6c8193c810e478f` |
+| `fomc-2025-dec` | 2025-12-03T00:00:00Z | 2025-12-11T00:00:00Z | `1c3cb864…5227` | `635ad6b4…` | `019238ad3b27562c7260a382dcc9ec189aae1d2518f399ef316a1be5b78e9c23` |
+| `fomc-2026-jan` | 2026-01-21T00:00:00Z | 2026-01-29T00:00:00Z | `88bbcd74…ba0d` | `5216aab9…` | `0abcd61e1eb516e85cd84d0db090c437eabc6576f70e28a8bd1547262497cadf` |
+| `fomc-2026-mar` | 2026-03-11T00:00:00Z | 2026-03-19T00:00:00Z | `e0ec861b…e316` | `10330979…` | `1f91068a77741980c15ed3f87f8886616d071ade63b44212c67dc11406f36b5c` |
+| `fomc-2026-apr` | 2026-04-22T00:00:00Z | 2026-04-30T00:00:00Z | `c47067b0…7e43` | `22942fc4…` | `464cfebf37c34be555486155bd79f44a86787a596d4dd6f22b5acaa12d2079b4` |
+| `fomc-2026-jun` | 2026-06-10T00:00:00Z | 2026-06-18T00:00:00Z | `38a4a962…88ac` | `c342557b…` | `7ed1c7d2924a312a0c93fc0c6307e1e8aec7d3e59cd941e67035563c444ee6ef` |
+| `fomc-2026-jul` | 2026-07-22T00:00:00Z | 2026-07-30T00:00:00Z | `e54cf9f4…4bf9` | `d65e55c7…` | `d2ca9b2d2a17097ffb4e5137c2173cd8e9b11ab237ceb5501f3e09cfa569c54a` |
+| `fomc-2026-sep` | 2026-09-09T00:00:00Z | 2026-09-17T00:00:00Z | `dd201a12…340d` | `444c9d35…` | `da9eba97e5145c46a8de5bfe5f6b4e3ced31105e3265c40242eebe2aefd59917` |
+| `fomc-2026-oct` | 2026-10-21T00:00:00Z | 2026-10-29T00:00:00Z | `488bafc5…65de` | `48d445d7…` | `795cba2e2c075be9f6a5a89b6562076f5796cf029a6eb986bc97e9b325c54ffc` |
 
 ## Synthetic fallback case (issue #48)
 

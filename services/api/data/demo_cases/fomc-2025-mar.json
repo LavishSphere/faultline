@@ -3,7 +3,7 @@
     "event_id": "fomc-2025-mar",
     "title": "Will the FOMC leave the target range for the federal funds rate unchanged at its March 18-19, 2025 meeting?",
     "as_of": "2025-03-12T00:00:00Z",
-    "horizon_days": 7,
+    "horizon_days": 8,
     "resolution_rule": "YES if the policy statement released by the Federal Open Market Committee (FOMC) at the end of its scheduled meeting of March 18-19, 2025, as published on federalreserve.gov, keeps both the lower bound and the upper bound of the target range for the federal funds rate equal to the target range in effect immediately before that meeting. NO if either bound is changed (a cut or an increase of any size). Cut, hold and increase are mutually exclusive outcomes of one decision; they are scored as this single yes/no question, not as separate events.",
     "evidence_ids": [
       "fomc-2025-mar.statement",

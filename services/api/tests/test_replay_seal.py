@@ -28,6 +28,7 @@ from test_temporal_gate import (
 )
 
 from core import provenance
+from core import store as store_module
 from core.evaluator import (
     NotRevealable,
     OutcomeNotAvailable,
@@ -698,3 +699,48 @@ def test_pre_reveal_payloads_walk_clean(world):
     outcome_like = re.compile(r"outcome|resolution|resolved|settle|result|winner|final_price", re.IGNORECASE)
     for payload in (pred.model_dump(mode="json"), store.get("pred_001").model_dump(mode="json")):
         assert [p for p, k, _ in walk_keys(payload) if outcome_like.search(k)] == []
+
+
+# ---------------------------------------------------------------- question horizon covers the resolution (#158)
+
+
+def _horizon_problems_via_vault() -> tuple[int, list[str], list[str], list[str]]:
+    """Reveal every committed case through ``OutcomeVault`` (the only sealed-folder reader) into the scratch
+    prediction store the autouse fixture configures, and return booleans only, never a sealed value:
+    (cases checked, ids with no ``resolved_at``, ids resolved at or before ``as_of``, ids resolved after
+    ``as_of + horizon_days``). The sealed objects never leave this function, so a failing assert cannot print one.
+    """
+    cases = EvidenceStore.from_dir()
+    store = PredictionStore(store_module.configured_db_path())
+    vault = OutcomeVault(store)  # default sealed folder = the committed one; refused unless the store is configured
+    missing: list[str] = []
+    not_after_cutoff: list[str] = []
+    after_horizon: list[str] = []
+    for i, case_id in enumerate(cases.case_ids()):
+        snap = cases.get_as_of(case_id, cases.public_case(case_id).as_of)
+        mi = snap.model_input("agent_only")
+        store.save(prediction_for(mi, snap, pid=f"pred_horizon_{i:03d}"), mi)
+        resolved_at = vault.reveal(f"pred_horizon_{i:03d}").sealed.resolved_at
+        horizon_end = snap.as_of + timedelta(days=snap.case.horizon_days)
+        if resolved_at is None:
+            missing.append(case_id)
+            continue
+        if not resolved_at > snap.as_of:
+            not_after_cutoff.append(case_id)
+        if not resolved_at <= horizon_end:
+            after_horizon.append(case_id)
+        del resolved_at
+    return len(cases.case_ids()), missing, not_after_cutoff, after_horizon
+
+
+def test_repo_case_horizon_covers_the_sealed_resolution_time():
+    """F11 (docs/FINANCE_REVIEW.md, #158): the question window ``as_of + horizon_days`` must reach the instant the
+    sealed answer was published, or the prompt's "Horizon: N days after the cutoff" ends before the event and the
+    contamination check (model card vs. horizon end) dates the event too early. Every committed case is checked,
+    real and synthetic; only case ids reach the assertion."""
+    n, missing, not_after_cutoff, after_horizon = _horizon_problems_via_vault()
+    if n == 0:
+        pytest.skip("no cases in services/api/data/demo_cases")
+    assert missing == [], "sealed file has no resolved_at, so the horizon cannot be checked"
+    assert not_after_cutoff == [], "resolved at or before the cutoff"
+    assert after_horizon == [], "the question horizon ends before the sealed resolution time"
