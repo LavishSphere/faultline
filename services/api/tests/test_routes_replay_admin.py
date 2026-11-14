@@ -9,6 +9,7 @@ Read-only pre-reveal routes (/api/cases, /evidence) stay public. SYNTHETIC fixtu
 from __future__ import annotations
 
 import pytest
+from starlette.requests import Request
 from test_routes_replay import CANARY, EVENT, make_world, run
 
 TOKEN = "test-admin-token-not-a-real-secret-0123456789"  # not key-shaped; >= 32 chars
@@ -79,7 +80,27 @@ def test_public_mode_without_a_strong_token_configured_refuses_everyone(world, m
     monkeypatch.setenv("FAULTLINE_MODE", "public")
     monkeypatch.setenv("FAULTLINE_ADMIN_TOKEN", configured)
     headers = {"Authorization": f"Bearer {configured}"} if configured else None
-    _assert_refused(_call(world.client(), route, pid, headers), 403 if configured else 401)
+    if configured:
+        # A set-but-short token in public mode stops the app at startup (config.ConfigError, PR #28): closed.
+        from config import ConfigError
+
+        with pytest.raises(ConfigError):
+            world.client()
+        _assert_route_gate_refuses({"authorization": f"Bearer {configured}"}, 403)
+        return
+    _assert_refused(_call(world.client(), route, pid, headers), 401)
+
+
+def _assert_route_gate_refuses(headers: dict[str, str], status: int) -> None:
+    """The route-level gate on its own (behind the edge gate in a real app) also refuses."""
+    from errors import FaultlineError
+    from routes.replay import require_admin_in_public_mode
+
+    scope = {"type": "http", "method": "POST", "path": "/api/replay/run",
+             "headers": [(k.encode(), v.encode()) for k, v in headers.items()]}
+    with pytest.raises(FaultlineError) as caught:
+        require_admin_in_public_mode(Request(scope))
+    assert caught.value.status_code == status and caught.value.code == "ADMIN_TOKEN_REQUIRED"
 
 
 @pytest.mark.parametrize("route", GATED)
@@ -97,6 +118,14 @@ def test_any_mode_other_than_local_is_gated(world, monkeypatch, mode):
     pid = _saved_prediction(world)
     monkeypatch.setenv("FAULTLINE_MODE", mode)
     monkeypatch.setenv("FAULTLINE_ADMIN_TOKEN", TOKEN)
+    if mode.strip().lower() not in ("public", "local"):
+        # config.get_settings refuses an unknown mode at startup (PR #28); the route gate alone also says public.
+        from config import ConfigError
+
+        with pytest.raises(ConfigError):
+            world.client()
+        _assert_route_gate_refuses({}, 401)
+        return
     _assert_refused(_call(world.client(), "reveal", pid), 401)
 
 

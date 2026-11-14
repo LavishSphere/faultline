@@ -1,0 +1,39 @@
+# Caddy in front of the FAULTLINE API: automatic HTTPS (Let's Encrypt) for FAULTLINE_API_HOST.
+# DNS for that host must point straight at this server (Cloudflare "DNS only"), see docs/DEPLOY.md.
+{
+	servers {
+		timeouts {
+			read_header 10s
+			read_body 30s
+			idle 2m
+		}
+	}
+}
+
+{$FAULTLINE_API_HOST} {
+	# First line of the body limit (64KiB = 65,536 bytes); the app also enforces FAULTLINE_MAX_BODY_BYTES.
+	request_body {
+		max_size 64KiB
+	}
+
+	encode zstd gzip
+
+	header {
+		-Server
+		Strict-Transport-Security "max-age=31536000"
+		X-Content-Type-Options "nosniff"
+		X-Frame-Options "DENY"
+		Referrer-Policy "no-referrer"
+	}
+
+	# X-Forwarded-For is overwritten with the TCP peer address, so it holds exactly one entry and a client cannot
+	# prepend a spoofed one. The API's per-IP rate limiter reads it via uvicorn --proxy-headers.
+	reverse_proxy api:8000 {
+		header_up X-Forwarded-For {remote_host}
+	}
+
+	log {
+		output stdout
+		format console
+	}
+}

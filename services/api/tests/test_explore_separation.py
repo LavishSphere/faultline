@@ -61,7 +61,10 @@ ALLOWED_SCRIPTS = {"tavily_curate.py"}  # relative to the repo scripts/ director
 # Exact references other files may contain. main.py mounts the router (and nothing else). The CI secret
 # scanner names the Tavily key pattern so it can block committed keys.
 ALLOWED_REFS = {
-    "main.py": {"import:routes.explore", "name:explore"},
+    # main.py mounts the router and, in its edge block, names the explore paths so the public-mode admin gate and
+    # route table can refuse them (#13). Path strings only: no import of Tavily or explore internals.
+    "main.py": {"import:routes.explore", "name:explore", "const:/api/explore", "const:/api/explore/analyze",
+                "const:/api/explore/search"},
     "ci/content_scan.py": {"const:Tavily API key"},
 }
 

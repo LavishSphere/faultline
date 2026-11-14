@@ -1,5 +1,5 @@
 # FAULTLINE developer targets. Run `make help` for a list.
-.PHONY: help pull agent-start setup setup-deps api web dev test test-api check guard-test preflight web-build demo demo-scratch demo-api demo-web
+.PHONY: help pull agent-start setup setup-deps api web dev test test-api check guard-test preflight web-build demo demo-scratch demo-api demo-web deploy-api
 
 API_DIR  := services/api
 VENV     := $(API_DIR)/.venv
@@ -45,6 +45,9 @@ web:                    ## run the Next.js dev server on http://localhost:3000
 dev:                    ## run api + web together (Ctrl-C stops both)
 	@$(MAKE) -j2 api web
 
+deploy-api:             ## LEAD ONLY: deploy origin/main API to the server (SSH=<ssh-target> or env FAULTLINE_DEPLOY_SSH)
+	@bash scripts/deploy-api.sh "$(SSH)"
+
 test: guard-test test-api ## guardrail self-test + backend pytest
 
 test-api:               ## backend pytest only
@@ -74,7 +77,7 @@ demo-scratch:           ## same as demo, but on a separate scratch prediction st
 	@FAULTLINE_DEMO_STORE=$(SCRATCH_STORE) $(MAKE) -j2 demo-api demo-web
 
 demo-api:
-	@$(LOAD_ENV) API_PORT=$(API_PORT) $(API_PY) scripts/demo_api.py
+	@$(LOAD_ENV) FAULTLINE_MODE=local API_PORT=$(API_PORT) $(API_PY) scripts/demo_api.py
 
 demo-web:
 	@if [ -f apps/web/.next/BUILD_ID ]; then cd apps/web && npx next start -p 3000; \

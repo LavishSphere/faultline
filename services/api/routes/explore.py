@@ -11,14 +11,13 @@ Live Explore answers "what does current public news say?", next to (never inside
   limit -> 5-minute in-memory cache -> Tavily.
 
 Public mode (``FAULTLINE_MODE=public``, PR #28): requires ``Authorization: Bearer <FAULTLINE_ADMIN_TOKEN>``,
-as for ``/api/replay/run``, so public visitors cannot spend API credits. The check lives in this route so it
-works before and after PR #28: it uses ``config.admin_token_matches`` and ``Settings.mode`` when they exist,
-otherwise the same rules read from the environment (token >= 32 characters, constant-time compare; any
-mode other than ``local`` fails closed). The web app never sends the token, so the public demo shows
-"admin only". Error code ``ADMIN_TOKEN_REQUIRED`` matches PR #28's edge gate.
+as for ``/api/replay/run``, so public visitors cannot spend API credits. Checked twice: by the edge gate in
+``main.py`` (``ADMIN_GATED_PREFIXES``) and here by the shared route gate
+``routes.replay.require_admin_in_public_mode`` (401 no bearer token, 403 wrong or none configured; any mode other
+than ``local`` fails closed). The web app never sends the token, so the public demo shows "admin only".
 
 Errors use ``routes.RouteErrorBody`` ``{"code", "message", "errors": [{loc, msg, type}]}`` with codes from
-``models.ErrorCode``: VALIDATION_ERROR 422, ADMIN_TOKEN_REQUIRED 403, RATE_LIMITED 429 (Retry-After),
+``models.ErrorCode``: VALIDATION_ERROR 422, ADMIN_TOKEN_REQUIRED 401/403, RATE_LIMITED 429 (Retry-After),
 LIVE_EXPLORE_UNAVAILABLE 503, LIVE_EXPLORE_UPSTREAM_ERROR 502, LIVE_EXPLORE_TIMEOUT 504.
 
 POST /api/explore/analyze (issue #61): ``{decision_text}`` -> the same Tavily search (same cache and per-IP limit)
@@ -35,9 +34,7 @@ configured -> per-IP rate limit -> search cache -> Tavily -> model. A down model
 
 from __future__ import annotations
 
-import hmac
 import logging
-import os
 import time
 from collections import OrderedDict
 from collections.abc import Callable
@@ -49,7 +46,6 @@ from fastapi import APIRouter, Depends, Query, Request
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel, ConfigDict, Field
 
-import config
 from agents import explore_analyst as analyst
 from agents import tavily
 from agents.provider import ModelOutputInvalid, ModelUnavailable, PromptNotVerified, PromptTooLong, ProviderError
@@ -69,7 +65,6 @@ CACHE_TTL_S = 300.0
 CACHE_MAX_ENTRIES = 256
 RATE_LIMIT_PER_MIN = 10
 TAVILY_TIMEOUT_S = 10.0
-MIN_ADMIN_TOKEN_LEN = 32  # same rule as PR #28's config.MIN_ADMIN_TOKEN_LEN
 
 NOT_POINT_IN_TIME_NOTE = (
     "Current web results, retrieved at retrieved_at. Not point-in-time: never given to the Blind Replay, "
@@ -215,39 +210,6 @@ def get_tavily_transport() -> httpx.AsyncBaseTransport | None:
     return None
 
 
-# --------------------------------------------------------------------------- public-mode admin gate
-
-
-def _public_mode(settings: Settings) -> bool:
-    mode = getattr(settings, "mode", None)  # Settings.mode exists once PR #28 lands
-    if mode is None:
-        mode = os.environ.get("FAULTLINE_MODE", "").strip().lower() or "local"
-    return mode != "local"  # fail closed on anything unexpected
-
-
-def _token_matches(presented: str) -> bool:
-    matcher = getattr(config, "admin_token_matches", None)  # PR #28's constant-time check
-    if callable(matcher):
-        return bool(matcher(presented))
-    expected = os.environ.get("FAULTLINE_ADMIN_TOKEN", "").strip()
-    if len(expected) < MIN_ADMIN_TOKEN_LEN or not presented:
-        return False
-    return hmac.compare_digest(presented.encode("utf-8"), expected.encode("utf-8"))
-
-
-def require_admin_in_public_mode(request: Request, settings: Annotated[Settings, Depends(get_settings)]) -> None:
-    if not _public_mode(settings):
-        return
-    scheme, _, token = request.headers.get("authorization", "").partition(" ")
-    if scheme.lower() != "bearer" or not _token_matches(token.strip()):
-        raise ExploreError(
-            ErrorCode.ADMIN_TOKEN_REQUIRED,
-            "Live Explore search is admin only on the public demo (it spends Tavily API credits). "
-            "Run FAULTLINE locally with TAVILY_API_KEY set to use it.",
-            403,
-        )
-
-
 # --------------------------------------------------------------------------- route
 
 router = APIRouter(tags=["explore"], route_class=CodedRoute)
@@ -296,7 +258,7 @@ def _response(result: tavily.TavilySearchResponse, cached: bool, query: str) -> 
     "/explore/search",
     response_model=ExploreSearchResponse,
     responses=_RESPONSES,
-    dependencies=[Depends(require_admin_in_public_mode)],
+    dependencies=[Depends(require_admin_for_model_runs)],
     summary="LIVE EXPLORE web search (Tavily): current, not point-in-time; never used by the Blind Replay",
 )
 async def explore_search(

@@ -261,14 +261,15 @@ def test_rate_limit_is_per_ip(env):
 # --------------------------------------------------------------------------- public-mode admin gate
 
 
-def test_public_mode_without_token_is_403_and_spends_nothing(env):
+def test_public_mode_without_token_is_refused_and_spends_nothing(env):
     env.setenv("FAULTLINE_MODE", "public")
     env.setenv("FAULTLINE_ADMIN_TOKEN", ADMIN)
     client, fake = _client()
     for headers in ({}, {"Authorization": "Bearer wrong"}, {"Authorization": f"Basic {ADMIN}"},
                     {"Authorization": ADMIN}):
         resp = client.get(PATH, params={"q": "x"}, headers=headers)
-        assert resp.status_code == 403
+        # Shared rule (edge gate + routes.replay.require_admin_in_public_mode): 401 no bearer token, 403 wrong one.
+        assert resp.status_code == (403 if headers.get("Authorization", "").startswith("Bearer ") else 401)
         assert resp.json()["code"] == "ADMIN_TOKEN_REQUIRED"
         assert ADMIN not in resp.text
     assert fake.calls == []
@@ -277,7 +278,7 @@ def test_public_mode_without_token_is_403_and_spends_nothing(env):
 def test_public_mode_gate_runs_before_validation(env):
     env.setenv("FAULTLINE_MODE", "public")
     client, _ = _client()
-    assert client.get(PATH).status_code == 403
+    assert client.get(PATH).status_code == 401
 
 
 def test_public_mode_with_admin_token_searches(env):
