@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useEffect, useRef, useState } from "react";
 import { EvidenceDrawer } from "../EvidenceDrawer";
 import { FinancialReadout } from "../FinancialReadout";
+import { IntegrityPanel } from "../integrity/IntegrityPanel";
 import { Field, Panel } from "../Panel";
 import { DecisionFrames } from "../replay/DecisionFrames";
 import { MarketAtCutoff, marketSource } from "../replay/MarketAtCutoff";
@@ -44,9 +45,8 @@ export function DecisionScreen({ step }: { step: Step }) {
   const routes = useReplayRoutes();
   const evidence = useCaseEvidence(selected, routes);
   const [variant, setVariant] = useState<ForecastVariant>("agent_only");
-  // useReplayRun also returns `caseId` and `predictionId` (served ids; predictionId is null before a run). PR #93:
-  // add them to this destructuring and render <IntegrityPanel caseId={caseId} predictionId={predictionId} />.
-  const { state, start, cancel, busy, busyWith, priorRun } = useReplayRun(selected, variant);
+  // `caseId` / `predictionId` are served ids (predictionId is null before a run) for the INTEGRITY panel (#81).
+  const { state, start, cancel, busy, busyWith, priorRun, caseId, predictionId } = useReplayRun(selected, variant);
   const [drawer, setDrawer] = useState<{ open: boolean; focus: string | null }>({ open: false, focus: null });
 
   const run = state.kind === "done" ? state.run : null;
@@ -165,6 +165,8 @@ export function DecisionScreen({ step }: { step: Step }) {
         </h2>
         <DecisionFrames chosen={valid ? valid.prediction.decision : null} />
       </section>
+
+      <IntegrityPanel code="B.8" caseId={caseId} predictionId={predictionId} />
 
       {selected ? (
         <EvidenceDrawer
