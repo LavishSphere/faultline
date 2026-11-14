@@ -921,7 +921,7 @@ that are not on `main` yet.
 - **On screen:** `INSUFFICIENT DATA`
 - **Short:** Too few valid cases to compare forecasters at all.
 - **Long:** Shown when fewer than 5 events can be scored (MATH_MODEL §6). Per-event scores may still be listed, but no average comparison and no winner is claimed.
-- **Example:** n < 5. Main has no real replay cases yet (#20), so the scorecard reads INSUFFICIENT DATA today.
+- **Example:** n < 5: a recorded scorecard with fewer than five scored events. Today no scorecard is recorded, so the screen reads NOT AVAILABLE instead.
 - **Source:** MATH_MODEL §6; docs/EVALUATION_PROTOCOL.md status line; apps/web/components/Scorecard.tsx.
 - **Screens:** REVEAL
 - **MATH_MODEL:** §6
