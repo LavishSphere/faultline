@@ -74,6 +74,10 @@ ZERO_TOL = 1e-7
 # max(COST_TIE_REL_TOL * |J*|, COST_TIE_ABS_TOL) (solver round-off); otherwise the stage-1 plan is reported.
 COST_TIE_REL_TOL = 1e-9
 COST_TIE_ABS_TOL = 1e-7
+# min_cash_week reports the FIRST week whose cash is within max(MIN_WEEK_ABS_TOL, MIN_WEEK_REL_TOL * |min_cash|) of
+# min_cash, so a 4e-12 round-off difference between two weeks sitting on the floor does not move the reported week.
+MIN_WEEK_ABS_TOL = 1e-6
+MIN_WEEK_REL_TOL = 1e-9
 
 NonNeg = Annotated[float, Field(ge=0.0)]
 Fraction = Annotated[float, Field(ge=0.0, le=1.0)]
@@ -159,7 +163,7 @@ class OptimizationResult(_Model):
     revolver_balance: list[float] | None = None  # B_t
     inventory: list[float] | None = None  # I_t
     min_cash: float | None = None  # min_t C_t
-    min_cash_week: int | None = None  # first t attaining min_cash
+    min_cash_week: int | None = None  # first t with C_t within max(1e-6, 1e-9 |min_cash|) of min_cash
     binding_constraints: list[str] | None = None  # e.g. "liquidity floor, week 9"
     objective: float | None = None  # the full §4 objective, including -epsilon mu
     disruption_cost: float | None = None  # the objective without the tie-break term
@@ -388,6 +392,21 @@ def _clean(value: float) -> float:
     return 0.0 if value < ZERO_TOL else float(value)
 
 
+def _snap(value: float) -> float:
+    """Reported C_t / B_t / I_t: |value| < ZERO_TOL -> exactly 0.0 (e.g. B_t = -4e-13), otherwise unchanged.
+
+    Unlike _clean this keeps the sign of real values; it only removes round-off around zero. Display only: the
+    agreement check, min_cash and the objective use the unsnapped solver values.
+    """
+    return 0.0 if abs(value) < ZERO_TOL else float(value)
+
+
+def _min_cash_week(cash: list[float], min_cash: float) -> int:
+    """First week t (1-based) with C_t - min_cash <= max(MIN_WEEK_ABS_TOL, MIN_WEEK_REL_TOL |min_cash|)."""
+    tol = max(MIN_WEEK_ABS_TOL, MIN_WEEK_REL_TOL * abs(min_cash))
+    return next(t for t, c in enumerate(cash, start=1) if c - min_cash <= tol)
+
+
 def _binding(prob: _Problem, sol: np.ndarray) -> list[str]:
     """Names of §4 constraints whose slack is below BINDING_TOL, in a fixed order, with week numbers."""
     ix, T, p = prob.ix, prob.T, prob.params
@@ -505,6 +524,8 @@ def optimize(
             **common,
         )
 
+    # min_cash is the exact solver value (e.g. 24999.999999999996 when the plan sits on C_min = 25,000); it is not
+    # snapped to the floor, so the objective below is unchanged. Only the week is tolerance-based (_min_cash_week).
     min_cash = min(cash)
     disruption_cost = float(prob.c_disruption @ sol)
     return OptimizationResult(
@@ -512,11 +533,11 @@ def optimize(
         solver_message=message,
         plan=plan,
         actions=actions,
-        cash=cash,
-        revolver_balance=[float(sol[ix("B", t)]) for t in range(1, T + 1)],
-        inventory=[float(sol[ix("I", t)]) for t in range(1, T + 1)],
+        cash=[_snap(c) for c in cash],
+        revolver_balance=[_snap(float(sol[ix("B", t)])) for t in range(1, T + 1)],
+        inventory=[_snap(float(sol[ix("I", t)])) for t in range(1, T + 1)],
         min_cash=min_cash,
-        min_cash_week=cash.index(min_cash) + 1,
+        min_cash_week=_min_cash_week(cash, min_cash),
         binding_constraints=_binding(prob, sol),
         objective=disruption_cost - prob.epsilon * min_cash,  # J with mu = min_t C_t (its value for this plan)
         disruption_cost=disruption_cost,
