@@ -15,6 +15,7 @@ import {
 import { CascadeGraph, formatDelta } from "../CascadeGraph";
 import { FinancialReadout } from "../FinancialReadout";
 import { NotAvailable, Panel } from "../Panel";
+import { JudgeChallenge } from "./challenge/JudgeChallenge";
 import type { ProvenanceInput } from "../ProvenanceBadge";
 import {
   DEFAULT_DEPENDENT_PCT,
@@ -156,8 +157,15 @@ export function CascadeWorkbench() {
     if (scenarios.kind !== "ok" || horizon === null) return;
     const preset = scenarios.data.presets.find((p) => p.id === id);
     if (!preset) return;
+    applyPreset(preset);
+  };
+
+  /** Fill the sliders from a preset's shock and send it exactly (also used by the Judge's Challenge, #123). */
+  const applyPreset = (preset: ScenarioPreset) => {
+    if (horizon === null) return;
     setControls((c) => controlsFromShock(preset.shock, horizon, c));
     setMode({ kind: "preset", preset, touched: new Set() });
+    // TODO(#56): also run POST /api/optimize (+ Protect payroll) for the new shock once #47/#56 land.
   };
 
   const reset = () => {
@@ -223,6 +231,8 @@ export function CascadeWorkbench() {
       >
         <fieldset disabled={controlsDisabled} className="flex flex-col gap-3 disabled:opacity-60">
           <legend className="sr-only">Scenario shock inputs sent to POST /api/simulate</legend>
+
+          <JudgeChallenge activeId={mode.kind === "preset" ? mode.preset.id : null} onPick={applyPreset} disabled={controlsDisabled} />
 
           <PresetPicker scenarios={scenarios} mode={mode} onChoose={choosePreset} disabled={controlsDisabled} />
 
@@ -479,6 +489,9 @@ function PresetPicker({
           className="w-full min-w-0 rounded-md border border-line-strong bg-bg px-2.5 py-1.5 font-mono text-xs text-text disabled:cursor-not-allowed disabled:opacity-60"
         >
           <option value="">Custom (sliders below)</option>
+          {active && !presets.some((p) => p.id === active.id) ? (
+            <option value={active.id}>Judge&apos;s Challenge: {active.name}</option>
+          ) : null}
           {presets.map((p) => (
             <option key={p.id} value={p.id}>
               {p.name}
