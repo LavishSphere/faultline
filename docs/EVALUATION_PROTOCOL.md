@@ -178,7 +178,9 @@ tie rule, B and the bootstrap pairing.
   of any prediction for that event, read once before scoring starts. The market baseline, contamination flag
   and synthetic flag used below are the persisted pre-reveal context of the chosen prediction. Each key is then
   decided in this order:
-  1. No persisted prediction → excluded, `no_persisted_prediction`.
+  1. No persisted prediction → excluded, `no_persisted_prediction`. Exception (with `cases`): for
+     `agent_plus_market`, if the gate has no quote within 24h before `as_of` the variant cannot run at all, so the
+     key is excluded `market_not_available` instead (not an operator reason, so it does not block OFFICIAL).
   2. Predictions persisted at a position $> s_0$ are listed in `ignored_predictions` with reason
      `persisted_after_outcome_revealed`. If none persisted before $s_0$ remain, the key is excluded with
      that reason.
@@ -278,3 +280,99 @@ stripped; top-level keys are allow-listed; the file name must be `<event_id>.jso
 route to be classified pre- or post-reveal, walks every pre-reveal response schema and body (before and after a
 reveal) for outcome keys, the canary and sealed values, and checks that no pre-reveal request opens a file under
 `sealed_outcomes/`.
+
+## 10. Benchmark routes and recorded runs (#44 part B)
+
+Scoring reveals outcomes, so computing a scorecard and reading one are separate routes (`routes/benchmark.py`).
+
+| Route | Boundary | Gate | Does |
+|---|---|---|---|
+| `POST /api/benchmark/compute` `{"agent_variant": "agent_only" \| "agent_plus_market"}` | **reveals** (each reveal logged in `audit_log`) | admin token in public mode (§9) | `build_scorecard(OutcomeVault(<configured store>), agent_variant, cases=EvidenceStore.from_dir())`, then writes the Scorecard unchanged as a `RECORDED_RUN` snapshot to `services/api/var/scorecards/` and returns it |
+| `GET /api/benchmark` | post-reveal content, **read-only** (never reveals) | none | serves verified recorded snapshots (below). It never builds a vault, never opens the SQLite store and never touches the sealed folder |
+
+- **Response (both routes):** `{"status": "AVAILABLE" | "NOT AVAILABLE", "provenance": "RECORDED_RUN", "items": [Scorecard],
+  "records": [{agent_variant, recorded_at, source, origin, run_id, file, scorecard_sha256, snapshot_sha256, agent_models}],
+  "notes": [str]}`. `records[i]` describes `items[i]`. GET lists the newest **committed** snapshot per variant
+  (`data/recorded_runs/scorecards/`, `origin: "committed"`) first, then the newest **computed** one per variant
+  (`var/scorecards/`, `origin: "computed"`), each in the order `agent_only`, `agent_plus_market`. The first item for a
+  variant is the one to show, so one admin compute on an empty server cannot hide the committed card. Each Scorecard is
+  the evaluator's, verbatim. Nothing recorded → `status: "NOT AVAILABLE"`, `items: []`.
+- **Admin gate:** `routes.replay.require_admin_in_public_mode`, the same check as run and reveal (§9): 401 without a
+  bearer token, 403 for a wrong or unconfigured token, body `{"code": "ADMIN_TOKEN_REQUIRED", "message"}`. It runs
+  before the body is read, so an unauthenticated caller learns nothing about the request schema.
+- **Snapshot file** `<variant>--<UTC>--<sha12>.json`: `{schema_version, provenance: "RECORDED_RUN", source, run_id,
+  recorded_at, agent_variant, agent_models, cases_sha256, scorecard, scorecard_sha256, snapshot_sha256}`.
+  `scorecard_sha256` = SHA-256 of the canonical JSON (§5) of `scorecard`; `snapshot_sha256` = SHA-256 of the canonical JSON
+  of the whole file without `snapshot_sha256`.
+- **What GET serves (`verify_snapshot`).** A file that fails any of these checks is not served, and a note names it.
+  - **Both hashes** recompute from the stored JSON.
+  - **Display rules** (§6), re-applied to the card's own `per_event` rows:
+    - `n < 5` → `INSUFFICIENT DATA: No valid comparison`, with no summary and no CI;
+    - SYNTHETIC → `ILLUSTRATIVE: Synthetic demo fixtures`;
+    - REAL_HISTORICAL with blockers → `ILLUSTRATIVE: Historical cases, not an official run ...`;
+    - `OFFICIAL: Computed from {n} historical cases` only for REAL_HISTORICAL with `official_blockers == []` and n ≥ 5;
+    - the caveat, the summary and the bootstrap CI recompute exactly;
+    - the verdict is `agent better than market` iff the CI upper bound < 0;
+    - naive scores are those of p = 0.5;
+    - the counts and `exclusions_by_reason` match the exclusions.
+  - **No dry-run model:** `ollama/dry-run-mock` is never in `agent_models`.
+  - **Committed snapshots** also need all of the following:
+    - `runs/<run_id>/manifest.json` exists, with `dry_run: false` and `phase: "scored"`;
+    - the manifest's `scorecards[]` lists this file with this `scorecard_sha256`;
+    - every row of that run verifies (`verify_run`);
+    - every `per_event[].prediction_ids` entry is one of that run's rows for this variant and event;
+    - each event's agent and market Brier, log loss and accuracy recompute from those rows' `p_yes` and market baseline;
+    - `agent_models` and `provenance` agree with the rows.
+  - **Limits of these checks.** Hashes are not signatures. Someone who rewrites rows, manifest and snapshot
+    consistently (with new forecasts) is caught only by review of the commit. A computed snapshot (`var/`) is checked
+    against the display rules but not against the store, because GET never opens the store.
+- **Errors:** invalid case or outcome data → 500 `DATA_INVALID` (exception text is not echoed); a bad body → 422
+  `VALIDATION_ERROR` (`hosted_comparator` is refused).
+
+**Official run script** (`scripts/record_runs.py`, lead only; §8 made executable):
+
+1. **Pre-flight, before any model call.**
+   - Refuse if the configured store has any reveal.
+   - Refuse if the store already holds a forecast for a committed case x variant, except the run being resumed with
+     `--resume RUN_ID`.
+   - Refuse if a case's curated `contamination_flag` is weaker than
+     `agents.model_cards.contamination_flag(model, as_of + horizon_days)` (severity `unlikely` < `unknown` < `likely`).
+     The case file must be fixed in a reviewed PR first.
+2. **Forecast** every committed case at its cutoff, for every variant: gate → `model_input` →
+   `LocalOllamaProvider.forecast` → skeptic → `PredictionStore.save(prediction, mi, final_prompt=result.final_prompt)`.
+   - The Prediction is built by `routes.replay.prediction_from_result`, exactly as `POST /api/replay/run` builds it.
+     `prompt_sha256` hashes what the model answered (incl. a repair turn), and `gated_prompt_sha256` hashes the
+     gate's prompt; the Prediction also records `attempts`, `transcript_sha256`, `num_ctx` and `num_predict`.
+   - `MODEL_UNAVAILABLE` stops the run (exit 3; resume later).
+   - These are recorded as `failed` and never persisted: invalid output, an over-long or unverified prompt, a skeptic
+     rejection, and a model prompt the store refuses (`FINAL_PROMPT_NOT_GATED`, with the store's reason).
+   - `agent_plus_market` with no quote within 24h is `skipped`. The evaluator then scores that key as
+     `market_not_available` (§6 step 1), which does not block OFFICIAL.
+3. **Write rows.** Each saved forecast becomes a `RECORDED_RUN` row
+   (`data/recorded_runs/runs/<run_id>/rows/<prediction_id>.json`).
+   - The row holds:
+     - the Prediction;
+     - the exact gated prompt and snapshot JSON;
+     - the scoring context, `persisted_at` / `persist_seq` / `record_sha256`;
+     - the model call: tag, digest, temperature, seed, `num_ctx`, `num_predict`, `attempts`, `final_prompt_suffix`,
+       `final_prompt_sha256`, `transcript_sha256`, raw output and its hash, and token counts;
+     - the skeptic warnings, both contamination flags and `row_sha256`.
+   - `verify_row` applies the store's own rule (`core.store.model_prompt_problems`): the suffix is empty for attempt 1
+     or exactly the provider's repair instruction for attempt 2. It also requires the raw output to parse to exactly the
+     recorded p_yes, decision, rationale and evidence ids.
+   - `manifest.json` lists the cases with their `case_sha256`, the rows, skips and failures, and `rows_sha256`.
+4. **Score.** This happens only if nothing failed, or explicitly with `--score RUN_ID`, and at most once per run.
+   - Every row is re-verified and compared with the store's copy (prompt, model prompt, snapshot, prediction,
+     `record_sha256`).
+   - Each variant is then scored once (this reveals), and the snapshots are written to
+     `data/recorded_runs/scorecards/`.
+   - `--forecast-only` stops after step 3, so the rows can be committed before anything is revealed.
+   - An unknown run id for `--score` / `--resume` is a clean refusal (exit 2).
+
+`--dry-run` uses the #40 provider over a mocked transport (`ollama/dry-run-mock`). It writes to a scratch store and
+folder, labels rows `SIMULATED` and never scores. `tests/test_record_runs.py` checks every committed row and snapshot
+with the same `verify_snapshot(..., origin="committed")` GET uses.
+
+**Not covered here:** the curated `contamination_flag` is still what the gate freezes into the scoring context (§4 TODO).
+The script only refuses an official run when the curated flag is weaker than the model card. Deriving the flag inside
+`ModelInput` needs a model-aware gate or store change (follow-up).
