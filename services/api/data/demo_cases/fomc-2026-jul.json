@@ -12,7 +12,7 @@
       "fomc-2026-jul.jobs"
     ],
     "market_quote_id": "kalshi:KXFEDDECISION-26JUL-H0",
-    "snapshot_hash": "sha256:63e849ed529dd0f67353876d184aac9a07b38b1dabd9fc3aa24051bba8e85ad7",
+    "snapshot_hash": "sha256:e54cf9f4312d6b08930dbc4c597ed6fa1318e2f823af82cf5c2cb1ffc3204bf9",
     "synthetic": false,
     "contamination_flag": "unlikely",
     "provenance": "REAL_HISTORICAL"

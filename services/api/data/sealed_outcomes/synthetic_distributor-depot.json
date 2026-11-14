@@ -1,0 +1,8 @@
+{
+  "event_id": "synthetic_distributor-depot",
+  "outcome": "YES",
+  "resolved_at": "2026-10-05T12:00:00Z",
+  "source_url": "https://github.com/LavishSphere/faultline/blob/main/docs/CASES.md#synthetic-fallback-case",
+  "provenance": "SYNTHETIC",
+  "notes": "SYNTHETIC fair draw, not a real event. seed_hex=c2a76485de81b48d1d65cd18edbdf418d76ae8b9a9cfa171c6db04f565b8ef20 . Commitment published in demo_cases/synthetic_distributor-depot.json (curation_notes.fair_draw.commitment_sha256): 583b87ea7ab1261948541f56ca5a38703efb6cdeef6307a254ab7d3d40d60f38 = SHA-256 of bytes.fromhex(seed_hex). Draw rule (fixed before the seed was generated): h = int(SHA-256(seed bytes + b'faultline-synthetic-draw:synthetic_distributor-depot').hexdigest(), 16); YES if 100 * h < 35 * 2**256, otherwise NO (P(YES) = 0.35 exactly). Seed generated once with Python secrets.token_bytes(32) at 2026-11-13T20:00:29.254857Z by a script that refuses to overwrite its output. resolved_at is the end of the synthetic horizon (as_of + 21 days), not a real date. Verification steps: docs/CASES.md, 'Synthetic fallback case'."
+}
