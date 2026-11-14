@@ -595,13 +595,12 @@ def test_pre_reveal_prediction_kept_and_post_reveal_one_ignored(world):
 
 def test_configured_sealed_folder_only_reveals_into_the_configured_store(tmp_path, monkeypatch):
     """Audit round 2: a scratch store must not be able to peek at the real sealed folder without a trace."""
-    from core import store as store_module
 
     data = tmp_path / "data"
     write_sealed(data / "sealed_outcomes", sealed_dict())
     monkeypatch.setenv("FAULTLINE_DATA_DIR", str(data))
     official_db = tmp_path / "var" / "predictions.sqlite3"
-    monkeypatch.setattr(store_module, "DEFAULT_DB_PATH", official_db)
+    monkeypatch.setenv("FAULTLINE_PREDICTIONS_DB", str(official_db))
 
     scratch = PredictionStore(tmp_path / "scratch.sqlite3")
     with pytest.raises(ValueError, match="configured prediction store"):

@@ -68,7 +68,7 @@ from agents.provider import (  # noqa: E402
     PromptNotVerified,
     PromptTooLong,
 )
-from config import get_settings  # noqa: E402
+from config import DEFAULT_PREDICTIONS_DB, get_settings  # noqa: E402
 from core import store as store_module  # noqa: E402
 from core.evaluator import first_counted_reveal  # noqa: E402
 from core.store import HashMismatch, PredictionStore  # noqa: E402
@@ -470,7 +470,7 @@ def score_run(
     if manifest.get("phase") == "scored":
         raise Refused(f"run {run_dir.name} is already scored; a run is scored once")
     _manifest, rows, problems = load_run(run_dir)
-    store = store if store is not None else PredictionStore(store_module.DEFAULT_DB_PATH)
+    store = store if store is not None else PredictionStore(store_module.configured_db_path())
     for meta in manifest["rows"]:
         pid = meta["prediction_id"]
         rec, row = store.get_record(pid), rows.get(pid)
@@ -540,8 +540,17 @@ def main(argv: list[str] | None = None) -> int:
         store = PredictionStore(out_root / "dry-run.sqlite3")
         provider: ModelProvider = dry_run_provider()
     else:
-        out_root = args.out or get_settings().data_dir / "recorded_runs"
-        store = PredictionStore(store_module.DEFAULT_DB_PATH)
+        settings = get_settings()
+        out_root = args.out or settings.data_dir / "recorded_runs"
+        # The configured store (FAULTLINE_PREDICTIONS_DB, #130): the official default unless explicitly overridden.
+        store = PredictionStore(settings.predictions_db)
+        if settings.predictions_db_is_official:
+            print(f"prediction store: OFFICIAL {store.path}")
+        else:
+            print(
+                f"prediction store: {store.path} (NOT the official store {DEFAULT_PREDICTIONS_DB}; "
+                "FAULTLINE_PREDICTIONS_DB is set)"
+            )
         provider = LocalOllamaProvider.from_settings()
 
     try:

@@ -28,7 +28,6 @@ Display: n < 5 -> INSUFFICIENT DATA (per-event scores still listed); 5 <= n < 30
 from __future__ import annotations
 
 import math
-import os
 import threading
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass
@@ -40,6 +39,7 @@ import numpy as np
 from pydantic import AwareDatetime, BaseModel, ConfigDict, ValidationError
 
 from config import get_settings
+from config import same_path as _same_path
 from core import store as store_module
 from core.store import PredictionStore, RevealMark, StoredPrediction
 from core.temporal_gate import PROMPT_VARIANTS, EvidenceStore, MarketNotAvailable
@@ -157,16 +157,6 @@ def configured_sealed_dir() -> Path:
     return get_settings().data_dir / "sealed_outcomes"
 
 
-def _same_path(a: Path | str, b: Path | str) -> bool:
-    a, b = Path(a), Path(b)
-    try:
-        if a.exists() and b.exists():
-            return os.path.samefile(a, b)
-    except OSError:
-        pass
-    return os.path.normcase(str(a.resolve())) == os.path.normcase(str(b.resolve()))
-
-
 class OutcomeVault:
     def __init__(
         self,
@@ -181,11 +171,13 @@ class OutcomeVault:
         self._dir = Path(sealed_dir) if sealed_dir is not None else configured_sealed_dir()
         self._clock = clock
         # One reveal ledger per real sealed folder: the configured folder may only be revealed into the
-        # configured prediction store, so a scratch store cannot peek at real outcomes without a trace.
-        if _same_path(self._dir, configured_sealed_dir()) and not _same_path(store.path, store_module.DEFAULT_DB_PATH):
+        # configured prediction store (the FAULTLINE_PREDICTIONS_DB setting, the same one every route and
+        # scripts/record_runs.py open, #130), so any other store cannot peek at real outcomes without a trace.
+        configured_store = store_module.configured_db_path()
+        if _same_path(self._dir, configured_sealed_dir()) and not _same_path(store.path, configured_store):
             raise ValueError(
                 "the configured sealed-outcome folder can only be revealed into the configured prediction store "
-                f"({store_module.DEFAULT_DB_PATH}); refusing {store.path}"
+                f"({configured_store}, FAULTLINE_PREDICTIONS_DB); refusing {store.path}"
             )
 
     @property

@@ -33,7 +33,7 @@ def committed(tmp_path, monkeypatch):
     monkeypatch.delenv("FAULTLINE_MODE", raising=False)
     monkeypatch.delenv("FAULTLINE_ADMIN_TOKEN", raising=False)
     _vault, cases = scored_world(tmp_path, rows_for(6), official=monkeypatch, save=set())
-    store = PredictionStore(store_module.DEFAULT_DB_PATH, clock=Clock(AS_OF + timedelta(days=60)))
+    store = PredictionStore(store_module.configured_db_path(), clock=Clock(AS_OF + timedelta(days=60)))
     out = tmp_path / "data" / "recorded_runs"
     outcome = rr.run_forecasts(
         FakeModel(store.path).provider(),

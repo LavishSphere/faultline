@@ -622,7 +622,7 @@ def test_record_runs_scores_a_mixed_case_dir_as_two_sets(tmp_path, monkeypatch):
 
     scored_world(tmp_path, rows_for(6), synthetic=False, official=monkeypatch, save=set())
     cases = _add_committed_synthetic_case(tmp_path)
-    store = PredictionStore(store_module.DEFAULT_DB_PATH, clock=Clock(AS_OF + timedelta(days=60)))
+    store = PredictionStore(store_module.configured_db_path(), clock=Clock(AS_OF + timedelta(days=60)))
     clock = Clock(datetime(2026, 11, 13, 12, 0, tzinfo=UTC))
     outcome = rr.run_forecasts(
         FakeModel(store.path).provider(), cases=cases, store=store, out_root=tmp_path / "out", clock=clock

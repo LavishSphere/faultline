@@ -8,11 +8,11 @@ Two routes, split by whether they can reveal an outcome (lead contract decisions
   route needs the admin token. The check is ``routes.replay.require_admin_in_public_mode``, the same as for run
   and reveal, applied by ``AdminGatedRoute`` before the body is read. Real and synthetic cases are scored as
   separate case sets (issue #102; real first; a synthetic card is never OFFICIAL). Each resulting ``Scorecard`` is
-  persisted, unchanged, as a ``RECORDED_RUN`` snapshot with its SHA-256 under ``services/api/var/scorecards/`` and
-  returned.
+  persisted, unchanged, as a ``RECORDED_RUN`` snapshot with its SHA-256 under ``scorecards/`` next to the configured
+  store (``computed_dir()``; default ``services/api/var/scorecards/``) and returned.
 * ``GET /api/benchmark`` is read-only. It serves recorded snapshots: the newest COMMITTED one per variant
   (``<FAULTLINE_DATA_DIR>/recorded_runs/scorecards/``, written by ``scripts/record_runs.py``), then the newest
-  COMPUTED one per variant (``services/api/var/scorecards/``), for the real case set and then the synthetic one.
+  COMPUTED one per variant (``computed_dir()``), for the real case set and then the synthetic one.
   It never builds a vault, never opens the SQLite store and never touches the sealed folder, so a public visitor
   cannot reveal early and disqualify a later official run.
 
@@ -183,8 +183,9 @@ class AdminGatedRoute(CodedRoute):
 
 
 def computed_dir() -> Path:
-    """services/api/var/scorecards/ (next to the configured prediction store; git-ignored)."""
-    return store_module.DEFAULT_DB_PATH.parent / "scorecards"
+    """``scorecards/`` next to the configured prediction store (FAULTLINE_PREDICTIONS_DB, #130; default
+    services/api/var/scorecards/, git-ignored), so a scratch store's computed cards stay beside the scratch store."""
+    return store_module.configured_db_path().parent / "scorecards"
 
 
 def recorded_runs_dir() -> Path:
@@ -676,7 +677,7 @@ def compute_and_record(
     This REVEALS (through ``OutcomeVault``). Callers: the admin-gated route and scripts/record_runs.py.
     """
     with _COMPUTE_LOCK:
-        store = store if store is not None else PredictionStore(store_module.DEFAULT_DB_PATH)
+        store = store if store is not None else PredictionStore(store_module.configured_db_path())
         cases = cases if cases is not None else EvidenceStore.from_dir()
         out = []
         for case_set in case_sets_present(store, cases) or ["real"]:

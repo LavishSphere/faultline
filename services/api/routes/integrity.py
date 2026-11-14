@@ -1193,7 +1193,7 @@ class ReadOnlyPredictionStore(PredictionStore):
 
 def _open_prediction_store() -> tuple[PredictionStore | None, str | None]:
     """(read-only store, None), or (None, why not). Never creates or migrates the database."""
-    path = Path(store_module.DEFAULT_DB_PATH)
+    path = store_module.configured_db_path()
     if not path.is_file():
         return None, "No forecast has been saved yet (the prediction store does not exist)."
     store = ReadOnlyPredictionStore(path)

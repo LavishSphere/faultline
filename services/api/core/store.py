@@ -1,6 +1,10 @@
 """SQLite prediction store: forecasts are persisted, with their audit hashes, BEFORE any reveal (SPEC §5).
 
-Database: ``services/api/var/predictions.sqlite3`` by default (``var/`` is git-ignored).
+Database: the ``FAULTLINE_PREDICTIONS_DB`` setting (``config.Settings.predictions_db``, issue #130), read at call
+time through ``configured_db_path()``; unset, the official store ``services/api/var/predictions.sqlite3``
+(``var/`` is git-ignored). ``DEFAULT_DB_PATH`` names that official default only; code that opens "the" store
+calls ``configured_db_path()`` (tests/test_predictions_db_setting.py checks no route, core module or script
+opens ``DEFAULT_DB_PATH`` directly).
 
 Guarantees enforced here (tests/test_replay_seal.py):
 
@@ -42,12 +46,19 @@ from pathlib import Path
 from typing import Literal
 
 from agents.local_ollama import MAX_ATTEMPTS, is_repair_instruction
-from config import API_DIR
+from config import DEFAULT_PREDICTIONS_DB, get_settings
 from core import provenance
 from core.temporal_gate import PROMPT_VARIANTS, ModelInput
 from models import Prediction
 
-DEFAULT_DB_PATH = API_DIR / "var" / "predictions.sqlite3"
+# The OFFICIAL default store, for comparisons ("is the configured store the official one?"). Not for opening.
+DEFAULT_DB_PATH = DEFAULT_PREDICTIONS_DB
+
+
+def configured_db_path() -> Path:
+    """The prediction store the API, the evaluator's vault check and scripts/record_runs.py use (read per call)."""
+    return get_settings().predictions_db
+
 
 _SCHEMA = """
 CREATE TABLE IF NOT EXISTS predictions (
@@ -360,8 +371,8 @@ def _check_against_model_input(prediction: Prediction, mi: ModelInput) -> None:
 
 
 class PredictionStore:
-    def __init__(self, path: Path | str = DEFAULT_DB_PATH, *, clock: Callable[[], datetime] = _utcnow) -> None:
-        self.path = Path(path)
+    def __init__(self, path: Path | str | None = None, *, clock: Callable[[], datetime] = _utcnow) -> None:
+        self.path = Path(path) if path is not None else configured_db_path()
         self._clock = clock
         self.path.parent.mkdir(parents=True, exist_ok=True)
         with self._connect() as conn:
