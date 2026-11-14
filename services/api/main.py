@@ -26,6 +26,7 @@ from routes import (
     integrity,
     judge_challenges,
     optimize,
+    recorded,
     replay,
     research,
     scenarios,
@@ -49,6 +50,7 @@ PUBLIC = "public"
 PUBLIC_MODE_ROUTES: dict[tuple[str, str], str] = {
     ("POST", "/api/replay/run"): ADMIN,  # local-model inference + writes the prediction store
     ("POST", "/api/replay/{prediction_id}/reveal"): ADMIN,  # reveals a sealed outcome + writes the reveal ledger
+    ("GET", "/api/replay/recorded"): PUBLIC,  # committed RECORDED RUN rows, verified; read-only, never reveals (#116)
     ("POST", "/api/benchmark/compute"): ADMIN,  # reveals outcomes to score + writes a scorecard file
     ("POST", "/api/explore/analyze"): ADMIN,  # Tavily credits + local-model inference
     ("GET", "/api/explore/search"): ADMIN,  # Tavily credits
@@ -68,6 +70,9 @@ PUBLIC_MODE_ROUTES: dict[tuple[str, str], str] = {
 # Edge gate (defence in depth, runs before routing and body parsing). Prefixes, not exact paths, so a new route
 # under /api/replay or /api/explore is admin-only until someone decides otherwise (fail closed).
 ADMIN_GATED_PREFIXES = ("/api/replay", "/api/explore", "/api/benchmark/compute")
+# Exact paths under a gated prefix that are public (read-only). Exact match only: anything below or beside them
+# (e.g. /api/replay/recorded/x, /api/replay/recordedx) stays admin-only.
+PUBLIC_EXACT_PATHS = frozenset({"/api/replay/recorded"})
 ADMIN_MESSAGE = (
     "Admin only on the public demo: this route runs the model, spends paid search credits or reveals sealed "
     "outcomes, and needs the admin token (Authorization: Bearer <FAULTLINE_ADMIN_TOKEN>). The public demo shows "
@@ -97,6 +102,8 @@ def _normalised_path(path: str) -> str:
 
 def is_admin_gated(path: str) -> bool:
     norm = _normalised_path(path)
+    if norm in PUBLIC_EXACT_PATHS:
+        return False
     return any(norm == p or norm.startswith(p + "/") for p in ADMIN_GATED_PREFIXES)
 
 
@@ -315,6 +322,7 @@ def create_app() -> FastAPI:
     app.include_router(research.router, prefix="/api")
     app.include_router(cases.router, prefix="/api")
     app.include_router(replay.router, prefix="/api")
+    app.include_router(recorded.router, prefix="/api")
     app.include_router(integrity.router, prefix="/api")
     app.include_router(benchmark.router, prefix="/api")
     # LIVE EXPLORE (Tavily). Admin-gated inside the route in public mode; never used by the Blind Replay (#60).

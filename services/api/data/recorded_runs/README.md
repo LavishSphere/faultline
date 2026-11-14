@@ -10,6 +10,7 @@ recorded_runs/
                                          contamination flags, rows, skipped, failed, scorecards, rows_sha256
   runs/<run_id>/rows/<prediction_id>.json  one saved forecast: Prediction, exact prompt + snapshot JSON,
                                          model-call audit fields, scoring context, every hash
+                                         (served read-only, verified, by GET /api/replay/recorded)
   scorecards/<variant>--<UTC>--<sha12>.json  Scorecard snapshot (routes/benchmark.py RecordedScorecard),
                                          served read-only by GET /api/benchmark
 ```

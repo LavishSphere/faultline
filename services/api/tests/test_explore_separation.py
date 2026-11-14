@@ -82,6 +82,7 @@ REPLAY_MODULES = (
     "routes.cases",
     "routes.replay",
     "routes.benchmark",
+    "routes.recorded",
     "routes.evidence",
 )
 REQUIRED_ON_MAIN = {"core.temporal_gate", "core.store", "core.evaluator", "core.provenance", "routes.cases",

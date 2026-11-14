@@ -135,6 +135,7 @@ def test_public_mode_keeps_read_only_routes_open(world, monkeypatch):
     client = world.client()
     assert client.get("/api/cases").status_code == 200
     assert client.get(f"/api/cases/{EVENT}/evidence").status_code == 200
+    assert client.get("/api/replay/recorded", params={"case_id": EVENT}).status_code == 200  # #116
 
 
 def test_openapi_documents_the_admin_refusals(world):

@@ -277,12 +277,14 @@ file, is refused at load. Case files must not be hard links.
 | `GET /api/cases/{case_id}/evidence?as_of=` | pre-reveal | `EvidenceStore.get_as_of`: the prompt projection of admitted evidence, the selected as-of quote per market, the market baseline at the cutoff (or NOT AVAILABLE), exclusion counts by reason (no ids). `as_of` defaults to, and may not be later than, the case cutoff (422) |
 | `POST /api/replay/run` `{case_id, variant}` | pre-reveal; admin-only in public mode | gate, provider, skeptic, then `PredictionStore.save(..., final_prompt=...)`; nothing is saved on any provider error or skeptic rejection. A run saved after a reveal is not refused but flagged from `audit_log`: `event_first_reveal_seq` / `persisted_after_event_reveal` (this event) and `store_first_reveal_seq` / `persisted_after_any_reveal` (anywhere), plus an `audit_note` |
 | `POST /api/replay/{prediction_id}/reveal` | post-reveal; admin-only in public mode | `OutcomeVault.reveal`, per-prediction Brier / log loss / accuracy at 0.5, naive and market baselines from the stored pre-reveal context |
+| `GET /api/replay/recorded?case_id=&agent_variant=` (#116) | pre-reveal; read-only, public | `routes/recorded.py`: the committed RECORDED RUN forecast rows for one case from `data/recorded_runs/runs/<run_id>/`, newest run first. Only manifests with `dry_run: false` (not a mocked provider) and provenance `RECORDED_RUN`; every row is checked by `routes.benchmark.load_run` (`verify_row` + manifest index), a failing row is skipped with a note, a run whose `rows_sha256` does not recompute is skipped whole. Served fields are named one by one (prediction, model, hashes, `recorded_at`, `run_id`, cited evidence from the row's own snapshot); the response model has no outcome field. Never opens `sealed_outcomes/`, the prediction store or the case files. Nothing committed for the case: `NOT AVAILABLE` with a note (`tests/test_routes_replay_recorded.py`) |
 
 **Public mode:** run and reveal both change state, so with `FAULTLINE_MODE` anything but unset/`local` they need
 `Authorization: Bearer <FAULTLINE_ADMIN_TOKEN>` (at least 32 characters), checked by a route dependency so it holds
 with or without the edge middleware of #28. No bearer token: 401; wrong or unconfigured token: 403; body
 `{code: "ADMIN_TOKEN_REQUIRED", message}`. An early public reveal would otherwise mark the event revealed and
-disqualify every later admin run on it (`tests/test_routes_replay_admin.py`). The case routes stay public.
+disqualify every later admin run on it (`tests/test_routes_replay_admin.py`). The case routes and
+`GET /api/replay/recorded` stay public.
 
 Both pre-reveal case routes run a strict pre-scan before the gate loads anything: a case file with an
 outcome-like key anywhere (except `case.resolution_rule` and a quote's `outcome: "YES"`) is refused, not

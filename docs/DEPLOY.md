@@ -33,7 +33,8 @@ disagree with it, or if this table and the code differ. A new route therefore ca
   public mode it needs `Authorization: Bearer <FAULTLINE_ADMIN_TOKEN>`: 401 when no bearer token is presented, 403
   when it is wrong or none (or a too-short one) is configured, code `ADMIN_TOKEN_REQUIRED`. It is checked twice:
   by the edge middleware before routing and body parsing (prefixes `/api/replay`, `/api/explore`,
-  `/api/benchmark/compute`, so any new route under `/api/replay` or `/api/explore` starts admin-only), and inside the
+  `/api/benchmark/compute`, so any new route under `/api/replay` or `/api/explore` starts admin-only; the one exact
+  exception is the read-only `GET /api/replay/recorded`), and inside the
   route by the shared gate `routes.replay.require_admin_in_public_mode`.
 - **public**: deterministic or read-only. Open to anyone, behind the per-IP rate limit and the body cap.
 
@@ -41,6 +42,7 @@ disagree with it, or if this table and the code differ. A new route therefore ca
 |---|---|---|
 | `POST /api/replay/run` | admin | local-model inference; writes the prediction store |
 | `POST /api/replay/{prediction_id}/reveal` | admin | reveals a sealed outcome; writes the reveal ledger |
+| `GET /api/replay/recorded` | public | committed RECORDED RUN forecast rows, hash-verified; read-only, never reveals (#116) |
 | `POST /api/benchmark/compute` | admin | reveals outcomes to score them; writes a scorecard file |
 | `POST /api/explore/analyze` | admin | Tavily credits and local-model inference |
 | `GET /api/explore/search` | admin | Tavily credits |
@@ -63,10 +65,11 @@ container has no internet route.
 
 ### The public demo needs recorded data
 
-There is no committed `RECORDED RUN` yet (`services/api/data/recorded_runs/` holds only its README), and no route
-serves recorded predictions before a reveal (issue #116, not built here). So on the public site, with
-`/api/replay/run` and reveal admin-only, **the DECISION and REVEAL screens show NOT AVAILABLE** (no forecast, no
-reveal). That is the honest state, not a bug. REWIND (cases and evidence), CASCADE (simulate, optimize, judge
+There is no committed `RECORDED RUN` yet (`services/api/data/recorded_runs/` holds only its README).
+`GET /api/replay/recorded` (#116) serves committed forecast rows before any reveal, and DECISION shows them as its
+primary view in public mode, but until the official run is committed it answers NOT AVAILABLE. So on the public
+site, with `/api/replay/run` and reveal admin-only, **the DECISION and REVEAL screens show NOT AVAILABLE** (no
+forecast, no reveal). That is the honest state, not a bug. REWIND (cases and evidence), CASCADE (simulate, optimize, judge
 challenges), RESEARCH (VC lenses), integrity and recorded benchmark scorecards work. For the full live flow use the
 local demo below.
 
