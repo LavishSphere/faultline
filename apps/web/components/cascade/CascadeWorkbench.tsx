@@ -4,8 +4,12 @@ import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import {
   API_BASE,
   getScenarios,
+  optimize,
   simulate,
+  type ActionPlan,
   type ApiFailure,
+  type OptimizeRequest,
+  type OptimizeResponse,
   type ScenarioPreset,
   type ScenarioShock,
   type ScenariosSummary,
@@ -35,8 +39,16 @@ const DEBOUNCE_MS = 150;
 
 type SimState =
   | { kind: "loading"; last: SimulateResponse | null }
-  | { kind: "ok"; data: SimulateResponse; key: string; ms: number; at: Date }
+  | { kind: "ok"; data: SimulateResponse; key: string; ms: number; at: Date; planned: boolean }
   | { kind: "error"; failure: ApiFailure };
+
+type OptState =
+  | { kind: "loading"; last: OptimizeResponse | null }
+  | { kind: "ok"; data: OptimizeResponse; key: string; ms: number; at: Date }
+  | { kind: "error"; failure: ApiFailure };
+
+/** A plan applied from /api/optimize, valid only for the exact optimize request (shock + protect) it answered. */
+type Applied = { optKey: string; plan: ActionPlan };
 
 type ScenariosState = { kind: "loading" } | { kind: "ok"; data: ScenariosSummary } | { kind: "error"; failure: ApiFailure };
 
@@ -70,7 +82,15 @@ export function CascadeWorkbench() {
   const lastGood = useRef<SimulateResponse | null>(null);
   const first = useRef(true);
 
-  const request = useMemo<SimulateRequest>(() => {
+  const [protect, setProtect] = useState(false);
+  const [opt, setOpt] = useState<OptState>({ kind: "loading", last: null });
+  const [applied, setApplied] = useState<Applied | null>(null);
+  /** Optimize has its own retry, so retrying one request never re-sends the other. */
+  const [optRetry, setOptRetry] = useState(0);
+  const lastOpt = useRef<OptimizeResponse | null>(null);
+  const firstOpt = useRef(true);
+
+  const scenario = useMemo<SimulateRequest>(() => {
     if (mode.kind === "preset" && horizon !== null) {
       if (mode.touched.size === 0) return { scenario_id: mode.preset.id, shock: mode.preset.shock };
       // Edited preset: no scenario_id, because the shock is no longer the catalog entry.
@@ -78,9 +98,45 @@ export function CascadeWorkbench() {
     }
     return { shock: buildShock(controls, horizon) };
   }, [mode, controls, horizon]);
+  const optRequest: OptimizeRequest = { ...scenario, protect_payroll: protect };
+  const optKey = JSON.stringify(optRequest);
+  /** The applied plan only while the shock and switch are exactly the ones it was solved for. */
+  const activePlan = applied !== null && applied.optKey === optKey ? applied.plan : null;
+  const request: SimulateRequest = activePlan ? { ...scenario, plan: activePlan } : scenario;
   const requestKey = JSON.stringify(request);
   /** The shock actually sent: slider readouts show its values, not the rounded slider positions. */
   const sent: ScenarioShock = request.shock;
+
+  // One in-flight /api/optimize at a time, same debounce + abort pattern as /api/simulate below.
+  useEffect(() => {
+    const controller = new AbortController();
+    const body = JSON.parse(optKey) as OptimizeRequest;
+    const delay = firstOpt.current ? 0 : DEBOUNCE_MS;
+    firstOpt.current = false;
+    const timer = setTimeout(async () => {
+      setOpt({ kind: "loading", last: lastOpt.current });
+      const started = performance.now();
+      const res = await optimize(body, controller.signal);
+      if (controller.signal.aborted) return;
+      if (res.ok && (!SIMULATED_LABELS.has(res.data.provenance) || !BUSINESS_LABELS.has(res.data.business_provenance))) {
+        lastOpt.current = null;
+        setOpt({
+          kind: "error",
+          failure: { ok: false, kind: "malformed", error: `unknown provenance label "${res.data.provenance}"` },
+        });
+      } else if (res.ok) {
+        lastOpt.current = res.data;
+        setOpt({ kind: "ok", data: res.data, key: optKey, ms: Math.round(performance.now() - started), at: new Date() });
+      } else {
+        lastOpt.current = null;
+        setOpt({ kind: "error", failure: res });
+      }
+    }, delay);
+    return () => {
+      clearTimeout(timer);
+      controller.abort();
+    };
+  }, [optKey, optRetry]);
 
   // One in-flight /api/simulate at a time: a newer input aborts the older request before it can land.
   useEffect(() => {
@@ -106,7 +162,7 @@ export function CascadeWorkbench() {
       } else if (res.ok) {
         lastGood.current = res.data;
         setHorizon(res.data.result.horizon_weeks);
-        setSim({ kind: "ok", data: res.data, key: requestKey, ms: Math.round(performance.now() - started), at: new Date() });
+        setSim({ kind: "ok", data: res.data, key: requestKey, ms: Math.round(performance.now() - started), at: new Date(), planned: body.plan !== undefined });
       } else {
         // Never show an older scenario's numbers as if they answered this request.
         if (unreachable(res) || res.status === 404) lastGood.current = null;
@@ -261,7 +317,11 @@ export function CascadeWorkbench() {
           </div>
         </fieldset>
 
-        <PayrollToggle />
+        <PayrollToggle
+          checked={protect}
+          disabled={controlsDisabled}
+          onChange={(v) => setProtect(v)}
+        />
 
         {apiDown ? (
           <p className="mt-3 text-xs leading-relaxed text-muted">
@@ -275,12 +335,16 @@ export function CascadeWorkbench() {
         ) : null}
       </Panel>
 
-      <Panel code="C.3" title="Recovery plan" provenance="NOT AVAILABLE" className="xl:col-span-12">
-        <NotAvailable
-          endpoint="optimize"
-          note="Feasible actions from the deterministic MILP (issue #17). An infeasible scenario will read NO FEASIBLE PLAN with the binding constraint named."
-        />
-      </Panel>
+      <RecoveryPlan
+        opt={opt}
+        stale={opt.kind === "loading" || (opt.kind === "ok" && opt.key !== optKey)}
+        applied={activePlan !== null}
+        onApply={() => {
+          if (opt.kind === "ok" && opt.key === optKey && opt.data.plan) setApplied({ optKey, plan: opt.data.plan });
+        }}
+        onClear={() => setApplied(null)}
+        onRetry={() => setOptRetry((n) => n + 1)}
+      />
     </div>
   );
 }
@@ -375,7 +439,7 @@ function RequestStatus({
   const context = data ? (
     <span className="text-muted">
       {" "}
-      · <span className="text-text-2">{data.result.scenario_name}</span> vs {data.baseline.scenario_name} · C_0{" "}
+      · <span className="text-text-2">{data.result.scenario_name}</span>{sim.kind === "ok" && sim.planned ? <span className="text-viable"> with recovery plan</span> : null} vs {data.baseline.scenario_name} · C_0{" "}
       {usd(data.result.cash_0)} · T = {data.result.horizon_weeks} wk · fictional demo business
     </span>
   ) : null;
@@ -563,7 +627,15 @@ function Range({
   );
 }
 
-function PayrollToggle() {
+function PayrollToggle({
+  checked,
+  disabled,
+  onChange,
+}: {
+  checked: boolean;
+  disabled: boolean;
+  onChange: (v: boolean) => void;
+}) {
   return (
     <div className="mt-3 flex items-center justify-between gap-4 border-t border-line/70 pt-3">
       <div className="flex flex-col gap-0.5">
@@ -571,20 +643,219 @@ function PayrollToggle() {
           Protect payroll
         </span>
         <span id="protect-payroll-note" className="font-mono text-[10px] text-muted">
-          Optimizer not wired yet (#17)
+          {checked ? "On: the optimizer may not cut payroll (z_t = 0)" : "Off: payroll cuts allowed up to z̄"} · POST
+          /api/optimize
         </span>
       </div>
       <button
         type="button"
         role="switch"
-        aria-checked={false}
+        aria-checked={checked}
         aria-labelledby="protect-payroll-label"
         aria-describedby="protect-payroll-note"
-        disabled
-        className="relative h-6 w-11 shrink-0 cursor-not-allowed rounded-full border border-line-strong bg-bg opacity-60"
+        disabled={disabled}
+        onClick={() => onChange(!checked)}
+        className={`relative h-6 w-11 shrink-0 rounded-full border border-line-strong transition-colors disabled:cursor-not-allowed disabled:opacity-60 ${
+          checked ? "bg-[var(--accent)]" : "bg-bg"
+        }`}
       >
-        <span className="absolute left-0.5 top-1/2 size-4 -translate-y-1/2 rounded-full bg-muted" aria-hidden="true" />
+        <span
+          className={`absolute top-1/2 size-4 -translate-y-1/2 rounded-full transition-[left] ${
+            checked ? "left-[1.4rem] bg-bg" : "left-0.5 bg-muted"
+          }`}
+          aria-hidden="true"
+        />
       </button>
+    </div>
+  );
+}
+
+const ACTION_LABELS: Record<string, string> = {
+  use_backup_supplier: "Use backup supplier",
+  defer_capex: "Defer non-critical capex",
+  delay_expansion: "Delay expansion",
+  purchase_cut: "Purchase cut",
+  revolver_draw: "Revolver draw",
+  revolver_repay: "Revolver repayment",
+  payroll_cut: "Payroll cut",
+};
+
+function RecoveryPlan({
+  opt,
+  stale,
+  applied,
+  onApply,
+  onClear,
+  onRetry,
+}: {
+  opt: OptState;
+  stale: boolean;
+  applied: boolean;
+  onApply: () => void;
+  onClear: () => void;
+  onRetry: () => void;
+}) {
+  // Only an answer to the current inputs is rendered. While the debounce runs or a request is in flight, the
+  // previous plan is withheld: it may hold payroll cuts the switch now forbids, or be OPTIMAL where the new answer
+  // is NO FEASIBLE PLAN.
+  const pending = stale || opt.kind === "loading";
+  const data = opt.kind === "ok" && !pending ? opt.data : null;
+  const provenance: ProvenanceInput[] = data
+    ? [data.provenance as ProvenanceInput, data.business_provenance as ProvenanceInput]
+    : ["NOT AVAILABLE"];
+
+  let status: ReactNode;
+  if (opt.kind === "loading") status = <><span className="text-info">●</span> POST /api/optimize · request in flight</>;
+  else if (opt.kind === "ok")
+    status = (
+      <>
+        <span className="text-viable">●</span> POST /api/optimize · 200 · {opt.ms} ms · {TIME.format(opt.at)}
+        {stale ? " · input changed, request pending (debounce)" : ""}
+      </>
+    );
+  else
+    status = (
+      <span className="text-fail">
+        ■ {opt.failure.kind === "validation" ? `422 rejected${opt.failure.code ? ` · ${opt.failure.code}` : ""}` : opt.failure.status === 404 ? "404 · this API build does not serve POST /api/optimize" : `${opt.failure.kind}${opt.failure.status ? ` · HTTP ${opt.failure.status}` : ""}`}
+        {" · "}
+        {opt.failure.error}
+      </span>
+    );
+
+  return (
+    <Panel code="C.3" title="Recovery plan" provenance={provenance} className="xl:col-span-12" bodyClassName="flex flex-col gap-3 px-5 py-3">
+      <div className="flex flex-wrap items-start justify-between gap-3 font-mono text-[11px] leading-relaxed text-muted" role="status" aria-live="polite">
+        <div className="min-w-0">
+          {status}
+          {data ? (
+            <span>
+              {" "}
+              · <span className="text-text-2">{data.scenario_name}</span> · protect payroll{" "}
+              {data.protect_payroll ? "on" : "off"} · least-harmful plan from the MILP (MATH_MODEL §4)
+            </span>
+          ) : null}
+        </div>
+        {opt.kind === "error" ? (
+          <button type="button" onClick={onRetry} className="shrink-0 rounded-md border border-line-strong px-2.5 py-1 font-mono text-[10.5px] uppercase tracking-[0.12em] text-text-2 hover:bg-hover hover:text-text">
+            Retry request
+          </button>
+        ) : null}
+      </div>
+
+      {data === null ? (
+        <div data-testid="recovery-plan" data-status={pending ? "PENDING" : "NOT AVAILABLE"}>
+          <NotAvailable
+            note={
+              pending
+                ? "Solving for the current inputs… No earlier plan is shown while POST /api/optimize answers."
+                : "No recovery plan is shown until POST /api/optimize answers this exact scenario."
+            }
+          />
+        </div>
+      ) : (
+        <div data-testid="recovery-plan" data-status={data.status}>
+          {data.status === "OPTIMAL" ? (
+            <OptimalPlan data={data} applied={applied} onApply={onApply} onClear={onClear} />
+          ) : data.status === "NO FEASIBLE PLAN" ? (
+            <div className="flex flex-col gap-1.5 rounded-md border border-fail/60 px-4 py-3 text-fail">
+              <p className="font-mono text-sm font-semibold uppercase tracking-[0.12em]">NO FEASIBLE PLAN</p>
+              <p className="text-sm leading-relaxed">{data.diagnostic ?? "NOT AVAILABLE: the API gave no diagnostic."}</p>
+              <p className="font-mono text-xs">
+                Highest floor a plan can hold:{" "}
+                <span className="num" data-testid="max-feasible-floor">
+                  {data.max_feasible_cash_floor === null ? "NOT AVAILABLE" : usd(data.max_feasible_cash_floor)}
+                </span>
+              </p>
+              <p className="font-mono text-[10px] text-text-2">Solver: {data.solver_message}</p>
+            </div>
+          ) : (
+            <div className="flex flex-col gap-1 rounded-md border border-fail/60 px-4 py-3 text-fail">
+              <p className="font-mono text-sm font-semibold uppercase tracking-[0.12em]">SOLVER ERROR · no plan</p>
+              <p className="whitespace-pre-wrap break-words font-mono text-xs">{data.solver_message}</p>
+            </div>
+          )}
+        </div>
+      )}
+    </Panel>
+  );
+}
+
+function OptimalPlan({
+  data,
+  applied,
+  onApply,
+  onClear,
+}: {
+  data: OptimizeResponse;
+  applied: boolean;
+  onApply: () => void;
+  onClear: () => void;
+}) {
+  const actions = data.actions ?? [];
+  const binding = data.binding_constraints ?? [];
+  return (
+    <div className="grid grid-cols-1 gap-4 lg:grid-cols-[2fr_1fr]">
+      <div className="flex flex-col gap-1.5">
+        <p className="kicker">Chosen actions ({actions.length})</p>
+        {actions.length === 0 ? (
+          <p className="text-sm text-text-2">No action needed: cash stays above the floor without any recovery action.</p>
+        ) : (
+          <ul className="max-h-48 overflow-y-auto font-mono text-xs text-text-2" data-testid="chosen-actions">
+            {actions.map((a, i) => (
+              <li key={`${a.action}-${a.week ?? "x"}-${i}`} className="flex justify-between gap-3 border-b border-line/50 py-0.5">
+                <span>
+                  {ACTION_LABELS[a.action] ?? a.action}
+                  {a.week !== null ? ` · week ${a.week}` : ""}
+                </span>
+                <span className="num text-text">
+                  {a.amount !== null ? usd(a.amount) : "yes"}
+                  {a.share !== null ? ` (z = ${a.share.toFixed(4)})` : ""}
+                </span>
+              </li>
+            ))}
+          </ul>
+        )}
+      </div>
+      <div className="flex flex-col gap-2 font-mono text-xs">
+        <p>
+          <span className="kicker">Min cash after plan</span>{" "}
+          <span className="num text-text" data-testid="plan-min-cash">{data.min_cash === null ? "NOT AVAILABLE" : usd(data.min_cash)}</span>
+          {data.min_cash_week !== null ? <span className="text-muted"> · week {data.min_cash_week}</span> : null}
+        </p>
+        <p>
+          <span className="kicker">Objective</span>{" "}
+          <span className="num text-text">{data.objective === null ? "NOT AVAILABLE" : data.objective.toLocaleString("en-US", { maximumFractionDigits: 2 })}</span>
+          {data.disruption_cost !== null ? (
+            <span className="text-muted"> · disruption cost {data.disruption_cost.toLocaleString("en-US", { maximumFractionDigits: 2 })}</span>
+          ) : null}
+        </p>
+        <div>
+          <p className="kicker">Binding constraints</p>
+          {binding.length === 0 ? (
+            <p className="text-muted">none</p>
+          ) : (
+            <ul className="text-text-2" data-testid="binding-constraints">
+              {binding.map((b) => (
+                <li key={b}>{b}</li>
+              ))}
+            </ul>
+          )}
+        </div>
+        <div className="flex flex-wrap gap-2 pt-1">
+          {applied ? (
+            <button type="button" onClick={onClear} className="rounded-md border border-line-strong px-3 py-1.5 font-mono text-[11px] uppercase tracking-[0.12em] text-text-2 hover:bg-hover hover:text-text">
+              Remove plan
+            </button>
+          ) : (
+            <button type="button" onClick={onApply} className="rounded-md border border-viable/70 px-3 py-1.5 font-mono text-[11px] uppercase tracking-[0.12em] text-viable hover:bg-hover">
+              Apply plan
+            </button>
+          )}
+          <span className="self-center text-[10px] text-muted">
+            {applied ? "Readouts and graph: POST /api/simulate with recovery plan" : "Sends this plan to POST /api/simulate"}
+          </span>
+        </div>
+      </div>
     </div>
   );
 }

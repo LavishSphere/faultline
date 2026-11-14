@@ -35,6 +35,9 @@ const STATUS_HEADING: Record<Exclude<AnalysisStatus, "ok">, string> = {
   model_input_refused: "Local model input refused",
 };
 
+/** Shown on every evidence card. FAULTLINE checks that a claim matches its cited snippet, not that the page is true. */
+export const UNVERIFIED_NOTE = "Web source, not verified by FAULTLINE: check it before relying on it.";
+
 function Missing({ children = "Not available" }: { children?: ReactNode }) {
   return <span className="font-mono uppercase tracking-[0.08em] text-muted">{children}</span>;
 }
@@ -51,10 +54,16 @@ function Row({ label, children }: { label: string; children: ReactNode }) {
 function EvidenceCard({ card }: { card: ExploreEvidenceCard }) {
   return (
     <li className="flex min-w-0 flex-col gap-3 rounded-md border border-line p-4">
-      <div className="flex flex-col gap-1">
-        <p className="font-mono text-[10px] uppercase tracking-[0.14em] text-muted">
-          {card.source_id} · {host(card.source_url)} · claim written by the local model
+      {/* The host is the first thing on the card: a web source can be anyone (prompt-injection follow-up of #121). */}
+      <div className="flex flex-col gap-1 border-b border-line/70 pb-2">
+        <p className="flex flex-wrap items-baseline gap-x-2 font-mono text-sm text-text" data-testid="evidence-host">
+          <span className="text-[10px] uppercase tracking-[0.14em] text-muted">{card.source_id} · source</span>
+          <span className="font-medium">{host(card.source_url)}</span>
         </p>
+        <p className="text-[11px] leading-snug text-risk">{UNVERIFIED_NOTE}</p>
+      </div>
+      <div className="flex flex-col gap-1">
+        <p className="font-mono text-[10px] uppercase tracking-[0.14em] text-muted">claim written by the local model</p>
         <p className="text-[15px] leading-snug text-text">{card.claim}</p>
       </div>
       <div className="flex flex-col gap-1.5">

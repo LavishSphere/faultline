@@ -1,7 +1,14 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
-import { simulate, type ApiFailure, type ScenarioShock, type SimulateResponse } from "@/lib/api";
+import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import {
+  optimize,
+  simulate,
+  type ApiFailure,
+  type OptimizeResponse,
+  type ScenarioShock,
+  type SimulateResponse,
+} from "@/lib/api";
 import {
   DEFAULTS_NOTE,
   SUGGESTION_LABEL,
@@ -21,8 +28,10 @@ import { fmt } from "../cascade/scenarioInputs";
 
 /**
  * LIVE EXPLORE scenario (issue #61): the model's suggestion as editable INPUTS, then the human's confirmation, then
- * POST /api/simulate. Nothing is computed here: the browser maps the confirmed inputs to a ScenarioShock (the guidance
- * file's own mapping) and every figure shown is read from the simulate response. Before Confirm, no request is sent.
+ * POST /api/simulate and POST /api/optimize (#47) for exactly the confirmed shock and Protect payroll setting.
+ * Nothing is computed here: the browser maps the confirmed inputs to a ScenarioShock (the guidance file's own
+ * mapping) and every figure shown is read from those responses. Before Confirm, no request is sent; after an edit,
+ * the old plan is withheld until the human confirms again.
  */
 
 type Origin = ValueSource | "human";
@@ -32,6 +41,12 @@ type SimState =
   | { kind: "idle" }
   | { kind: "loading" }
   | { kind: "ok"; data: SimulateResponse }
+  | { kind: "error"; failure: ApiFailure };
+
+type OptState =
+  | { kind: "idle" }
+  | { kind: "loading" }
+  | { kind: "ok"; data: OptimizeResponse }
   | { kind: "error"; failure: ApiFailure };
 
 const SIMULATED_LABELS = new Set(["SIMULATED"]);
@@ -102,8 +117,10 @@ export function ExploreScenario({ analysis }: { analysis: ExploreAnalysis }) {
   const [categoryId, setCategoryId] = useState(suggestion?.category_id ?? "");
   const category = categories.find((c) => c.id === categoryId) ?? null;
   const [inputs, setInputs] = useState<Inputs | null>(() => (category ? inputsFor(category, analysis) : null));
-  const [confirmed, setConfirmed] = useState<{ shock: ScenarioShock; key: string } | null>(null);
+  const [protect, setProtect] = useState(false);
+  const [confirmed, setConfirmed] = useState<{ shock: ScenarioShock; key: string; protect: boolean } | null>(null);
   const [sim, setSim] = useState<SimState>({ kind: "idle" });
+  const [opt, setOpt] = useState<OptState>({ kind: "idle" });
 
   const choose = (id: string) => {
     setCategoryId(id);
@@ -122,24 +139,37 @@ export function ExploreScenario({ analysis }: { analysis: ExploreAnalysis }) {
   }, [category, inputs, horizon]);
   const shockKey = shock ? JSON.stringify(shock) : "";
   const stale = confirmed !== null && confirmed.key !== shockKey;
+  // The plan also answers the Protect payroll setting: flipping it withholds the plan until Confirm is pressed again.
+  const planStale = stale || (confirmed !== null && confirmed.protect !== protect);
 
   const inflight = useRef<AbortController | null>(null);
   useEffect(() => () => inflight.current?.abort(), []);
 
-  // POST /api/simulate runs only here: once per click on Confirm, for exactly the confirmed shock.
+  // POST /api/simulate and POST /api/optimize run only here: once each per click on Confirm, for exactly the
+  // confirmed shock (and, for the optimizer, the Protect payroll setting at that moment).
   async function confirm() {
     if (!shock) return;
     inflight.current?.abort();
     const controller = new AbortController();
     inflight.current = controller;
-    setConfirmed({ shock, key: shockKey });
+    const protectNow = protect;
+    setConfirmed({ shock, key: shockKey, protect: protectNow });
     setSim({ kind: "loading" });
-    const res = await simulate({ shock }, controller.signal);
+    setOpt({ kind: "loading" });
+    const [res, plan] = await Promise.all([
+      simulate({ shock }, controller.signal),
+      optimize({ shock, protect_payroll: protectNow }, controller.signal),
+    ]);
     if (controller.signal.aborted) return;
     if (res.ok && (!SIMULATED_LABELS.has(res.data.provenance) || !BUSINESS_LABELS.has(res.data.business_provenance))) {
       setSim({ kind: "error", failure: { ok: false, kind: "malformed", error: "unknown provenance label" } });
     } else {
       setSim(res.ok ? { kind: "ok", data: res.data } : { kind: "error", failure: res });
+    }
+    if (plan.ok && (!SIMULATED_LABELS.has(plan.data.provenance) || !BUSINESS_LABELS.has(plan.data.business_provenance))) {
+      setOpt({ kind: "error", failure: { ok: false, kind: "malformed", error: "unknown provenance label" } });
+    } else {
+      setOpt(plan.ok ? { kind: "ok", data: plan.data } : { kind: "error", failure: plan });
     }
   }
 
@@ -265,6 +295,8 @@ export function ExploreScenario({ analysis }: { analysis: ExploreAnalysis }) {
             })
           : null}
 
+        <PayrollSwitch checked={protect} onChange={setProtect} />
+
         <div className="flex flex-col gap-2 border-t border-line pt-4">
           <div className="flex flex-wrap items-center gap-3">
             <button
@@ -292,20 +324,18 @@ export function ExploreScenario({ analysis }: { analysis: ExploreAnalysis }) {
                 ? "Every shock is off: turn one on to confirm."
                 : stale
                   ? "Inputs changed since you confirmed. The results show the previously confirmed inputs; confirm again to re-run."
-                  : confirmed
-                    ? "Confirmed. POST /api/simulate computes every figure below."
-                    : "Nothing has been computed yet. Confirm sends these inputs to POST /api/simulate."}
+                  : planStale
+                    ? "Protect payroll changed since you confirmed. The recovery plan is withheld; confirm again to re-solve."
+                    : confirmed
+                      ? "Confirmed. POST /api/simulate and POST /api/optimize compute every figure below."
+                      : "Nothing has been computed yet. Confirm sends these inputs to POST /api/simulate and POST /api/optimize."}
           </p>
         </div>
       </Panel>
 
       <Results className="xl:col-span-7" sim={sim} stale={stale} confirmed={confirmed !== null} />
 
-      <Panel code="X.5" title="Recovery plan" provenance="NOT AVAILABLE" className="xl:col-span-12">
-        <NotAvailable
-          note="Optimizer: PENDING #47. POST /api/optimize does not exist yet, so no recovery plan is shown. When it lands, the deterministic MILP will propose feasible actions for the confirmed scenario."
-        />
-      </Panel>
+      <RecoveryPlan className="xl:col-span-12" opt={opt} stale={planStale} confirmed={confirmed !== null} />
     </>
   );
 }
@@ -463,5 +493,191 @@ function Results({
         <CascadeGraph className="flex-1" deltas={d} baseline={b} result={r} stale={stale} />
       </div>
     </Panel>
+  );
+}
+
+function PayrollSwitch({ checked, onChange }: { checked: boolean; onChange: (v: boolean) => void }) {
+  return (
+    <div className="flex items-center justify-between gap-4 border-t border-line/70 pt-3">
+      <div className="flex min-w-0 flex-col gap-0.5">
+        <span id="explore-protect-label" className="text-[13px] font-medium uppercase tracking-[0.08em] text-text">
+          Protect payroll
+        </span>
+        <span id="explore-protect-note" className="font-mono text-[10px] text-muted">
+          {checked ? "On: the optimizer may not cut payroll (z_t = 0)" : "Off: payroll cuts allowed up to z̄"} · sent
+          to POST /api/optimize on Confirm
+        </span>
+      </div>
+      <button
+        type="button"
+        role="switch"
+        aria-checked={checked}
+        aria-labelledby="explore-protect-label"
+        aria-describedby="explore-protect-note"
+        onClick={() => onChange(!checked)}
+        className={`relative h-6 w-11 shrink-0 rounded-full border border-line-strong transition-colors ${
+          checked ? "bg-[var(--accent)]" : "bg-bg"
+        }`}
+      >
+        <span
+          className={`absolute top-1/2 size-4 -translate-y-1/2 rounded-full transition-[left] ${
+            checked ? "left-[1.4rem] bg-bg" : "left-0.5 bg-muted"
+          }`}
+          aria-hidden="true"
+        />
+      </button>
+    </div>
+  );
+}
+
+const ACTION_LABELS: Record<string, string> = {
+  use_backup_supplier: "Use backup supplier",
+  defer_capex: "Defer non-critical capex",
+  delay_expansion: "Delay expansion",
+  purchase_cut: "Purchase cut",
+  revolver_draw: "Revolver draw",
+  revolver_repay: "Revolver repayment",
+  payroll_cut: "Payroll cut",
+};
+
+/**
+ * POST /api/optimize answer for the CONFIRMED inputs, shown verbatim (same rendering rules as the CASCADE screen,
+ * #127). A stale (inputs or Protect payroll changed since Confirm) or in-flight plan is withheld, never shown.
+ */
+function RecoveryPlan({
+  className,
+  opt,
+  stale,
+  confirmed,
+}: {
+  className?: string;
+  opt: OptState;
+  stale: boolean;
+  confirmed: boolean;
+}) {
+  const pending = stale || opt.kind === "loading";
+  const data = opt.kind === "ok" && !pending ? opt.data : null;
+  const provenance: ProvenanceInput[] = data
+    ? [data.provenance as ProvenanceInput, data.business_provenance as ProvenanceInput]
+    : ["NOT AVAILABLE"];
+
+  let status: ReactNode;
+  if (!confirmed) status = "Waiting for you to confirm the inputs. No request has been sent.";
+  else if (opt.kind === "loading") status = "POST /api/optimize · request in flight";
+  else if (opt.kind === "error") {
+    const f = opt.failure;
+    status = (
+      <span className="text-fail">
+        {f.kind === "validation" ? `422 rejected${f.code ? ` · ${f.code}` : ""}` : f.status === 404 ? "404 · this API build does not serve POST /api/optimize" : `${f.kind}${f.status ? ` · HTTP ${f.status}` : ""}`}
+        {" · "}
+        {f.error}
+      </span>
+    );
+  } else if (stale) status = "Inputs changed since you confirmed: plan withheld until you confirm again.";
+  else if (data) {
+    status = `POST /api/optimize · 200 · ${data.scenario_name} · protect payroll ${data.protect_payroll ? "on" : "off"} · least-harmful plan from the MILP (MATH_MODEL §4)`;
+  } else status = "";
+
+  return (
+    <Panel code="X.5" title="Recovery plan · deterministic optimizer" provenance={provenance} className={className} bodyClassName="flex flex-col gap-3 px-5 py-4">
+      <p role="status" aria-live="polite" className="font-mono text-[11px] leading-relaxed text-muted">
+        {status}
+      </p>
+      {data === null ? (
+        <div data-testid="explore-recovery-plan" data-status={pending && confirmed ? "PENDING" : "NOT AVAILABLE"}>
+          <NotAvailable
+            note={
+              !confirmed
+                ? "Confirm sends the inputs to POST /api/optimize; nothing is solved before that."
+                : pending
+                  ? "No earlier plan is shown while it does not answer the current inputs."
+                  : "No recovery plan for this request."
+            }
+          />
+        </div>
+      ) : (
+        <div data-testid="explore-recovery-plan" data-status={data.status}>
+          {data.status === "OPTIMAL" ? (
+            <OptimalPlan data={data} />
+          ) : data.status === "NO FEASIBLE PLAN" ? (
+            <div className="flex flex-col gap-1.5 rounded-md border border-fail/60 px-4 py-3 text-fail">
+              <p className="font-mono text-sm font-semibold uppercase tracking-[0.12em]">NO FEASIBLE PLAN</p>
+              <p className="text-sm leading-relaxed">{data.diagnostic ?? "NOT AVAILABLE: the API gave no diagnostic."}</p>
+              <p className="font-mono text-xs">
+                Highest floor a plan can hold:{" "}
+                <span className="num" data-testid="explore-max-feasible-floor">
+                  {data.max_feasible_cash_floor === null ? "NOT AVAILABLE" : usd(data.max_feasible_cash_floor)}
+                </span>
+              </p>
+              <p className="font-mono text-[10px] text-text-2">Solver: {data.solver_message}</p>
+            </div>
+          ) : (
+            <div className="flex flex-col gap-1 rounded-md border border-fail/60 px-4 py-3 text-fail">
+              <p className="font-mono text-sm font-semibold uppercase tracking-[0.12em]">SOLVER ERROR · no plan</p>
+              <p className="whitespace-pre-wrap font-mono text-xs">{data.solver_message}</p>
+            </div>
+          )}
+        </div>
+      )}
+    </Panel>
+  );
+}
+
+function OptimalPlan({ data }: { data: OptimizeResponse }) {
+  const actions = data.actions ?? [];
+  const binding = data.binding_constraints ?? [];
+  return (
+    <div className="grid grid-cols-1 gap-4 lg:grid-cols-[2fr_1fr]">
+      <div className="flex min-w-0 flex-col gap-1.5">
+        <p className="kicker">Chosen actions ({actions.length})</p>
+        {actions.length === 0 ? (
+          <p className="text-sm text-text-2">No action needed: cash stays above the floor without any recovery action.</p>
+        ) : (
+          <ul className="max-h-48 overflow-y-auto font-mono text-xs text-text-2" data-testid="explore-chosen-actions">
+            {actions.map((a, i) => (
+              <li key={`${a.action}-${a.week ?? "x"}-${i}`} className="flex justify-between gap-3 border-b border-line/50 py-0.5">
+                <span>
+                  {ACTION_LABELS[a.action] ?? a.action}
+                  {a.week !== null ? ` · week ${a.week}` : ""}
+                </span>
+                <span className="num text-text">
+                  {a.amount !== null ? usd(a.amount) : "yes"}
+                  {a.share !== null ? ` (z = ${a.share.toFixed(4)})` : ""}
+                </span>
+              </li>
+            ))}
+          </ul>
+        )}
+      </div>
+      <div className="flex min-w-0 flex-col gap-2 font-mono text-xs">
+        <p>
+          <span className="kicker">Min cash after plan</span>{" "}
+          <span className="num text-text" data-testid="explore-plan-min-cash">{data.min_cash === null ? "NOT AVAILABLE" : usd(data.min_cash)}</span>
+          {data.min_cash_week !== null ? <span className="text-muted"> · week {data.min_cash_week}</span> : null}
+        </p>
+        <p>
+          <span className="kicker">Objective</span>{" "}
+          <span className="num text-text">{data.objective === null ? "NOT AVAILABLE" : data.objective.toLocaleString("en-US", { maximumFractionDigits: 2 })}</span>
+          {data.disruption_cost !== null ? (
+            <span className="text-muted"> · disruption cost {data.disruption_cost.toLocaleString("en-US", { maximumFractionDigits: 2 })}</span>
+          ) : null}
+        </p>
+        <div>
+          <p className="kicker">Binding constraints</p>
+          {binding.length === 0 ? (
+            <p className="text-muted">none</p>
+          ) : (
+            <ul className="text-text-2">
+              {binding.map((b) => (
+                <li key={b}>{b}</li>
+              ))}
+            </ul>
+          )}
+        </div>
+        <p className="text-[10px] text-muted">
+          The plan is the solver&apos;s proposal for the SYNTHETIC demo business; FAULTLINE executes nothing.
+        </p>
+      </div>
+    </div>
   );
 }

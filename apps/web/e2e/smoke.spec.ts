@@ -306,6 +306,71 @@ test.describe("LIVE EXPLORE", () => {
     };
   }
 
+  test("Confirm sends exactly one simulate and one optimize; the plan shown is the API's; an edit withholds it", async ({ page }) => {
+    const OPTIMIZE_URL = `${E2E_API_BASE}/api/optimize`;
+    const sent: string[] = [];
+    page.on("request", (r) => {
+      if (r.method() === "POST" && (r.url() === SIMULATE_URL || r.url() === OPTIMIZE_URL)) sent.push(new URL(r.url()).pathname);
+    });
+    await page.route(ANALYZE_URL, (route) =>
+      route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        headers: { "access-control-allow-origin": "*" },
+        body: JSON.stringify(filledAnalysis(true)),
+      }),
+    );
+    await page.goto("/explore/");
+    await page.locator("#explore-decision").fill("TEST FIXTURE decision");
+    await page.getByRole("button", { name: "Research and analyze" }).click();
+    await expect(page.locator("#explore-rate-delta_rate")).toBeVisible();
+
+    // Every evidence card leads with its source host and the not-verified note.
+    const hosts = page.getByTestId("evidence-host");
+    await expect(hosts).toHaveCount(2);
+    await expect(hosts.first()).toContainText("news1.example.test");
+    await expect(page.getByText("Web source, not verified by FAULTLINE: check it before relying on it.")).toHaveCount(2);
+
+    await page.waitForTimeout(300);
+    expect(sent, "nothing is simulated or solved before Confirm").toEqual([]);
+    await expect(page.getByTestId("explore-recovery-plan")).toHaveAttribute("data-status", "NOT AVAILABLE");
+
+    const simDone = page.waitForResponse((r) => r.url() === SIMULATE_URL);
+    const optDone = page.waitForResponse((r) => r.url() === OPTIMIZE_URL);
+    await page.getByRole("button", { name: "Confirm inputs and run the engine" }).click();
+    const [sim, opt] = await Promise.all([simDone, optDone]);
+    expect(sim.status()).toBe(200);
+    expect(opt.status()).toBe(200);
+    const optBody = opt.request().postDataJSON() as { shock: unknown; protect_payroll: boolean };
+    expect(optBody.shock, "the optimizer gets exactly the simulated shock").toEqual((sim.request().postDataJSON() as { shock: unknown }).shock);
+    expect(optBody.protect_payroll).toBe(false);
+
+    // The plan shown is what a direct call with the same body returns.
+    const direct = (await (await page.request.post(OPTIMIZE_URL, { data: optBody })).json()) as {
+      status: string;
+      min_cash: number | null;
+      max_feasible_cash_floor: number | null;
+    };
+    const plan = page.getByTestId("explore-recovery-plan");
+    await expect(plan).toHaveAttribute("data-status", direct.status);
+    if (direct.status === "OPTIMAL" && direct.min_cash !== null) {
+      await expect(page.getByTestId("explore-plan-min-cash")).toHaveText(usd(direct.min_cash));
+    } else if (direct.status === "NO FEASIBLE PLAN") {
+      await expect(page.getByTestId("explore-max-feasible-floor")).toHaveText(
+        direct.max_feasible_cash_floor === null ? "NOT AVAILABLE" : usd(direct.max_feasible_cash_floor),
+      );
+    }
+
+    await page.waitForTimeout(500);
+    expect(sent.sort(), "exactly one simulate and one optimize per Confirm").toEqual(["/api/optimize", "/api/simulate"]);
+
+    // Flipping Protect payroll after Confirm withholds the plan and sends nothing until the next Confirm.
+    await page.getByRole("switch", { name: "Protect payroll" }).click();
+    await expect(plan).toHaveAttribute("data-status", "PENDING");
+    await page.waitForTimeout(500);
+    expect(sent.length, "no request after an edit").toBe(2);
+  });
+
   for (const width of [390, 1920]) {
     for (const fromModel of [true, false]) {
       test(`filled analysis at ${width} px (${fromModel ? "model numbers" : "guidance defaults"}): no overflow, honest label`, async ({ page }) => {
