@@ -7,7 +7,7 @@ import "./globals.css";
 import { HealthChip } from "@/components/HealthChip";
 import { HealthProvider } from "@/components/HealthProvider";
 import { KeyNav } from "@/components/KeyNav";
-import { ProvenanceBadge } from "@/components/ProvenanceBadge";
+import { HeaderCase } from "@/components/HeaderCase";
 import { ReplayTimeline } from "@/components/ReplayTimeline";
 import { ThemeToggle } from "@/components/ThemeToggle";
 import { THEME_STORAGE_KEY } from "@/lib/theme";
@@ -78,10 +78,7 @@ export default function RootLayout({ children }: Readonly<{ children: React.Reac
                       <span className="font-mono text-[13px] font-medium tracking-[0.28em] text-text">FAULTLINE</span>
                     </Link>
                     <span className="hidden h-4 w-px bg-line md:block" aria-hidden="true" />
-                    <div className="hidden items-center gap-2 md:flex">
-                      <span className="kicker">Case</span>
-                      <ProvenanceBadge kind="NOT AVAILABLE" detail="No case loaded" />
-                    </div>
+                    <HeaderCase />
                   </div>
                   <div className="flex min-w-0 items-center gap-2">
                     <HealthChip />

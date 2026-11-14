@@ -14,6 +14,7 @@ import {
 } from "@/lib/vcLenses";
 import { Field, NotAvailable, Panel } from "./Panel";
 import { ProvenanceBadge } from "./ProvenanceBadge";
+import { useReplayCases, useSelectedCase } from "./replay/hooks";
 
 /**
  * Thesis Court (SPEC §2 Screen E, §7): four firms' dated public research from GET /api/vc-lenses.
@@ -180,6 +181,16 @@ function LensCard({ item, mode }: { item: LensPointInTime | LensLiveExplore; mod
 
       <dl>
         <Field label="Published" value={item.published_at ?? undefined} />
+        {/* F24: why an undated page still counts as public at the cutoff. */}
+        {item.published_at === null ? (
+          <p className="pb-2 text-[11px] leading-relaxed text-muted" data-testid="lens-undated-basis">
+            {live
+              ? live.archived_at !== null && live.archived_at.startsWith(live.available_at)
+                ? `public from archive capture ${live.available_at}`
+                : `public from ${live.available_at} (${live.available_at_basis})`
+              : "Undated page: it passes the cutoff on its proven-public date (an archive capture). This point-in-time response does not include that date (NOT AVAILABLE here; Live Explore mode shows it)."}
+          </p>
+        ) : null}
         {live ? (
           <>
             {live.published_at === null && live.published_at_basis ? (
@@ -347,7 +358,7 @@ function FirmColumn({
               <>
                 <span className="num text-text-2">{items.length}</span>{" "}
                 {items.length === 1 ? "source" : "sources"}
-                {data.mode === "point_in_time" ? " public at cutoff" : " · unfiltered"}
+                {data.mode === "point_in_time" ? <> public at <span className="normal-case">{data.as_of}</span></> : " · unfiltered"}
               </>
             ) : (
               "Sources: not available"
@@ -428,18 +439,31 @@ export function ThesisCourt() {
     setView({ kind: "done", mode: nextMode, asOf, result });
   }, []);
 
+  // F9 (#157): the first cutoff is the selected replay case's as_of (shared selection, GET /api/cases), so the lede
+  // "what was known by the cutoff" holds; only with no case selected does it fall back to the current instant.
+  const { load: casesLoad } = useReplayCases();
+  const { selected } = useSelectedCase(casesLoad);
+  /** undefined while GET /api/cases is in flight; null when no case is selected (or the list did not load). */
+  const caseAsOf = casesLoad.kind === "loading" ? undefined : (selected?.as_of ?? null);
+  const caseId = selected?.event_id ?? null;
+  const started = useRef(false);
+  const [defaultFrom, setDefaultFrom] = useState<string | null>(null);
+
   useEffect(() => {
-    // First request after mount: point-in-time at the current instant (a suggested cutoff the presenter can edit).
+    if (caseAsOf === undefined) return;
+    // First request (once): point-in-time at the case cutoff, else now. A suggested cutoff the presenter can edit.
     const first = setTimeout(() => {
-      const now = nowUtcInstant();
-      setDraft(now);
-      void run("point_in_time", now);
+      if (started.current) return;
+      started.current = true;
+      const asOf = caseAsOf ?? nowUtcInstant();
+      setDefaultFrom(caseAsOf !== null && caseId ? `the selected case's cutoff (${caseId})` : "now (no case selected)");
+      setDraft(asOf);
+      void run("point_in_time", asOf);
     }, 0);
-    return () => {
-      clearTimeout(first);
-      inflight.current?.abort();
-    };
-  }, [run]);
+    return () => clearTimeout(first);
+  }, [caseAsOf, caseId, run]);
+
+  useEffect(() => () => inflight.current?.abort(), []);
 
   function submit(e: FormEvent) {
     e.preventDefault();
@@ -563,6 +587,7 @@ export function ThesisCourt() {
                   <>
                     ISO-8601 with an offset, e.g. <code className="text-text-2">2025-09-01T00:00:00Z</code>. Sent to
                     the API as typed; the API validates it, normalizes it to UTC and decides what was public.
+                    {defaultFrom ? <> Default: {defaultFrom}.</> : null}
                   </>
                 )}
               </p>

@@ -12,8 +12,10 @@ const SIMULATE_URL = `${E2E_API_BASE}/api/simulate`;
 const CHALLENGES_URL = `${E2E_API_BASE}/api/judge-challenges`;
 
 /** Same display formatting as components/FinancialReadout.tsx ("usd"): formatting only, no arithmetic. */
+// lib/format.ts `usd`: whole dollars, except a value on a half dollar (x.50) shows its cents (F20, #157).
 const USD = new Intl.NumberFormat("en-US", { style: "currency", currency: "USD", maximumFractionDigits: 0 });
-const usd = (n: number) => USD.format(Math.round(n) || 0);
+const CENTS = new Intl.NumberFormat("en-US", { style: "currency", currency: "USD", minimumFractionDigits: 2, maximumFractionDigits: 2 });
+const usd = (n: number) => (Math.abs((Math.abs(n) % 1) - 0.5) < 0.005 ? CENTS.format(n) : USD.format(Math.round(n) || 0));
 const isSimulate = (r: Request) => r.method() === "POST" && r.url() === SIMULATE_URL;
 
 interface Challenge {

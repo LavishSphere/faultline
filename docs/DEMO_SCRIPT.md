@@ -1,7 +1,9 @@
 # FAULTLINE: 2-minute demo script and finance Q&A prep
 
 **Presenter (finance voice):** Yaseen. **Length:** 280 spoken words on the main path (the **Say** lines of steps 0–7), about 112 s at 150 words a minute, inside the 90–120 s target (SPEC §2). **Measured with a stopwatch:** NOT YET TIMED. Write the time of the first full run-through here.
-**Status of this script:** written 2026-11-13 against `main` at commit `1190671` and updated on 2026-11-14 against `4a1f2c2` (after the DECISION screen #134, the optimizer endpoint and Protect payroll switch #127, and the LIVE EXPLORE screen #135 merged); the recovery-plan numbers (step 3) were re-run against `80deee2`, after the optimizer tie-break #136. Every number below came from the API running locally (calls listed in [Where the numbers come from](#where-the-numbers-come-from)).
+**Status of this script:** written 2026-11-13 against `main` at commit `1190671` and updated on 2026-11-14 against `4a1f2c2` (after the DECISION screen #134, the optimizer endpoint and Protect payroll switch #127, and the LIVE EXPLORE screen #135 merged); the recovery-plan numbers (step 3) were re-run against `80deee2`, after the optimizer tie-break #136. On-screen labels
+in steps 1, 3, 4 and 5 were updated for the finance-review fixes (#157), and the case, research-lens and integrity
+counts re-checked against `c675c6e` with this branch's API. Every number below came from the API running locally (calls listed in [Where the numbers come from](#where-the-numbers-come-from)).
 The web app itself was **not** run while writing this (Node.js was not installed on the writing machine), so the
 click paths and on-screen labels were read from the `apps/web` code. Do the [dry-run checklist](#dry-run-checklist)
 before going on stage.
@@ -33,11 +35,11 @@ THEN / DECISION / REVEAL / NOW; LIVE EXPLORE (`/explore`) is the NOW screen.
 | # | Step | What to click | Label on screen | Words (≈ s) | Status |
 |---|---|---|---|---|---|
 | 0 | Open | Nothing; app is on `/rewind` | (title only) | 17 (≈ 7 s) | works on main |
-| 1 | REWIND | Pick the real case in panel **A.1 Replay cases** | `REAL HISTORICAL`, `AS-OF`, `SEALED` | 32 (≈ 13 s) | **works on main** (4 real cases, #54) |
+| 1 | REWIND | Pick `fomc-2026-jul` in panel **A.1 Replay cases** | `REAL HISTORICAL`, `AS-OF`, `SEALED`; header `Case fomc-2026-jul` | 32 (≈ 13 s) | **works on main** (15 real cases, #54, #67) |
 | 2 | DECISION | **→** to `/decision` | `RECORDED RUN` or a fresh run, `FORECAST`, market `AS-OF` "market-implied probability (price-derived…)" | 30 (≈ 12 s) | **on main** (#55, #71); needs the local model running |
 | 3 | CASCADE | **→** to `/cascade`; **Preset** dropdown → "Bad quarter…"; then **Protect payroll** | `SIMULATED` + `SYNTHETIC` | 74 (≈ 30 s) | preset and Protect payroll **work on main** (#69, #127) |
 | 4 | REVEAL | **→** to `/reveal`; **Reveal outcome** | Benchmark and both scorecards `NOT AVAILABLE`; outcome `REVEALED` | 41 (≈ 16 s) | **on main** (#76, #64, #91); no recorded scorecard yet |
-| 5 | RESEARCH LENS | **→** to `/research`; type cutoff `2026-07-01T00:00:00Z`; **Apply cutoff** | `REAL HISTORICAL`, `RESEARCH CONTEXT`, `AS-OF: UTC instant` | 26 (≈ 10 s) | **works on main** |
+| 5 | RESEARCH LENS | **→** to `/research`; the cutoff already reads the case's `2026-07-22T00:00:00Z`; **Apply cutoff** only if you changed it | `REAL HISTORICAL`, `RESEARCH CONTEXT`, `AS-OF: UTC instant` | 26 (≈ 10 s) | **works on main** |
 | 6 | LIVE EXPLORE | **→** to `/explore`; type a decision; **Research and analyze**; confirm the suggested inputs | `LIVE EXPLORE`, `MODEL-SUGGESTED, HUMAN TO CONFIRM`, then `SIMULATED` + `SYNTHETIC` | 29 (≈ 12 s) | **on main** (#135); needs `TAVILY_API_KEY` and the local model |
 | 7 | Close | Nothing | (none) | 31 (≈ 12 s) | n/a |
 | | | | **Total** | **280 (≈ 112 s)** | |
@@ -55,16 +57,19 @@ Seconds are estimates at 150 spoken words a minute, plus pauses for clicks. If y
 
 ### Step 1. REWIND: **works on main** (#54)
 
-- **Click:** in panel **A.1 Replay cases**, pick one of the four real FOMC cases (2026 meetings). Point at **A.3 Knowledge cutoff** and the
-  hatched **Sealed future** strip.
+- **Click:** in panel **A.1 Replay cases**, pick the real FOMC case `fomc-2026-jul` (July 2026 meeting, cutoff
+  2026-07-22 00:00 UTC; steps 2 and 5 assume it). Point at **A.3 Knowledge cutoff** and the hatched **Sealed future** strip.
 - **Say:** "We rewind to a real Federal Reserve decision. This is the knowledge cutoff. On the left, only evidence public by then. On the right, the answer is sealed away from the model."
-- **On screen:** `REAL HISTORICAL` on the evidence, `AS-OF` on the cutoff, `SEALED` on the future.
+- **On screen:** `REAL HISTORICAL` on the evidence, `AS-OF` on the cutoff, `SEALED` on the future. The header now
+  reads `Case fomc-2026-jul` with a `REAL HISTORICAL` badge, on every screen, until you pick another case (#157).
 - **The list also holds one `SYNTHETIC` case (#128).** Don't pick it on the main path. If you do, say instead: "This
   is an invented case whose answer was fixed by a committed random draw, so no model can know it." Its screens are
   labeled `SYNTHETIC`, never `REAL HISTORICAL`.
-- **If no case is listed:** the screen shows `NOT AVAILABLE` on every panel and `Case: NOT AVAILABLE: No case loaded`
-  in the header. On 2026-11-14 `GET /api/cases` returned 5 cases (4 `REAL_HISTORICAL` FOMC meetings of June, July,
-  September and October 2026, plus 1 `SYNTHETIC`), so this means the API did not load its data.
+- **If no case is listed:** the screen shows `NOT AVAILABLE` on every panel and the header chip reads
+  `Case NOT AVAILABLE: Cases did not load` (request failed) or `Case NOT AVAILABLE: No case served` (empty list).
+  `Case NOT AVAILABLE: No case selected` only means you have not picked one yet: pick it. On 2026-11-14 `GET
+  /api/cases` returned 16 cases (15 `REAL_HISTORICAL` FOMC meetings of 2025 and 2026, plus 1 `SYNTHETIC`), so an
+  empty or failed list means the API did not load its data.
   **Say instead:** "The replay cases didn't load, so this screen honestly says NOT AVAILABLE." Then go straight
   to step 3.
 
@@ -100,6 +105,8 @@ Seconds are estimates at 150 spoken words a minute, plus pauses for clicks. If y
   its point is the guarantee. (Capex is 0 in the demo
   business and the revolver must be repaid by week 26, so neither fixes the bad quarter on its own.)
 - **On screen:** `SIMULATED` (computed by the deterministic engine) and `SYNTHETIC` (fictional business) on C.0 and C.2.
+  Under **Minimum cash** the second line reads `floor $25,000 · below it in weeks 20–26` (from the API's
+  `weeks_below_floor`, #157); that is the "week 20" you say. **Cash goes negative** reads `not within 26 weeks`.
   The dependency network shows Δ = scenario − baseline at each node's peak week.
 - **If C.3 reads `NOT AVAILABLE` or shows an error** (the API did not answer `POST /api/optimize`):
   **Say instead:** "The solver didn't answer, so this panel says NOT AVAILABLE instead of guessing."
@@ -123,13 +130,17 @@ Seconds are estimates at 150 spoken words a minute, plus pauses for clicks. If y
   **Say instead:** "The reveal stays locked until a prediction has been saved. That lock is the point."
 - **Optional, for the +2 AI-alignment criterion (not counted in the timing):** point at panel **D.3 Integrity · what
   the AI could not see** (also **B.8** on DECISION, #93) and say: "This panel re-checks, live, what the AI was not
-  allowed to see." Read only the ✓ / ✗ / NOT AVAILABLE marks it shows (on 2026-11-14 `GET /api/integrity` with no
-  case selected: 3 passed, 0 failed, 6 NOT AVAILABLE).
+  allowed to see." Read only the ✓ / ✗ / NOT AVAILABLE marks it shows. D.3 now checks the case selected on REWIND
+  (#157): on 2026-11-14 `GET /api/integrity?case_id=fomc-2026-jul` with no run gave 6 passed, 0 failed,
+  3 NOT AVAILABLE; with no case selected it gives 3 passed, 0 failed, 6 NOT AVAILABLE.
 
 ### Step 5. RESEARCH LENS: **works on main**
 
-- **Click:** **→** to `/research`. In panel **E.0 Thesis Court · cutoff** (mode **Point-in-time**), replace the cutoff
-  with `2026-07-01T00:00:00Z` and click **Apply cutoff**.
+- **Click:** **→** to `/research`. In panel **E.0 Thesis Court · cutoff** (mode **Point-in-time**) the cutoff already
+  holds the selected case's cutoff, `2026-07-22T00:00:00Z` (#157; the help line ends "Default: the selected case's
+  cutoff (fomc-2026-jul)"). If it shows another instant, type `2026-07-22T00:00:00Z` and click **Apply cutoff**.
+  On 2026-11-14 `GET /api/vc-lenses?as_of=2026-07-22T00:00:00Z` returned 4 sources (Link Ventures 1, a16z 2,
+  Bessemer 1) and 2 not yet public; each firm panel reads "`n` sources public at 2026-07-22T00:00:00Z".
 - **Say:** "Four venture firms' public research, as context, not predictions. At a July 2026 cutoff we show four sources and hold back two that weren't public yet."
 - **On screen:** `AS-OF: UTC instant` on E.0; each firm panel `REAL HISTORICAL` with a `RESEARCH CONTEXT` tag; Sequoia's
   panel shows no source at this cutoff (its July 23rd article was not public yet).
@@ -175,6 +186,7 @@ against `38c595a` (port 8072; `main` then moved to `4a1f2c2` with docs-only chan
 | (bad quarter) | `deltas.min_cash_delta` | −49,050 |
 | | `result.cash` in week 7 (lowest point during the shock) | 25,523 |
 | | first week with `result.cash` < 25,000 (the §10 floor) | week 20 (weeks 20–26 are all below: 7 weeks) |
+| | `min_cash_floor`, `first_week_below_floor`, `weeks_below_floor` (#157, re-checked on this branch) | 25,000, 20, [20, …, 26] |
 | | `result.runway_label` | `> 26 weeks` (cash never goes negative) |
 | | `result.total_interest`, week 1, baseline → bad quarter | 923.08 → 1,153.85 a week |
 | | sum of `result.lost_sales` (outage) | 48,000 |
@@ -209,10 +221,11 @@ Other calls used in this script:
 
 - `GET /api/scenarios` → `status: AVAILABLE`, 4 scenarios: `rate-plus-200bp`, `demand-drop-20pct-6wk`,
   `supplier-outage-3wk`, `bad-quarter`.
-- `GET /api/vc-lenses?as_of=2026-07-01T00:00:00Z` → `point_in_time`, 4 items (Link Ventures 1, a16z 2, Bessemer 1),
-  `excluded_not_yet_public: 2`. With no `as_of` (Live Explore mode): 6 items.
-- `GET /api/cases` (2026-11-14) → `status: AVAILABLE`, 5 cases: 4 `REAL_HISTORICAL` FOMC meetings (June, July,
-  September, October 2026) and 1 `SYNTHETIC`.
+- `GET /api/vc-lenses?as_of=2026-07-22T00:00:00Z` (the `fomc-2026-jul` cutoff, step 5; re-checked 2026-11-14 on
+  this branch) → `point_in_time`, 4 items (Link Ventures 1, a16z 2, Bessemer 1), `excluded_not_yet_public: 2`.
+  `as_of=2026-07-01T00:00:00Z` gives the same 4 and 2. With no `as_of` (Live Explore mode): 6 items.
+- `GET /api/cases` (2026-11-14, after #159) → `status: AVAILABLE`, 16 cases: 15 `REAL_HISTORICAL` FOMC meetings
+  (2025 and 2026, `horizon_days` 8) and 1 `SYNTHETIC` (21 days). `fomc-2026-jul`: `as_of` `2026-07-22T00:00:00Z`.
 - `GET /api/benchmark` (2026-11-14) → `status: NOT AVAILABLE`, "no recorded scorecard yet".
 - `GET /api/health` → `model_ready: false` (Ollama not running on the writing machine), `tavily_api_key: false`.
 
@@ -349,16 +362,19 @@ not results (`docs/INVESTABILITY.md` §3, labeled `ESTIMATE / HYPOTHESIS`).
 Do this on the demo laptop before going on stage (the script author could not run the web app).
 
 - [ ] `make setup`, then `make api` and `make web` in two terminals; the header chip reads `API online`.
-- [ ] `/cascade`: with no preset, **Minimum cash** reads **$63,000**, week 26, runway "more than 26 weeks".
+- [ ] `/rewind`: pick `fomc-2026-jul`; the header reads `Case fomc-2026-jul` + `REAL HISTORICAL` on every screen.
+- [ ] `/cascade`: with no preset, **Minimum cash** reads **$63,000** ("stays above the $25,000 floor"), week 26,
+      **Cash goes negative** "not within 26 weeks".
 - [ ] Choose the preset **"Bad quarter: rate shock + demand drop + supplier outage"**: **Minimum cash $13,950**, sublabel
-      "-$49,050 vs baseline $63,000", **Ending cash $13,950**, runway still more than 26 weeks. If any figure differs,
-      say the on-screen figure and tell the lead (the engine or data changed after this script).
+      "-$49,050 vs baseline $63,000" and "floor $25,000 · below it in weeks 20–26", **Ending cash $13,950**, Cash goes
+      negative still "not within 26 weeks". If any figure differs, say the on-screen figure and tell the lead (the
+      engine or data changed after this script). (Checked in the browser on 2026-11-14 for #157 at 1920 and 390 px.)
 - [ ] Badges on C.0 and C.2 read `SIMULATED` and `SYNTHETIC`.
 - [ ] Protect payroll: toggle it. C.3 should list 7 purchase cuts (week 18, then weeks 19–24, together $11,050) and
       **Min cash after plan $25,000 · week 20**; with the switch off, the same 7 cuts in the same weeks. If C.3
       differs, read the screen and tell the lead.
-- [ ] `/research`: cutoff `2026-07-01T00:00:00Z` → Apply cutoff → 4 sources shown, 2 not yet public; Sequoia shows no source.
-- [ ] `/rewind`, `/decision`, `/reveal`: are the 4 real cases listed? Does the DECISION run complete? Is the Reveal button enabled?
+- [ ] `/research`: the cutoff reads `2026-07-22T00:00:00Z` (the selected case's) → 4 sources shown, 2 not yet public; Sequoia shows no source.
+- [ ] `/rewind`, `/decision`, `/reveal`: are the 15 real cases listed? Does the DECISION run complete? Is the Reveal button enabled?
       For each that isn't, rehearse that step's "Say instead" line.
 - [ ] `/reveal`: the benchmark and both scorecards read `NOT AVAILABLE` (nothing officially scored yet). Never read a score that isn't on screen.
 - [ ] `/explore`: is `TAVILY_API_KEY` set in `.env` and the local model running? If not, use the 5-second line.
