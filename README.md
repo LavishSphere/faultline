@@ -38,6 +38,28 @@ With `TAVILY_API_KEY` set, any website open in your browser can send requests to
 the answers, not sending them), so it could spend your Tavily credits on Live Explore searches. Leave the key unset
 when you are not using Live Explore.
 
+## Release demo (clean clone)
+
+Exact commands from a clean clone (macOS/Linux; on Windows run them from Git Bash, the venv's `Scripts/python.exe` is
+picked up automatically):
+
+```bash
+git clone https://github.com/LavishSphere/faultline.git && cd faultline
+make setup                      # services/api/.venv + pip install -e ".[dev]", then npm install in apps/web
+ollama pull llama3.1:8b         # local replay model; without it replay shows MODEL_UNAVAILABLE (never a canned answer)
+make web-build                  # production build of apps/web (optional; demo falls back to `next dev`)
+make preflight                  # one PASS/WARN/FAIL line per check; exits 1 on any FAIL
+make preflight ARGS=--tests     # same, plus the backend pytest suite
+make demo-scratch               # API on :8000 + web on :3000, on a SCRATCH prediction store (use this on stage)
+```
+
+Open http://localhost:3000. `make demo` does the same on the **official** prediction store
+(`services/api/var/predictions.sqlite3`) and prints a warning. Lead policy: the official RECORDED RUN is made with
+`scripts/record_runs.py` before any stage demo, and every stage run or reveal uses the scratch store
+(`services/api/var/scratch/predictions.sqlite3`, or any path via `FAULTLINE_DEMO_STORE=<path> make demo`).
+`FAULTLINE_DEMO_STORE=<path> make preflight` confirms which store is in use. Release status and evidence:
+[`docs/RELEASE_CHECKLIST.md`](docs/RELEASE_CHECKLIST.md).
+
 ## Working with Claude Code
 Rules for every agent: [AGENTS.md](AGENTS.md). First command of every session: `bash scripts/agent-start.sh`
 (installs git hooks, syncs with GitHub, shows your role and tasks). Skills live in `.agents/skills/`.
