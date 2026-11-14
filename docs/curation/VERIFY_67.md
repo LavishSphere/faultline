@@ -31,7 +31,7 @@ For every one of the 44 items below:
 - no paragraph that appears only in the meeting's own statement (that is, not already in the previous statement) is
   in its case file.
 
-The agent cannot stand in for the human check the issue asks for, and nothing here was admitted on the agent's word.
+This AI re-check is not the manual human check that #67 asks for; the lead accepted it on 2026-11-14 together with an independent lead-side audit (15 Wayback items, all 22 BLS release choices and all sealed outcomes re-derived from primary sources; all passed).
 
 ## How to check one row (about 2 minutes each)
 
