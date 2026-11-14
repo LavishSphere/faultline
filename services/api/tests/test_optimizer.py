@@ -489,6 +489,27 @@ def test_tie_break_failure_reports_the_equally_cheap_stage_1_plan(monkeypatch):
     assert res.objective == approx(stage_1.objective)
 
 
+def test_stage_2_plan_failing_the_simulate_check_falls_back_to_stage_1(monkeypatch):
+    # If the tie-broken plan doesn't reproduce in simulate() (e.g. round-off just over AGREEMENT_TOL), the stage-1
+    # plan is re-checked and reported, as the §4 guarantee says, instead of withholding a valid optimal plan.
+    real_tie_break = optimizer_module._tie_break
+
+    def bad_stage_2(prob, sol1):
+        sol, note = real_tie_break(prob, sol1)
+        sol = sol.copy()
+        sol[prob.ix("C", 1)] += 1.0  # a cash path simulate() cannot reproduce
+        return sol, note
+
+    monkeypatch.setattr(optimizer_module, "_tie_break", bad_stage_2)
+    res = run(DEMO, _deep_slump(), protect=True)
+    monkeypatch.setattr(optimizer_module, "_tie_break", real_tie_break)
+    stage_1 = optimize(DEMO, _deep_slump(), True, SEC10, tie_break=False)
+    assert res.status == OPTIMAL
+    assert "tie-break not applied (stage-2 plan failed the simulate() check" in res.solver_message
+    assert_same_plan(res, stage_1)
+    assert res.disruption_cost == approx(stage_1.disruption_cost)
+
+
 def test_tie_break_keeps_no_feasible_plan():
     # NO FEASIBLE PLAN is decided by stage 1 alone; stage 2 never runs.
     res = run(DEMO, _severe_drop(), protect=True)
@@ -705,3 +726,194 @@ def test_result_is_labeled_simulated_and_deterministic():
     assert isinstance(first, OptimizationResult)
     assert first.provenance == "SIMULATED"
     assert first == second
+
+
+# ---------------------------------------------------------------- §4.9 optional DSCR covenant (issue #85)
+#
+# For every rolling w-week window a..b (default w = 4) with term-loan debt service:
+#   sum OCF_t >= DSCR_min * sum DS_t,
+#   OCF_t = R_t - P_{t-L_p} - (1 - z_t) W_t - O_t - F_b x_b 1[t=1]   DS_t = J_t + A_t + J^R_t.
+# The grocer (§10) has OCF = 50,000 - 32,500 - 12,000 - 6,000 = -500 a week, so its baseline DSCR is already negative;
+# the restaurant (§10b) has OCF = 20,000 - 6,800 - 7,300 - 5,400 = 500 against 300 of interest, DSCR 1.67.
+
+REST_DOC = json.loads((DATA / "restaurant_business.json").read_text(encoding="utf-8"))
+REST = BusinessParams.model_validate(REST_DOC["business"])
+REST_SETTINGS = OptimizerSettings.from_dict(REST_DOC["optimizer_parameters"])
+REST_SCENARIOS = {
+    s["id"]: ScenarioShock.model_validate(s["shock"])
+    for s in json.loads((DATA / "scenarios_restaurant.json").read_text(encoding="utf-8"))["scenarios"]
+}
+COVENANT = 1.20  # DSCR_min: proposal for finance-owner review (MATH_MODEL §4.9), typical bank range 1.20-1.25x
+
+
+def rolling_dscr(sim, w: int = 4) -> list[float]:
+    """DSCR of every w-week window, computed from simulate()'s own arrays (independent of the optimizer's rows)."""
+    ocf = [r - p - wp - o - f for r, p, wp, o, f in
+           zip(sim.receipts, sim.payables_paid, sim.payroll, sim.opex, sim.backup_fee, strict=True)]
+    ds = [j + a + jr for j, a, jr in zip(sim.interest, sim.amortization, sim.revolver_interest, strict=True)]
+    return [sum(ocf[k - w:k]) / sum(ds[k - w:k]) for k in range(w, len(ocf) + 1)]
+
+
+def test_baseline_dscr_worked_numbers():
+    # Grocer: 4 x (-500) / (4 x 600,000 x 8% / 52) = -2,000 / 3,692.31 = -0.5417 in every window.
+    grocer = rolling_dscr(simulate(DEMO, BASELINE, ActionPlan()))
+    assert grocer == [approx(-2_000 / (4 * 600_000 * 0.08 / 52))] * 23
+    assert grocer[0] == pytest.approx(-0.541667, abs=1e-6)
+    # Restaurant: 4 x 500 / (4 x 156,000 x 10% / 52) = 2,000 / 1,200 = 1.6667.
+    assert rolling_dscr(simulate(REST, BASELINE, ActionPlan())) == [approx(2_000 / 1_200)] * 23
+
+
+@pytest.mark.parametrize("protect", [False, True])
+def test_covenant_off_gives_identical_results_on_every_named_scenario(protect):
+    # covenant_dscr_min=None adds no row at all, so every result (status, plan, cost, paths, binding names, diagnostic)
+    # is exactly equal to the result without the argument (so certainly within 1e-9).
+    cases = [(DEMO, SEC10, s) for s in (*SCENARIOS.values(), BASELINE)]
+    cases += [(REST, REST_SETTINGS, s) for s in (*REST_SCENARIOS.values(), BASELINE)]
+    for params, settings, shock in cases:
+        before = optimize(params, shock, protect, settings)
+        after = optimize(params, shock, protect, settings, covenant_dscr_min=None)
+        assert after == before, shock.name
+        if before.status == OPTIMAL:
+            assert not any(name.startswith("DSCR") for name in before.binding_constraints)
+
+
+def test_restaurant_slow_season_feasible_without_covenant_infeasible_with_it():
+    """slow-season-plus-300bp (restaurant): rate 13% from week 1, sales -30% (6,000) in weeks 2-9.
+
+    Without the covenant a revolver bridge keeps cash above C_min = 15,000 (MATH_MODEL §10b).
+    With DSCR_min = 1.20, look at the window weeks 4-7. Each of those weeks with no action:
+      R_t = 14,000 (sales 14,000 this week and last), bill paid P_{t-1} = 0.34 x 14,000 = 4,760,
+      OCF_t = 14,000 - 4,760 - 7,300 - 5,400 = -3,460, so window OCF = -13,840.
+      Debt service: interest 156,000 x 13% / 52 = 390 a week, 1,560 per window (plus any revolver interest, >= 0).
+      The covenant needs window OCF >= 1.20 x 1,560 = 1,872.
+    The most any lever adds to that window's OCF: purchase cuts 2,800 in total (I_0 - I_min = 6,800 - 4,000);
+    payroll cuts 4 x 730 = 2,920 (0 with Protect payroll); backup supplier nothing (no outage, only the week-1 fee);
+    capex and expansion are 0; revolver draws are financing, not OCF, and only add interest to DS.
+    So window OCF <= -13,840 + 2,800 + 2,920 = -8,120 < 1,872: NO FEASIBLE PLAN in both modes.
+    """
+    shock = REST_SCENARIOS["slow-season-plus-300bp"]
+    for protect in (True, False):
+        free = optimize(REST, shock, protect, REST_SETTINGS)
+        assert free.status == OPTIMAL
+        assert free.min_cash >= REST.min_cash - TOL
+        bound = optimize(REST, shock, protect, REST_SETTINGS, covenant_dscr_min=COVENANT)
+        assert bound.status == NO_FEASIBLE_PLAN
+        assert bound.plan is None and bound.cash is None
+        assert "Without the DSCR covenant (DSCR_min = 1.2) a plan would exist" in bound.diagnostic
+
+
+def test_restaurant_distributor_loss_covenant_changes_the_plan():
+    """distributor-loss-4wk (restaurant): primary distributor out in weeks 6-9, 60% of sales (12,000 a week) lost.
+
+    Without the covenant (cost 27.60): draw 2,760 in week 9, repay it in week 10 (cheapest way over C_min).
+    A revolver draw cannot help the covenant (financing is not OCF), and without the backup supplier week 6 alone has
+    OCF = 500 - 0.9 x 12,000 = -10,300, far beyond what 2,800 of purchase cuts can offset. So the plan must switch to
+    the backup supplier (x_b = 1, c_b = 2,500): no sales lost, but the premium 0.15 x 0.34 x 12,000 = 612 is bought in
+    weeks 6-9 and paid in weeks 7-10 (L_p = 1), so OCF = 500 - 612 = -112 there (and the 500 fee hits week 1).
+    The covenant needs 1.20 x 4 x 300 = 1,440 per window. A cut v_t raises OCF in week t+1. Windows:
+      weeks 4-7:  1,500 - 112 + v_6 >= 1,440                -> v_6 >= 52
+      weeks 5-8:  1,000 - 224 + v_6 + v_7 >= 1,440          -> v_6 + v_7 >= 664
+      weeks 6-9:    500 - 336 + v_6 + v_7 + v_8 >= 1,440    -> ... >= 1,276
+      weeks 7-10:      -448 + v_6 + ... + v_9 >= 1,440      -> ... >= 1,888
+    Cutting as late as possible (the §4 tie-break) gives v_6 = 52, v_7 = v_8 = v_9 = 612, all four windows binding,
+    total 1,888 <= 2,800. Cost 2,500 + 0.05 x 1,888 = 2,594.40. Payroll is never cut, in either mode.
+    """
+    shock = REST_SCENARIOS["distributor-loss-4wk"]
+    for protect in (True, False):
+        free = optimize(REST, shock, protect, REST_SETTINGS)
+        assert free.status == OPTIMAL
+        assert free.disruption_cost == approx(27.60)
+        assert [(a.action, a.week, a.amount) for a in free.actions] == [
+            ("revolver_draw", 9, approx(2_760.0)), ("revolver_repay", 10, approx(2_760.0))]
+
+        bound = optimize(REST, shock, protect, REST_SETTINGS, covenant_dscr_min=COVENANT)
+        assert bound.status == OPTIMAL
+        assert bound.plan.use_backup_supplier
+        assert bound.plan.purchase_cut[5:9] == [approx(52.0), approx(612.0), approx(612.0), approx(612.0)]
+        assert sum(bound.plan.purchase_cut) == approx(1_888.0)
+        assert sum(bound.plan.revolver_draw) == 0.0 and bound.plan.payroll_cut == [0.0] * 26
+        assert bound.disruption_cost == approx(2_594.40)
+        covenant_names = [n for n in bound.binding_constraints if n.startswith("DSCR")]
+        assert covenant_names == [f"DSCR covenant, weeks {a}–{a + 3}" for a in (4, 5, 6, 7)]
+        # Independent check on simulate()'s path: the covenant holds in every window and cash matches the solver.
+        sim = simulate(REST, shock, bound.plan)
+        assert bound.cash == [approx(c) for c in sim.cash]
+        assert min(rolling_dscr(sim)) >= COVENANT - 1e-9
+        # Stage 1 alone reaches the same cost: the covenant is in the constraints of both tie-break stages.
+        stage1 = optimize(REST, shock, protect, REST_SETTINGS, tie_break=False, covenant_dscr_min=COVENANT)
+        assert stage1.disruption_cost == approx(bound.disruption_cost)
+        assert min(rolling_dscr(simulate(REST, shock, stage1.plan))) >= COVENANT - 1e-9
+
+
+def test_grocer_baseline_breaches_a_bank_covenant_with_payroll_protected():
+    """The §10 grocer loses money before any shock: OCF = -500 a week, baseline DSCR -0.54.
+
+    With Protect payroll the only lever that raises OCF is a purchase cut (total I_0 - I_min = 25,000; a cut in
+    week t is paid out in week t+2). The six windows 3-6, 7-10, ..., 23-26 do not overlap; each starts at -2,000 and
+    needs DSCR_min x 4 x 923.08 = 3,692.31 DSCR_min. So 6 x (2,000 + 3,692.31 DSCR_min) <= 25,000, i.e.
+    DSCR_min <= (25,000/6 - 2,000) / 3,692.31 = 0.586806. Cuts of 4,166.67 in weeks 2, 6, ..., 22 reach it exactly.
+    Any bank-style covenant (1.20) is NO FEASIBLE PLAN, even with no shock at all.
+    """
+    best = (25_000 / 6 - 2_000) / (4 * 600_000 * 0.08 / 52)
+    assert best == pytest.approx(0.586806, abs=1e-6)
+    assert optimize(DEMO, BASELINE, True, SEC10, covenant_dscr_min=best - 1e-4).status == OPTIMAL
+    assert optimize(DEMO, BASELINE, True, SEC10, covenant_dscr_min=best + 1e-4).status == NO_FEASIBLE_PLAN
+    res = optimize(DEMO, BASELINE, True, SEC10, covenant_dscr_min=COVENANT)
+    assert res.status == NO_FEASIBLE_PLAN
+    assert "the covenant is what makes this scenario infeasible" in res.diagnostic
+    for shock in SCENARIOS.values():
+        assert optimize(DEMO, shock, True, SEC10, covenant_dscr_min=COVENANT).status == NO_FEASIBLE_PLAN, shock.name
+
+
+def test_grocer_meets_the_covenant_only_by_cutting_payroll():
+    """Protect payroll off: the grocer can reach DSCR 1.20 at baseline, but only by cutting payroll.
+
+    Each of the six non-overlapping windows (3-6, ..., 23-26) needs 1.20 x 3,692.31 - (-2,000) = 6,430.77 more OCF,
+    38,584.62 in total. Purchase cuts supply at most 25,000, so payroll cuts must supply at least 13,584.62; the
+    optimizer uses exactly that. Cost: 0.05 x 25,000 + 5 x 13,584.62 = 69,173.08 (versus 0 without the covenant).
+    """
+    need = 6 * (COVENANT * 4 * 600_000 * 0.08 / 52 + 2_000)
+    res = optimize(DEMO, BASELINE, False, SEC10, covenant_dscr_min=COVENANT)
+    assert res.status == OPTIMAL
+    payroll_cut = sum(z * 12_000 for z in res.plan.payroll_cut)
+    assert sum(res.plan.purchase_cut) == approx(25_000.0)
+    assert payroll_cut == approx(need - 25_000)  # 13,584.62
+    assert res.disruption_cost == approx(0.05 * 25_000 + 5 * (need - 25_000))
+    assert min(rolling_dscr(simulate(DEMO, BASELINE, res.plan))) >= COVENANT - 1e-9
+
+
+def test_weekly_covenant_window_is_stricter():
+    """Same distributor loss with a 1-week window (DSCR_min = 1.20, Protect payroll): NO FEASIBLE PLAN.
+
+    Without the backup supplier, week 6 has OCF = -10,300 and at most 1,400 of cut can be paid that week. With it,
+    week 1 has OCF = 20,000 - 6,800 - 7,300 - 5,400 - 500 (fee) = 0 < 1.20 x 300 = 360, and nothing can offset it:
+    the bill paid in week 1 is the pre-horizon P_0 and payroll is protected. The 4-week test above is feasible.
+    """
+    shock = REST_SCENARIOS["distributor-loss-4wk"]
+    weekly = optimize(REST, shock, True, REST_SETTINGS, covenant_dscr_min=COVENANT, covenant_window_weeks=1)
+    assert weekly.status == NO_FEASIBLE_PLAN
+    # Baseline at DSCR_min = 500/300 exactly: every week's OCF (500) sits on the covenant, so week 5 binds and is
+    # named with a single week.
+    res = optimize(REST, BASELINE, True, REST_SETTINGS, covenant_dscr_min=500 / 300, covenant_window_weeks=1)
+    assert res.status == OPTIMAL
+    assert "DSCR covenant, week 5" in res.binding_constraints
+
+
+def test_covenant_diagnostic_when_infeasible_anyway():
+    # road-closure-9wk with Protect payroll is NO FEASIBLE PLAN even without the covenant (MATH_MODEL §10b bound:
+    # C_26 <= 13,400 < 15,000); the diagnostic must not blame the covenant.
+    res = optimize(REST, REST_SCENARIOS["road-closure-9wk"], True, REST_SETTINGS, covenant_dscr_min=COVENANT)
+    assert res.status == NO_FEASIBLE_PLAN
+    assert "infeasible even without the DSCR covenant" in res.diagnostic
+
+
+@pytest.mark.parametrize("bad", [dict(covenant_dscr_min=0.0), dict(covenant_dscr_min=-1.2),
+                                 dict(covenant_dscr_min=float("nan")), dict(covenant_dscr_min=float("inf")),
+                                 dict(covenant_dscr_min=1.2, covenant_window_weeks=0),
+                                 dict(covenant_dscr_min=1.2, covenant_window_weeks=27),
+                                 dict(covenant_dscr_min=1.2, covenant_window_weeks=True),
+                                 # the window is validated even with the covenant off (review of #144)
+                                 dict(covenant_window_weeks=0), dict(covenant_window_weeks=-1)])
+def test_covenant_rejects_bad_inputs(bad):
+    with pytest.raises(ValueError):
+        optimize(REST, BASELINE, True, REST_SETTINGS, **bad)
