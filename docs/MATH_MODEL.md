@@ -259,3 +259,154 @@ save about 10,000. For a yes/no action, that is simply its fixed weight.
 Ranking, least to most harmful: revolver draw < purchase cut < defer capex < backup supplier < delay expansion < payroll cut.
 
 **Sign-off:** ☑ Yaseen has reviewed §1–§4 and §8 assumptions (2026-11-12, issue #6) · ☐ Lead has reviewed §6–§7.
+
+## 10b. Second SYNTHETIC business: a full-service restaurant (issue #109)
+
+**Proposal for finance-owner review (issue #109). Not signed off.**
+
+This is a second fictional business, "Demo Bistro": a 12-person, single-location, full-service restaurant. It is
+**SYNTHETIC** (fixture `services/api/data/restaurant_business.json`, scenarios `services/api/data/scenarios_restaurant.json`).
+**No formula changed:** it runs through the same §1–§3 engine and §8 decision rule as the §10 grocer. Only the parameter
+values are different. They give the business a different shape: payroll is a large share of sales, there is about one
+week of perishable stock, card receipts settle in 1–2 days, suppliers are paid weekly, and the margin is thin. Public
+industry ratios are used only to make that shape realistic. The values are illustrative and describe no real company.
+
+Sources actually fetched and read (2026-11-13). The quoted figure is what the page states.
+
+- **[NRA-labor]** National Restaurant Association, "Elevated labor costs had a significant impact on restaurant
+  profitability in 2024", 2025-10-08,
+  <https://restaurant.org/research-and-media/research/restaurant-economic-insights/analysis-commentary/elevated-labor-costs-had-a-significant-impact-on-restaurant-profitability-in-2024/>.
+  Full-service: "salaries and wages (including benefits) represented a median of 36.5% of sales in 2024".
+- **[NRA-food]** National Restaurant Association, "Higher volume restaurants reported lower food-cost ratios in 2024",
+  2025-10-16,
+  <https://restaurant.org/research-and-media/research/restaurant-economic-insights/analysis-commentary/higher-volume-restaurants-reported-lower-food-cost-ratios-in-2024/>.
+  For full-service respondents with sales below \$2 million, food and non-alcohol beverage costs "were a median of 33.7% of
+  sales", and income before taxes "was a median of 1.1% of sales".
+- **[NRA-occupancy]** National Restaurant Association, "Restaurant occupancy costs were more than 5% of sales in 2024",
+  2025-09-03,
+  <https://restaurant.org/research-and-media/research/restaurant-economic-insights/analysis-commentary/restaurant-occupancy-costs-were-more-than-5-of-sales-in-2024/>.
+  Full-service occupancy costs: "a median of 5.7% of sales in 2024".
+- **[JPMCI]** JPMorgan Chase Institute, "Cash is King: Flows, Balances, and Buffer Days", 2016-09-01,
+  <https://www.jpmorganchase.com/institute/all-topics/business-growth-and-entrepreneurship/report-cash-flows-balances-and-buffer-days>.
+  "Cash buffer days are the number of days of cash outflows a business could pay out of its cash balance were its inflows
+  to stop." The median-by-industry table lists Restaurants at 16 days, the lowest industry; the all-business median is
+  27. The data cover February–October 2015, so the figure is dated.
+- **[Toast]** Toast support, "Deposit Schedules Overview" (US standard schedule, page last updated 2026-11-13),
+  <https://support.toasttab.com/en/article/When-are-deposits-made-to-my-bank-account?lang=en_US>. For card batches closed
+  before the 9:30 p.m. ET cutoff, "Deposit arrives next business day"; for batches closed after it, "Deposit arrives two
+  business days later".
+- **[MarketMan]** MarketMan (inventory-software vendor blog), "How Much Inventory Should a Restaurant Carry?",
+  2023-09-13, <https://marketman.com/blog/how-much-inventory-should-restaurant-carry>.
+  "Food: 4-6 times per month (5-7 days worth of product on hand)".
+
+The NRA figures are survey medians from its 2025 Restaurant Operations Data Abstract, which covers 2024. Only the public
+summaries above were read, not the paid abstract. A median for each cost line separately does not add up to a
+consistent median restaurant, so the opex value below is calibrated, not copied.
+
+| Symbol | Fixture field | Value | Unit | Justification | Source |
+|---|---|---|---|---|---|
+| $T$ | `business.horizon_weeks` | 26 | weeks | Same half-year horizon as the grocer (§10), so the two businesses are comparable. | assumption: kept equal to §10 |
+| $S^{base}$ | `business.stores[0].base_sales` | 20,000 | \$/week | About 1.04M a year for 12 staff, which puts it in the NRA's "full-service, sales below \$2 million" group used for $g$ below. | assumption: size chosen for a 12-person restaurant |
+| $S_0$ | `business.sales_0` | 20,000 | \$ | Steady state before week 1: equal to base sales. | assumption: steady state |
+| $g$ | `business.gross_margin` | 0.66 | fraction | Food and beverage cost is 34% of sales, so $g = 1 - 0.34$. Rounded from the 33.7% median. | [NRA-food]: 33.7% median, full-service under \$2M |
+| $a$ | `business.same_week_collection` | 0.90 | fraction | Card batches deposit 1–2 business days after close, so most of a week's sales land in the same cash week. The 10% spill-over is an assumption; it depends on which day the cash week closes (see open questions). | [Toast] for the 1–2 business-day lag; the 0.90 split is an assumption |
+| $L_p$ | `business.supplier_lag_weeks` | 1 | weeks | Perishables are invoiced weekly and paid the following week (short terms, about net-7). | assumption: no fetched source states restaurant distributor terms |
+| $P_0$ | `business.prior_purchases[0]` | 6,800 | \$ | Steady state: $(1-g) \times S_0 = 0.34 \times 20{,}000$. One value because $L_p = 1$. | assumption: steady state |
+| $W$ | `business.payroll` | 7,300 | \$/week | 36.5% of sales, wages including benefits. That is about 608 a week per person for 12 staff, a full-time and part-time mix; servers' tips are not payroll. | [NRA-labor]: 36.5% full-service median |
+| $O$ | `business.opex` | 5,400 | \$/week | 27% of sales. Occupancy is about 5.7% (1,140); the other 21.3% covers utilities, supplies, card fees, repairs, marketing, insurance and admin. The total is set so that weekly profit is 1.0% of sales (hand check below), close to the 1.1% median pre-tax income for full-service restaurants under \$2M. | [NRA-occupancy] 5.7% for occupancy; [NRA-food] 1.1% pre-tax median used to calibrate; the split of the rest is an assumption |
+| $K_t$ | `business.capex` | 0 | \$/week | No scheduled non-critical capex in the base business, as for the grocer. | assumption: set per demo case |
+| $E_t$ | `business.expansion_outflow` | 0 | \$/week | No expansion: a single location. | assumption: single site |
+| $X_t$ | `business.expansion_sales` | 0 | \$/week | No expansion. | assumption: single site |
+| $D_1$ | `business.term_loan_principal_1` | 156,000 | \$ | Fit-out and equipment loan. It is set to 156,000 so that interest is exactly $156{,}000 \times 10\% / 52 = 300$ a week, which keeps the hand checks round. | assumption: size picked for round arithmetic |
+| $r$ | `business.base_rate` | 0.10 | 1/yr | All-in floating small-business rate. It floats, so the rate shock passes through. | assumption: no rate source fetched |
+| $A_t$ | `business.amortization` | 0 | \$/week | Interest-only over the horizon, as for the grocer, so the hand checks stay simple. | assumption: kept equal to §10 |
+| $B_0$ | `business.revolver_balance_0` | 0 | \$ | Undrawn at the start. | assumption |
+| $\bar B$ | `business.revolver_limit` | 30,000 | \$ | 1.5 weeks of sales of headroom. | assumption |
+| $s_R$ | `business.revolver_spread` | 0.02 | 1/yr | Revolvers price above term debt; same spread as the grocer. | assumption: kept equal to §10 |
+| $C_0$ | `business.cash_0` | 45,000 | \$ | 16 cash buffer days: weekly outflows are $6{,}800 + 7{,}300 + 5{,}400 + 300 = 19{,}800$, or 2,828.57 a day, and $16 \times 2{,}828.57 = 45{,}257$, rounded to 45,000 (15.9 days). | [JPMCI]: restaurants 16 median cash buffer days (2015 data) |
+| $C_{min}$ | `business.min_cash` | 15,000 | \$ | About 2 weeks of payroll ($2 \times 7{,}300 = 14{,}600$), the same rule as the grocer. | assumption: §10 rule applied |
+| $I_0$ | `business.inventory_0` | 6,800 | \$ at cost | One week (7 days) of food cost, $0.34 \times 20{,}000$, the top of the 5–7 days range. | [MarketMan]: "5-7 days worth of product on hand" |
+| $I_{min}$ | `business.min_inventory` | 4,000 | \$ at cost | About 4 days of food cost; below this the full menu cannot be served. It caps total purchase cuts at $I_0 - I_{min} = 2{,}800$. | assumption |
+| $\pi$ | `business.backup_premium` | 0.15 | fraction | Buying from a cash-and-carry or specialty supplier costs about 15% more than contract prices. | assumption |
+| $F_b$ | `business.backup_switch_fee` | 500 | \$ | Account set-up and delivery changes for a small single site. | assumption |
+| $\phi$ | `scenario_parameters.supplier_outage_dependent_share` | 0.60 | fraction | 60% of menu sales need proteins and produce that only the main broadline distributor delivers. | assumption |
+| $\bar v$ | `optimizer_parameters.purchase_cut_cap_per_week` | 1,400 | \$/week | About 20% of a normal week's purchases (6,800). Deeper cuts empty the walk-in. | assumption (for the optimizer, PR #69) |
+| $\bar z$ | `optimizer_parameters.payroll_cut_cap` | 0.10 | fraction | Up to 10% through fewer shifts and no overtime, without layoffs. Forced to 0 in protect-payroll mode. | assumption: kept equal to §10 |
+| $\varepsilon$ | `optimizer_parameters.tie_break_epsilon` | 0.0001 | per \$ | Same tie-break as §10. | assumption: kept equal to §10 |
+| $c_y$ | `optimizer_parameters.disruption_costs.revolver_draw_per_dollar` | 0.01 | per \$ | Reused from §10 unchanged; the ranking of levers is the same for a restaurant. | assumption: reused from §10 |
+| $c_v$ | `optimizer_parameters.disruption_costs.purchase_cut_per_dollar` | 0.05 | per \$ | Reused from §10 unchanged. | assumption: reused from §10 |
+| $c_c$ | `optimizer_parameters.disruption_costs.defer_capex_per_decision` | 1,000 | \$ | Reused from §10 unchanged. | assumption: reused from §10 |
+| $c_b$ | `optimizer_parameters.disruption_costs.backup_supplier_per_decision` | 2,500 | \$ | Reused from §10 unchanged. | assumption: reused from §10 |
+| $c_e$ | `optimizer_parameters.disruption_costs.delay_expansion_per_decision` | 5,000 | \$ | Reused from §10 unchanged (no expansion here). | assumption: reused from §10 |
+| $c_z$ | `optimizer_parameters.disruption_costs.payroll_cut_per_dollar` | 5.00 | per \$ | Reused from §10 unchanged: payroll is still the worst lever. | assumption: reused from §10 |
+
+`tests/test_restaurant_business.py` parses this table and checks every value against the fixture, so the document and the
+data cannot drift apart.
+
+**Baseline economics.** Weekly gross profit is $0.66 \times 20{,}000 = 13{,}200$. Fixed costs are
+$7{,}300 + 5{,}400 + 300 = 13{,}000$, so the restaurant makes 200 a week before any shock: 1.0% of sales. Its prime cost
+(food plus labor) is $34\% + 36.5\% = 70.5\%$ of sales. In steady state $R_t = 20{,}000$ and $P_{t-1} = 6{,}800$, so
+$C_t - C_{t-1} = 20{,}000 - 6{,}800 - 7{,}300 - 5{,}400 - 300 = 200$. With no shock, $C_1 = 45{,}200$ (the minimum) and
+$C_{26} = 45{,}000 + 26 \times 200 = 50{,}200$. Cash never goes below $C_{min}$.
+Compared with the grocer: each lost sales dollar costs $g = 0.66$ of cash here, against 0.35 there. The loan is a quarter
+of the size, so a +300bp rate rise costs only 90 a week. This business is hit by demand, not by rates.
+
+**Hand-check shortcut (follows from §3; no new formula).** With no action, suppose sales fall $\Delta S_t$ below baseline.
+Receipts then lose $a\,\Delta S_t + (1-a)\,\Delta S_{t-1}$, and with $L_p = 1$ the bill paid in week $t$ falls by
+$(1-g)\,\Delta S_{t-1}$. So the week's cash change is the baseline 200 plus
+$$\Delta C_t = -0.9\,\Delta S_t + (0.34 - 0.10)\,\Delta S_{t-1} = -0.9\,\Delta S_t + 0.24\,\Delta S_{t-1}.$$
+Once a shock has fully settled, each lost sales dollar has cost $g = 0.66$.
+
+**Scenarios** (`scenarios_restaurant.json`; shock sizes are assumptions chosen to stress the business, not forecasts):
+
+| Scenario | Shock (§1 channels only) | $C_T$ | First week $C_t < C_{min}$ | Lowest cash $\min_t C_t$ |
+|---|---|---|---|---|
+| `road-closure-9wk` | demand $\delta = 0.30$, weeks 4–12, $\rho = 3$ | 10,600 | week 11 (stays below to week 26) | 7,720 (week 14) |
+| `distributor-loss-4wk` | outage $\kappa_t = 0$ in weeks 6–9, $\phi = 0.60$ | 18,520 | week 9 (week 9 only) | 12,240 (week 9) |
+| `slow-season-plus-300bp` | rate $+3\%$ from week 1; demand $\delta = 0.30$, weeks 2–9, $\rho = 0$ | 16,180 | week 9 (weeks 9–15) | 12,870 (week 9) |
+
+Cash never goes negative in any of them: runway is "> 26 weeks". Every value was worked out by hand first and then matches
+`simulate()` to 0.01.
+
+*Road closure.* Lost sales are 6,000 a week in weeks 4–12. In week 13, $m = 1 - 0.3\,(1 - 1/3) = 0.8$, so 4,000 is
+lost. In week 14, $m = 0.9$, so 2,000. The total is $9 \times 6{,}000 + 4{,}000 + 2{,}000 = 60{,}000$.
+Weeks 1–3: $+200$ each, so $C_3 = 45{,}600$. Week 4: $200 - 5{,}400 = -5{,}200$, so $C_4 = 40{,}400$.
+Weeks 5–12: $200 - 5{,}400 + 1{,}440 = -3{,}760$ each, so $C_{10} = 17{,}840$, **$C_{11} = 14{,}080 < 15{,}000$**, and $C_{12} = 10{,}320$.
+Week 13: $200 - 3{,}600 + 1{,}440 = -1{,}960$, so $C_{13} = 8{,}360$. Week 14: $200 - 1{,}800 + 960 = -640$, so $C_{14} = 7{,}720$ (the minimum).
+Week 15: $200 + 480$, so $C_{15} = 8{,}400$. Then $+200$ a week, so $C_{26} = 8{,}400 + 11 \times 200 = 10{,}600$.
+Cross-check: $50{,}200 - 0.66 \times 60{,}000 = 10{,}600$.
+
+*Distributor loss.* Lost sales are $0.6 \times 20{,}000 = 12{,}000$ a week in weeks 6–9, 48,000 in total. $C_5 = 46{,}000$.
+Week 6: $200 - 10{,}800$, so $C_6 = 35{,}400$. Weeks 7–9: $200 - 10{,}800 + 2{,}880 = -7{,}720$ each, so $C_7 = 27{,}680$,
+$C_8 = 19{,}960$ and **$C_9 = 12{,}240$**. Week 10: $200 + 2{,}880$, so $C_{10} = 15{,}320$. Then $C_{26} = 15{,}320 + 16 \times 200 = 18{,}520$.
+Cross-check: $50{,}200 - 0.66 \times 48{,}000 = 18{,}520$.
+*With the backup supplier* ($x_b = 1$): no sales are lost. The premium is $0.15 \times 0.34 \times 20{,}000 \times 0.6 = 612$ a
+week, bought in weeks 6–9 and paid in weeks 7–10, plus the 500 fee in week 1. So
+$C_{26} = 50{,}200 - 500 - 4 \times 612 = 47{,}252$, and the lowest cash is $C_{10} = 44{,}052$.
+
+*Slow season + rate rise.* At 13%, interest is $156{,}000 \times 0.13 / 52 = 390$, so the base week makes 110. Lost sales
+are 6,000 a week in weeks 2–9, 48,000 in total. $C_1 = 45{,}110$. Week 2: $110 - 5{,}400$, so $C_2 = 39{,}820$.
+Weeks 3–9: $110 - 3{,}960 = -3{,}850$ each, so $C_8 = 16{,}720$ and **$C_9 = 12{,}870$** (the minimum). Week 10: $110 + 1{,}440$, so
+$C_{10} = 14{,}420$. Then $+110$ a week: $C_{15} = 14{,}970$ (still below the floor), $C_{16} = 15{,}080$, and
+$C_{26} = 14{,}420 + 16 \times 110 = 16{,}180$. Cross-check: $45{,}000 + 26 \times 110 - 0.66 \times 48{,}000 = 16{,}180$.
+
+**Protect payroll (§4.5, checked with the §8 decision rule in `core/decision.py`).** Each scenario is evaluated with its
+shock in the YES state and the baseline in the NO state, $p = 0.5$. Six policies are tested: WAIT; CUT PURCHASES (1,400 in
+weeks 2 and 3, the full $I_0 - I_{min}$); REVOLVER BRIDGE (draw 5,000 in week 8, repay it in week 26); BACKUP SUPPLIER; ALL
+NON-PAYROLL LEVERS (the last three together); and TRIM PAYROLL 10% ($z_t = 0.10$ in weeks 4–26).
+
+- *Road closure: no safe plan with payroll protected.* With $z_t = 0$, no plan in the whole §4 action space can keep
+  $C_{26} \ge C_{min}$. The backup supplier only costs money when there is no outage. $K_t = E_t = X_t = 0$, so deferring
+  capex or delaying expansion changes nothing. Total purchase cuts are capped at $I_0 - I_{min} = 2{,}800$. Revolver flows
+  add up to $B_T - B_0 \le 0$, minus interest. So $C_{26} \le 10{,}600 + 2{,}800 = 13{,}400 < 15{,}000$. The decision rule
+  reports `NO SAFE POLICY`. This is a bound argument, not the optimizer: the optimizer's `NO FEASIBLE PLAN` test needs
+  PR #69. With protect-payroll off, TRIM PAYROLL 10% saves $730 \times 23 = 16{,}790$ and is feasible. Its lowest cash is
+  $C_{13} = 8{,}360 + 10 \times 730 = 15{,}660$, and $C_{26} = 27{,}390$.
+- *Distributor loss: payroll stays whole.* The backup supplier keeps cash above the floor (lowest 44,052). Cutting
+  purchases (lowest $12{,}240 + 2{,}800 = 15{,}040$) or bridging on the revolver also works.
+- *Slow season + rate rise: payroll stays whole.* The dip is temporary relative to the floor, so bridging on the revolver
+  works. It costs $5{,}000 \times 0.15 / 52 \times 18 = 259.62$ of interest, giving $C_{26} = 15{,}920.38$. Cutting purchases also
+  works (lowest $12{,}870 + 2{,}800 = 15{,}670$). The backup supplier alone does not: there is no outage, and the 500 fee
+  makes things worse.
+
+**Sign-off:** ☐ Yaseen has reviewed the §10b parameters and scenarios (issue #109).
