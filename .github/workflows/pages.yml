@@ -17,6 +17,9 @@ concurrency:
 jobs:
   build:
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pages: read   # actions/configure-pages reads the Pages site settings
     steps:
       - uses: actions/checkout@v4
       - name: Read and validate repo variables
