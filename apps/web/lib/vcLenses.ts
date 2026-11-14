@@ -82,7 +82,8 @@ export interface VcLensesPointInTime extends VcLensesCommon {
   as_of: string;
   items: LensPointInTime[];
   /** Curated lenses hidden because they were not provably public at as_of. */
-  excluded_not_yet_public: number;
+  /** null when the API has no dataset to count from (PR #59); a number otherwise. */
+  excluded_not_yet_public: number | null;
 }
 
 export interface VcLensesLiveExplore extends VcLensesCommon {
@@ -205,7 +206,7 @@ export function checkVcLensesResponse(body: unknown): string | null {
   } else {
     if (!isStr(body.as_of)) return "as_of missing";
     const n = body.excluded_not_yet_public;
-    if (typeof n !== "number" || !Number.isInteger(n) || n < 0) return "excluded_not_yet_public malformed";
+    if (n !== null && (typeof n !== "number" || !Number.isInteger(n) || n < 0)) return "excluded_not_yet_public malformed";
   }
   for (let i = 0; i < body.items.length; i++) {
     const problem = checkItem(body.items[i], `items[${i}]`, live);

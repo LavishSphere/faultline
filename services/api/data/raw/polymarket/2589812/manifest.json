@@ -1,0 +1,31 @@
+{
+  "entries": [
+    {
+      "bytes": 1877,
+      "collected_at": "2026-11-13T17:58:17.475345+00:00",
+      "endpoint": "polymarket.clob_prices_history",
+      "http_status": 200,
+      "notes": {
+        "collector": "scripts/collect_market_snapshots.py",
+        "plan_group": "FOMC 2026-10",
+        "plan_leg": "no change",
+        "points_in_response_set": 69,
+        "reference_close": "2026-10-28T17:59:00+00:00",
+        "venue_scheduled_close": "2026-10-29T03:59:00+00:00",
+        "window_end": "2026-10-21T00:00:00+00:00",
+        "window_rule": "T-7d: end = 00:00Z of (reference_close - 7d), lookback 3d",
+        "window_start": "2026-10-18T00:00:00+00:00"
+      },
+      "params": {
+        "endTs": 1792540800,
+        "fidelity": 60,
+        "market": "111061902544814266207267295505639408607400625795891618462682726460921782993748",
+        "startTs": 1792281600
+      },
+      "path": "polymarket/2589812/20261113T175817475345Z.json",
+      "provenance": "REAL HISTORICAL",
+      "sha256": "5cba1add64738cb10b0d9ac38243ab9cac4ec12fc158013b235cc3ee8cf8403c",
+      "url": "https://clob.polymarket.com/prices-history"
+    }
+  ]
+}

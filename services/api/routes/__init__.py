@@ -14,7 +14,6 @@ from __future__ import annotations
 
 import json
 from collections.abc import Callable, Coroutine, Iterable, Mapping
-from enum import StrEnum
 from pathlib import Path
 from typing import Any
 
@@ -24,14 +23,9 @@ from fastapi.responses import JSONResponse
 from fastapi.routing import APIRoute
 from pydantic import BaseModel, ConfigDict, Field
 
+from models import ErrorCode
+
 NOT_AVAILABLE = "NOT AVAILABLE"
-
-
-class RouteErrorCode(StrEnum):
-    VALIDATION_ERROR = "VALIDATION_ERROR"  # request body / query failed validation (422)
-    INFEASIBLE_INPUT = "INFEASIBLE_INPUT"  # valid shape, but financing that cannot happen (422)
-    DATA_UNAVAILABLE = "DATA_UNAVAILABLE"  # a required data file is missing (503)
-    DATA_INVALID = "DATA_INVALID"  # a data file exists but fails its schema (500)
 
 
 class FieldIssue(BaseModel):
@@ -45,7 +39,7 @@ class FieldIssue(BaseModel):
 class RouteErrorBody(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
-    code: RouteErrorCode
+    code: ErrorCode
     message: str = Field(description="Plain-language explanation, safe to show to the user.")
     errors: list[FieldIssue] = Field(default_factory=list)
 
@@ -53,7 +47,7 @@ class RouteErrorBody(BaseModel):
 class RouteError(Exception):
     def __init__(
         self,
-        code: RouteErrorCode,
+        code: ErrorCode,
         message: str,
         status_code: int = 422,
         errors: list[FieldIssue] | None = None,
@@ -92,7 +86,7 @@ class CodedRoute(APIRoute):
                 return await handler(request)
             except RequestValidationError as exc:
                 return RouteError(
-                    RouteErrorCode.VALIDATION_ERROR,
+                    ErrorCode.VALIDATION_ERROR,
                     "Request failed validation; see `errors` for each field.",
                     status_code=422,
                     errors=issues_from(exc.errors()),
@@ -119,13 +113,13 @@ def read_json(path: Path, display_name: str) -> Any:
         return json.loads(path.read_text(encoding="utf-8"))
     except json.JSONDecodeError as exc:
         raise RouteError(
-            RouteErrorCode.DATA_INVALID,
+            ErrorCode.DATA_INVALID,
             f"{display_name} is not valid JSON (line {exc.lineno}, column {exc.colno}).",
             status_code=500,
         ) from None
     except (OSError, UnicodeDecodeError) as exc:
         raise RouteError(
-            RouteErrorCode.DATA_INVALID,
+            ErrorCode.DATA_INVALID,
             f"{display_name} could not be read ({type(exc).__name__}).",
             status_code=500,
         ) from None

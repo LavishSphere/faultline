@@ -22,8 +22,8 @@ from pydantic import BaseModel, ConfigDict, Field, ValidationError
 
 from config import Settings, get_settings
 from core.financials import ActionPlan, ScenarioShock
-from models import Identifier
-from routes import NOT_AVAILABLE, CodedRoute, RouteError, RouteErrorCode, error_responses, issues_from, read_json
+from models import ErrorCode, Identifier
+from routes import NOT_AVAILABLE, CodedRoute, RouteError, error_responses, issues_from, read_json
 from routes.simulate import load_business, series_length_issues
 
 router = APIRouter(tags=["scenarios"], route_class=CodedRoute)
@@ -53,7 +53,7 @@ class ScenariosResponse(BaseModel):
 
 
 def _invalid(message: str, errors=None) -> RouteError:
-    return RouteError(RouteErrorCode.DATA_INVALID, message, status_code=500, errors=errors)
+    return RouteError(ErrorCode.DATA_INVALID, message, status_code=500, errors=errors)
 
 
 def load_scenarios(settings: Settings) -> list[NamedScenario] | None:
@@ -92,7 +92,7 @@ def _business_horizon(settings: Settings) -> int | None:
     try:
         return load_business(settings).horizon_weeks
     except RouteError as exc:
-        if exc.code == RouteErrorCode.DATA_UNAVAILABLE:
+        if exc.code == ErrorCode.DATA_UNAVAILABLE:
             return None
         raise
 

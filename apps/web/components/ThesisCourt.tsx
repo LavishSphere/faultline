@@ -292,7 +292,13 @@ function FirmColumn({
   const result = view.kind === "done" ? view.result : null;
   const data: VcLensesResponse | null = result && result.ok ? result.data : null;
   const items = data ? (data.items as (LensPointInTime | LensLiveExplore)[]).filter((it) => it.firm === name) : [];
-  const datasetMissing = data !== null && data.status !== "AVAILABLE" && data.items.length === 0;
+  // Dataset missing = nothing to count from. A point-in-time cutoff with zero eligible items but a real
+  // excluded count (e.g. 2023: "6 not yet public") is NOT a missing dataset.
+  const datasetMissing =
+    data !== null &&
+    data.status !== "AVAILABLE" &&
+    data.items.length === 0 &&
+    (data.mode === "live_explore" || data.excluded_not_yet_public === null);
 
   let body: ReactNode;
   if (view.kind === "idle" || view.kind === "loading") {
@@ -451,7 +457,13 @@ export function ThesisCourt() {
   const loading = view.kind === "loading";
   const pending = view.kind === "idle" ? null : requestUrl(view.asOf);
   /** Dataset missing on the server: no count is shown, only NOT AVAILABLE. */
-  const datasetMissing = data !== null && data.status !== "AVAILABLE" && data.items.length === 0;
+  // Dataset missing = nothing to count from. A point-in-time cutoff with zero eligible items but a real
+  // excluded count (e.g. 2023: "6 not yet public") is NOT a missing dataset.
+  const datasetMissing =
+    data !== null &&
+    data.status !== "AVAILABLE" &&
+    data.items.length === 0 &&
+    (data.mode === "live_explore" || data.excluded_not_yet_public === null);
   const liveMessage =
     view.kind === "loading"
       ? "Requesting research lenses"

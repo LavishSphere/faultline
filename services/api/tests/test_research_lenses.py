@@ -1,5 +1,6 @@
 """Research lens dataset: schema, firm coverage, honesty wording, point-in-time eligibility (SPEC §7, §10)."""
 
+import copy
 import json
 import re
 from datetime import UTC, date, datetime, timedelta
@@ -287,3 +288,90 @@ def test_prompt_projection_omits_null_published_at(lenses):
 def test_prompt_projection_refuses_ineligible_item(lenses):
     with pytest.raises(ValueError):
         lens_for_prompt(_by_id(lenses, SEQUOIA_ETCHED), _at(2026, 7, 23, 12))
+
+
+# --- scorable (issue #52) -------------------------------------------------
+# `scorable` says whether a quoted forecast is stated precisely enough to be checked (metric, threshold,
+# horizon, resolution source). It is read from the dataset, never inferred, and absent when the dataset is
+# silent (NOT AVAILABLE). Quote-level wins; item-level applies to the item's quantitative_forecast quotes only.
+
+def _with_quotes(lenses, ident, quotes, **item_fields):
+    item = copy.deepcopy(_by_id(lenses, ident))
+    item["quotes"] = quotes
+    item.update(item_fields)
+    return item
+
+
+def _expected_scorable(item, quote):
+    if "scorable" in quote:
+        return quote["scorable"]
+    if quote["kind"] == "quantitative_forecast" and "scorable" in item:
+        return item["scorable"]
+    return None
+
+
+def test_scorable_in_projection_matches_dataset_for_every_quote(lenses):
+    as_of = _at(2026, 11, 13, 12)
+    for item in eligible_lenses(as_of, lenses):
+        for quote, projected in zip(item["quotes"], lens_for_prompt(item, as_of)["quotes"], strict=True):
+            expected = _expected_scorable(item, quote)
+            if expected is None:
+                assert "scorable" not in projected, item["id"]
+            else:
+                assert projected["scorable"] is expected, item["id"]
+
+
+def test_quote_level_scorable_wins_over_item_level(lenses):
+    item = _with_quotes(lenses, BESSEMER_AI_2025, [
+        {"text": "f1", "kind": "quantitative_forecast", "scorable": True},
+        {"text": "f2", "kind": "quantitative_forecast"},
+    ], scorable=False, scorable_reason="no defined metric")
+    assert validate_lens(item) == []
+    quotes = lens_for_prompt(item, _at(2026, 11, 13, 12))["quotes"]
+    assert quotes == [
+        {"text": "f1", "kind": "quantitative_forecast", "scorable": True},
+        {"text": "f2", "kind": "quantitative_forecast", "scorable": False},
+    ]
+
+
+def test_item_level_scorable_applies_only_to_quantitative_forecasts(lenses):
+    item = _with_quotes(lenses, BESSEMER_AI_2025, [
+        {"text": "fact", "kind": "documentary_fact"},
+        {"text": "view", "kind": "analyst_interpretation"},
+        {"text": "forecast", "kind": "quantitative_forecast"},
+    ], scorable=False)
+    quotes = lens_for_prompt(item, _at(2026, 11, 13, 12))["quotes"]
+    assert [("scorable" in q) for q in quotes] == [False, False, True]
+    assert quotes[2]["scorable"] is False
+
+
+def test_scorable_absent_when_dataset_is_silent(lenses):
+    item = _with_quotes(lenses, BESSEMER_AI_2025, [{"text": "forecast", "kind": "quantitative_forecast"}])
+    item.pop("scorable", None)
+    assert lens_for_prompt(item, _at(2026, 11, 13, 12))["quotes"] == [
+        {"text": "forecast", "kind": "quantitative_forecast"}
+    ]
+
+
+def test_scorable_reason_and_quote_notes_never_reach_the_prompt(lenses):
+    item = _with_quotes(lenses, BESSEMER_AI_2025, [
+        {"text": "forecast", "kind": "quantitative_forecast", "note": "curator note", "scorable": False},
+    ], scorable=False, scorable_reason="curator reason")
+    projected = lens_for_prompt(item, _at(2026, 11, 13, 12))
+    assert "scorable" not in projected and "scorable_reason" not in projected
+    assert set(projected) <= _PROMPT_KEYS
+    assert projected["quotes"] == [{"text": "forecast", "kind": "quantitative_forecast", "scorable": False}]
+
+
+@pytest.mark.parametrize("bad", ["false", 0, 1, None, []])
+def test_validate_lens_rejects_non_boolean_scorable(lenses, bad):
+    at_quote = _with_quotes(lenses, BESSEMER_AI_2025, [{"text": "f", "kind": "quantitative_forecast", "scorable": bad}])
+    assert any("quotes[0].scorable" in e for e in validate_lens(at_quote))
+    at_item = _with_quotes(lenses, BESSEMER_AI_2025, [{"text": "f", "kind": "quantitative_forecast"}], scorable=bad)
+    assert any("scorable must be true or false" in e for e in validate_lens(at_item))
+
+
+@pytest.mark.parametrize("kind", ["documentary_fact", "analyst_interpretation"])
+def test_validate_lens_rejects_scorable_true_on_a_non_forecast_quote(lenses, kind):
+    item = _with_quotes(lenses, BESSEMER_AI_2025, [{"text": "q", "kind": kind, "scorable": True}])
+    assert any("only a quantitative_forecast can be scorable" in e for e in validate_lens(item))

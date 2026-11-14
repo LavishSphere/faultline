@@ -1,0 +1,228 @@
+{
+  "provenance": "ILLUSTRATIVE",
+  "label": "ILLUSTRATIVE: modelling guidance, not forecasts",
+  "description": "Guard-rails for LIVE EXPLORE (issue #61): when the model reads today's news and suggests a stress scenario, these are the plausible sizes for each ScenarioShock field by news category. They are modelling choices for the SYNTHETIC demo business (MATH_MODEL §1, §10), not forecasts of what any event will do. A cited source supports only the order of magnitude it names; the exact min/default/max are modelling judgment.",
+  "issue": 79,
+  "horizon_weeks": 26,
+  "units": {
+    "delta_rate": "Δr, decimal per year added to the base rate (0.0025 = +25bp)",
+    "delta": "δ, fraction of base-store demand lost during the shock window (0.10 = -10%)",
+    "availability_during_outage": "κ_t inside the outage window, fraction in [0, 1] (0 = primary supplier delivers nothing); κ_t = 1 outside the window",
+    "dependent_share": "φ, fraction of base-store sales that depend on the affected supply, in [0, 1]",
+    "start_week": "first shocked week t, integer in 1..T",
+    "duration_weeks": "number of shocked weeks, integer >= 1",
+    "recovery_weeks": "ρ, weeks of linear recovery after the window, integer >= 0"
+  },
+  "mapping_to_scenario_shock": {
+    "rate": "RateShock(delta_rate = delta_rate, start_week = start_week)",
+    "demand": "DemandShock(delta = delta, start_week = start_week, end_week = start_week + duration_weeks - 1, recovery_weeks = recovery_weeks)",
+    "supplier": "SupplierOutage(availability = [availability_during_outage if start_week <= t <= start_week + duration_weeks - 1 else 1.0 for t = 1..T], dependent_share = dependent_share)"
+  },
+  "how_to_use": "Classify the news into one category id (or none). Set only the shock blocks that category lists. For each parameter, clamp the model's suggestion to [min, max] (week fields are integers); if the model gives no value, use default. Every window, including recovery, then ends by week T. The human confirms or edits the result before /api/simulate runs; the numbers are inputs, never forecasts.",
+  "worse_when_meaning": "Direction in which the parameter makes the stress scenario more severe for cash: 'higher', 'lower', or null when timing has no fixed direction (moving a window changes which weeks fall inside the horizon).",
+  "categories": [
+    {
+      "id": "central-bank-rate-surprise",
+      "name": "Central-bank rate surprise",
+      "news_trigger": "The central bank raises its policy rate by more than expected, or signals faster hikes than markets priced.",
+      "provenance": "ILLUSTRATIVE",
+      "shocks": {
+        "rate": {
+          "delta_rate": {"min": 0.0025, "default": 0.005, "max": 0.01, "worse_when": "higher"},
+          "start_week": {"min": 1, "default": 1, "max": 7, "worse_when": "lower"}
+        }
+      },
+      "timing_guidance": "Start at the floating loan's next reset (week 1 if it resets weekly); at most about one meeting gap later (52 / 8 meetings = 6.5 weeks). No recovery within the horizon: the higher rate stays.",
+      "rationale": "Policy moves come in 25bp steps and 75bp was the largest single move of 2022-2025, so one surprise plus a follow-up move gives +25 to +100bp on the floating term loan.",
+      "basis": "sourced order of magnitude; exact range is modelling judgment",
+      "sources": [
+        {
+          "url": "https://www.federalreserve.gov/monetarypolicy/openmarket.htm",
+          "title": "Open Market Operations (federal funds target range history)",
+          "publisher": "Board of Governors of the Federal Reserve System",
+          "retrieved_on": "2026-11-13",
+          "supports": "Of the 17 target-range changes listed for 2022-2025, 10 were 25bp; the largest single moves were 75bp (Jun 16, Jul 28, Sep 22 and Nov 3, 2022)."
+        },
+        {
+          "url": "https://www.federalreserve.gov/monetarypolicy/fomccalendars.htm",
+          "title": "Meeting calendars, statements, and minutes",
+          "publisher": "Board of Governors of the Federal Reserve System",
+          "retrieved_on": "2026-11-13",
+          "supports": "The FOMC holds eight regularly scheduled meetings a year, which bounds the start-week delay at about one meeting gap."
+        }
+      ]
+    },
+    {
+      "id": "inflation-surprise",
+      "name": "Inflation surprise",
+      "news_trigger": "A consumer-price release comes in hotter than expected and markets price more rate hikes.",
+      "provenance": "ILLUSTRATIVE",
+      "shocks": {
+        "rate": {
+          "delta_rate": {"min": 0.0025, "default": 0.005, "max": 0.0075, "worse_when": "higher"},
+          "start_week": {"min": 1, "default": 4, "max": 8, "worse_when": "lower"}
+        },
+        "demand": {
+          "delta": {"min": 0.01, "default": 0.02, "max": 0.05, "worse_when": "higher"},
+          "start_week": {"min": 1, "default": 2, "max": 4, "worse_when": null},
+          "duration_weeks": {"min": 8, "default": 12, "max": 16, "worse_when": "higher"},
+          "recovery_weeks": {"min": 0, "default": 4, "max": 6, "worse_when": "higher"}
+        }
+      },
+      "timing_guidance": "The rate effect arrives with the next policy meeting (weeks 1-8); the demand squeeze is mild but long (8-16 weeks) as real incomes fall, then recovers over up to 6 weeks.",
+      "rationale": "A hot print raises expected policy rates by about one or more 25bp steps and squeezes real spending a little; food is a necessity, so the demand hit is kept small (1-5%).",
+      "basis": "sourced order of magnitude for the rate step; demand size and all timing are modelling judgment",
+      "sources": [
+        {
+          "url": "https://www.federalreserve.gov/monetarypolicy/openmarket.htm",
+          "title": "Open Market Operations (federal funds target range history)",
+          "publisher": "Board of Governors of the Federal Reserve System",
+          "retrieved_on": "2026-11-13",
+          "supports": "Of the 17 target-range changes listed for 2022-2025, 10 were 25bp; the largest single moves were 75bp. It does not say how much any move was caused by inflation news."
+        }
+      ]
+    },
+    {
+      "id": "regional-economic-slowdown",
+      "name": "Regional economic slowdown",
+      "news_trigger": "Local layoffs, a plant closure, or a regional downturn reduce household spending in the stores' area.",
+      "provenance": "ILLUSTRATIVE",
+      "shocks": {
+        "demand": {
+          "delta": {"min": 0.05, "default": 0.1, "max": 0.25, "worse_when": "higher"},
+          "start_week": {"min": 1, "default": 3, "max": 6, "worse_when": null},
+          "duration_weeks": {"min": 4, "default": 8, "max": 12, "worse_when": "higher"},
+          "recovery_weeks": {"min": 0, "default": 4, "max": 8, "worse_when": "higher"}
+        }
+      },
+      "timing_guidance": "Starts within the first 6 weeks, lasts 4-12 weeks, then customers return over up to 8 weeks.",
+      "rationale": "A fresh/deli format loses discretionary baskets first, so footfall can fall 5-25% for one to three months; 25% is a severe local downturn, not a typical one.",
+      "basis": "modelling judgment",
+      "sources": []
+    },
+    {
+      "id": "local-disruption",
+      "name": "Local disruption (severe weather, road closure)",
+      "news_trigger": "A storm, flood, snow event or major road closure near the stores keeps customers away and delays deliveries.",
+      "provenance": "ILLUSTRATIVE",
+      "shocks": {
+        "demand": {
+          "delta": {"min": 0.1, "default": 0.3, "max": 0.6, "worse_when": "higher"},
+          "start_week": {"min": 1, "default": 2, "max": 20, "worse_when": null},
+          "duration_weeks": {"min": 1, "default": 1, "max": 3, "worse_when": "higher"},
+          "recovery_weeks": {"min": 0, "default": 1, "max": 2, "worse_when": "higher"}
+        },
+        "supplier": {
+          "availability_during_outage": {"min": 0.0, "default": 0.5, "max": 0.8, "worse_when": "lower"},
+          "start_week": {"min": 1, "default": 2, "max": 20, "worse_when": null},
+          "duration_weeks": {"min": 1, "default": 1, "max": 2, "worse_when": "higher"},
+          "dependent_share": {"min": 0.2, "default": 0.4, "max": 0.6, "worse_when": "higher"}
+        }
+      },
+      "timing_guidance": "Short and sharp: 1-3 weeks of lost footfall with up to 2 weeks of recovery, and 1-2 weeks of partial deliveries. Use the same start week for the demand and supplier blocks.",
+      "rationale": "A weather event or closure can halve trade for a week or two but rarely lasts longer; deliveries from the primary distributor are delayed rather than stopped, so κ stays partial by default.",
+      "basis": "modelling judgment",
+      "sources": []
+    },
+    {
+      "id": "distributor-strike",
+      "name": "Distributor strike or labour action",
+      "news_trigger": "Workers at the primary distributor or its warehouses strike, or a labour dispute halts its deliveries.",
+      "provenance": "ILLUSTRATIVE",
+      "shocks": {
+        "supplier": {
+          "availability_during_outage": {"min": 0.0, "default": 0.0, "max": 0.5, "worse_when": "lower"},
+          "start_week": {"min": 1, "default": 2, "max": 8, "worse_when": null},
+          "duration_weeks": {"min": 1, "default": 2, "max": 4, "worse_when": "higher"},
+          "dependent_share": {"min": 0.2, "default": 0.4, "max": 0.6, "worse_when": "higher"}
+        }
+      },
+      "timing_guidance": "1-4 weeks of outage; deliveries may continue at up to half volume with non-striking staff. Default φ is the business's own outage share (0.40 for the demo business).",
+      "rationale": "A strike stops the primary distributor's lines for days to weeks, so the share φ of sales on its lines is lost unless the backup supplier is used.",
+      "basis": "modelling judgment",
+      "sources": []
+    },
+    {
+      "id": "supplier-insolvency",
+      "name": "Primary supplier insolvency",
+      "news_trigger": "The primary distributor files for bankruptcy, enters administration, or stops trading.",
+      "provenance": "ILLUSTRATIVE",
+      "shocks": {
+        "supplier": {
+          "availability_during_outage": {"min": 0.0, "default": 0.0, "max": 0.3, "worse_when": "lower"},
+          "start_week": {"min": 1, "default": 2, "max": 8, "worse_when": null},
+          "duration_weeks": {"min": 3, "default": 6, "max": 12, "worse_when": "higher"},
+          "dependent_share": {"min": 0.2, "default": 0.4, "max": 0.6, "worse_when": "higher"}
+        }
+      },
+      "timing_guidance": "Longer than a strike: 3-12 weeks until a new primary supplier is on-boarded; a trading administrator may keep up to 30% of deliveries going. Default φ is the business's own outage share (0.40 for the demo business).",
+      "rationale": "Replacing a primary distributor means new terms, credit checks and delivery set-up, which takes weeks, not days.",
+      "basis": "modelling judgment",
+      "sources": []
+    },
+    {
+      "id": "product-recall",
+      "name": "Food-safety recall of a product line",
+      "news_trigger": "A supplier recalls a product line the stores sell (for example a deli meat or produce item) on food-safety grounds.",
+      "provenance": "ILLUSTRATIVE",
+      "shocks": {
+        "supplier": {
+          "availability_during_outage": {"min": 0.0, "default": 0.0, "max": 0.5, "worse_when": "lower"},
+          "start_week": {"min": 1, "default": 1, "max": 8, "worse_when": null},
+          "duration_weeks": {"min": 1, "default": 2, "max": 6, "worse_when": "higher"},
+          "dependent_share": {"min": 0.02, "default": 0.05, "max": 0.15, "worse_when": "higher"}
+        }
+      },
+      "timing_guidance": "Usually immediate (week 1); the line is off the shelf for 1-6 weeks. Here φ is the recalled line's share of sales, not the distributor share 0.40.",
+      "rationale": "A recall removes one product line rather than a whole distributor, so the lost share is small (2-15% of sales); the outage block is reused as 'share of sales pulled from the shelf'.",
+      "basis": "modelling judgment",
+      "sources": []
+    },
+    {
+      "id": "credit-tightening",
+      "name": "Bank credit tightening",
+      "news_trigger": "Banks report tighter lending standards or wider loan spreads for small businesses, or the business's lender signals a repricing.",
+      "provenance": "ILLUSTRATIVE",
+      "shocks": {
+        "rate": {
+          "delta_rate": {"min": 0.0025, "default": 0.005, "max": 0.015, "worse_when": "higher"},
+          "start_week": {"min": 1, "default": 5, "max": 13, "worse_when": "lower"}
+        }
+      },
+      "timing_guidance": "Wider spreads reach the business only when its loans reprice (renewal or a covenant step-up), so start later than a policy move (weeks 1-13). The rate shock raises the term-loan rate and the revolver rate alike.",
+      "rationale": "When banks tighten, spreads over their cost of funds widen; for a small borrower at renewal that is modelled as +25 to +150bp on its floating debt.",
+      "basis": "sourced direction (spreads widen when banks tighten); size and timing are modelling judgment",
+      "sources": [
+        {
+          "url": "https://www.federalreserve.gov/data/sloos/sloos-202307.htm",
+          "title": "July 2023 Senior Loan Officer Opinion Survey on Bank Lending Practices",
+          "publisher": "Board of Governors of the Federal Reserve System",
+          "retrieved_on": "2026-11-13",
+          "supports": "Banks reported tightened standards on C&I loans, and tightening was most widely reported for spreads of loan rates over the cost of funds. The page gives no spread size in basis points."
+        }
+      ]
+    }
+  ],
+  "excluded": [
+    {
+      "news_type": "Energy or fuel price spike",
+      "reason": "Its main effect is higher operating cost (O_t) and delivery cost, and ScenarioShock has no cost lever (opex is a business parameter). Mapping it to a demand drop alone would misstate the cash effect, so no faithful mapping exists."
+    },
+    {
+      "news_type": "Tariffs or wholesale food-price inflation",
+      "reason": "This works through the gross margin g (or purchase cost), which is a business parameter, not a ScenarioShock field."
+    },
+    {
+      "news_type": "Minimum-wage rise or a strike by the business's own staff",
+      "reason": "Payroll W_t is a business parameter, and cutting payroll is an optimizer decision (z_t); no ScenarioShock field changes it."
+    },
+    {
+      "news_type": "Bank cuts the business's credit line",
+      "reason": "The revolver limit is a business parameter used by the optimizer; ScenarioShock cannot reduce it. Only the price side of credit tightening (wider spreads) maps, via the rate shock above."
+    },
+    {
+      "news_type": "Rate cuts or other favourable news",
+      "reason": "LIVE EXPLORE suggests stress scenarios; every range above is adverse. A negative Δr is valid for RateShock but is not guidance for a stress test."
+    }
+  ]
+}
