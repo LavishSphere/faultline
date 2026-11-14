@@ -19,6 +19,7 @@ import {
 import { CascadeGraph, formatDelta } from "../CascadeGraph";
 import { FinancialReadout } from "../FinancialReadout";
 import { NotAvailable, Panel } from "../Panel";
+import { JudgeChallenge } from "./challenge/JudgeChallenge";
 import type { ProvenanceInput } from "../ProvenanceBadge";
 import {
   DEFAULT_DEPENDENT_PCT,
@@ -212,7 +213,15 @@ export function CascadeWorkbench() {
     if (scenarios.kind !== "ok" || horizon === null) return;
     const preset = scenarios.data.presets.find((p) => p.id === id);
     if (!preset) return;
+    applyPreset(preset);
+  };
+
+  /** Fill the sliders from a preset's shock and send it exactly (also used by the Judge's Challenge, #123). */
+  const applyPreset = (preset: ScenarioPreset) => {
+    if (horizon === null) return;
     setControls((c) => controlsFromShock(preset.shock, horizon, c));
+    // Setting `mode` changes `scenario`, hence both request keys: /api/simulate and /api/optimize (#56) re-run through
+    // their usual debounced effects. A plan applied for the previous shock no longer matches `optKey`, so it is dropped.
     setMode({ kind: "preset", preset, touched: new Set() });
   };
 
@@ -279,6 +288,8 @@ export function CascadeWorkbench() {
       >
         <fieldset disabled={controlsDisabled} className="flex flex-col gap-3 disabled:opacity-60">
           <legend className="sr-only">Scenario shock inputs sent to POST /api/simulate</legend>
+
+          <JudgeChallenge activeId={mode.kind === "preset" ? mode.preset.id : null} onPick={applyPreset} disabled={controlsDisabled} />
 
           <PresetPicker scenarios={scenarios} mode={mode} onChoose={choosePreset} disabled={controlsDisabled} />
 
@@ -518,6 +529,8 @@ function PresetPicker({
   const presets = scenarios.kind === "ok" ? scenarios.data.presets : [];
   const active = mode.kind === "preset" ? mode.preset : null;
   const edited = mode.kind === "preset" && mode.touched.size > 0;
+  /** A Judge's Challenge (#123) is not a catalog preset; its description is already shown in the challenge block. */
+  const challenge = active !== null && !presets.some((p) => p.id === active.id);
   let status: string;
   if (scenarios.kind === "loading") status = "GET /api/scenarios · request in flight";
   else if (scenarios.kind === "error")
@@ -543,6 +556,9 @@ function PresetPicker({
           className="w-full min-w-0 rounded-md border border-line-strong bg-bg px-2.5 py-1.5 font-mono text-xs text-text disabled:cursor-not-allowed disabled:opacity-60"
         >
           <option value="">Custom (sliders below)</option>
+          {active && challenge ? (
+            <option value={active.id}>Judge&apos;s Challenge: {active.name}</option>
+          ) : null}
           {presets.map((p) => (
             <option key={p.id} value={p.id}>
               {p.name}
@@ -553,7 +569,7 @@ function PresetPicker({
       <p className="font-mono text-[10px] text-muted">{status}</p>
       {active ? (
         <p className="text-xs leading-snug text-text-2">
-          {active.rationale ?? "No rationale provided."}{" "}
+          {challenge ? null : <>{active.rationale ?? "No rationale provided."} </>}
           <span className="text-muted">
             {edited
               ? "Edited: only the sliders you moved override the preset; every other field is sent exactly as served."

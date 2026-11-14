@@ -14,6 +14,7 @@ from routes import (
     explore,
     health,
     integrity,
+    judge_challenges,
     optimize,
     replay,
     research,
@@ -41,6 +42,7 @@ def create_app() -> FastAPI:
     app.include_router(optimize.router, prefix="/api")
     app.include_router(scenarios.router, prefix="/api")
     app.include_router(decision.router, prefix="/api")
+    app.include_router(judge_challenges.router, prefix="/api")
     app.include_router(research.router, prefix="/api")
     app.include_router(cases.router, prefix="/api")
     app.include_router(replay.router, prefix="/api")
