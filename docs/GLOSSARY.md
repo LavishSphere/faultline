@@ -90,7 +90,7 @@ that are not on `main` yet.
 | Naive baseline | `Naive baseline (p = 0.5)` | A forecaster that always says 50%, the know-nothing benchmark. | REVEAL |  |
 | Δ Brier vs market | `Δ Brier vs market (paired bootstrap CI)` | Agent's average Brier score minus the market's; negative favours the agent. | REVEAL |  |
 | Paired bootstrap 95% CI | `paired bootstrap CI` | A range for the score gap, built by resampling the same events 10,000 times. | REVEAL |  |
-| agent better than market | `agent better than market` | The verdict shown only when the agent beats the market beyond chance. | REVEAL |  |
+| agent better than market | `agent better than market` | Shown only if the 95% interval for agent-minus-market Brier lies entirely below zero. | REVEAL |  |
 | No improvement measured | `No improvement measured` | The honest result when the agent's advantage is not clear beyond chance. | REVEAL |  |
 | INSUFFICIENT DATA | `INSUFFICIENT DATA` | Too few valid cases to compare forecasters at all. | REVEAL |  |
 | OFFICIAL | `Not OFFICIAL because (official_blockers, from the API)` | Label for a scorecard computed from the committed real cases in a clean run. | REVEAL |  |
@@ -899,7 +899,7 @@ that are not on `main` yet.
 ### agent better than market
 
 - **On screen:** `agent better than market`
-- **Short:** The verdict shown only when the agent beats the market beyond chance.
+- **Short:** Shown only if the 95% interval for agent-minus-market Brier lies entirely below zero.
 - **Long:** Shown only if the whole 95% paired-bootstrap interval for mean Brier, agent minus market, is below zero, with at least 5 events (MATH_MODEL §6). Otherwise the scorecard reads No improvement measured, or INSUFFICIENT DATA below 5 events. It is the API's verdict (evaluator AGENT_BETTER), never set by the browser.
 - **Example:** The screen refuses a card where the verdict and the interval disagree: an upper bound of 0.01 with this verdict is rejected; −0.001 is accepted.
 - **Source:** apps/web/lib/contracts.test.mjs (AGENT_BETTER holds exactly when ci_high < 0); core/evaluator.py.

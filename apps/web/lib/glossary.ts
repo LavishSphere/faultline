@@ -675,7 +675,7 @@ export const GLOSSARY = {
   },
   "agent better than market": {
     uiLabels: ["agent better than market"],
-    short: "The verdict shown only when the agent beats the market beyond chance.",
+    short: "Shown only if the 95% interval for agent-minus-market Brier lies entirely below zero.",
     long: "Shown only if the whole 95% paired-bootstrap interval for mean Brier, agent minus market, is below zero, with at least 5 events (MATH_MODEL §6). Otherwise the scorecard reads No improvement measured, or INSUFFICIENT DATA below 5 events. It is the API's verdict (evaluator AGENT_BETTER), never set by the browser.",
     example: "The screen refuses a card where the verdict and the interval disagree: an upper bound of 0.01 with this verdict is rejected; −0.001 is accepted.",
     source: "apps/web/lib/contracts.test.mjs (AGENT_BETTER holds exactly when ci_high < 0); core/evaluator.py.",
