@@ -320,6 +320,7 @@ REPLAY_MODULES = (
     "routes.cases",
     "routes.replay",
     "routes.benchmark",
+    "routes.recorded",
 )
 # The live-web patterns are assembled at run time ON PURPOSE. PR #73's separation test flags any string constant or
 # name in a non-Live-Explore module that spells a live-web module, and this file must only *describe* them. Do not

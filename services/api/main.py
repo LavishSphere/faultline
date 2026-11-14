@@ -26,6 +26,7 @@ from routes import (
     integrity,
     judge_challenges,
     optimize,
+    recorded,
     replay,
     research,
     scenarios,
@@ -315,6 +316,7 @@ def create_app() -> FastAPI:
     app.include_router(research.router, prefix="/api")
     app.include_router(cases.router, prefix="/api")
     app.include_router(replay.router, prefix="/api")
+    app.include_router(recorded.router, prefix="/api")
     app.include_router(integrity.router, prefix="/api")
     app.include_router(benchmark.router, prefix="/api")
     # LIVE EXPLORE (Tavily). Admin-gated inside the route in public mode; never used by the Blind Replay (#60).

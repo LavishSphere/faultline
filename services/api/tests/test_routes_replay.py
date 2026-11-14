@@ -55,11 +55,13 @@ ANSWER = {
 }
 
 # /api/integrity (#81) is pre-reveal too: it reports checks about a case and run, never the outcome.
+# /api/replay/recorded (#116) serves committed RECORDED RUN forecast rows (tests/test_routes_replay_recorded.py).
 PRE_REVEAL = {
     ("get", "/api/cases"),
     ("get", "/api/cases/{case_id}/evidence"),
     ("post", "/api/replay/run"),
     ("get", "/api/integrity"),
+    ("get", "/api/replay/recorded"),
 }
 POST_REVEAL = {("post", "/api/replay/{prediction_id}/reveal")}
 # /api/explore/search and /api/explore/analyze are LIVE EXPLORE (#60, #61): current web search and a local-model
@@ -663,6 +665,12 @@ def _pre_reveal_calls(world: World, client: TestClient) -> list:
         client.get("/api/integrity", params={"case_id": EVENT}),
         client.get("/api/integrity", params={"prediction_id": pid}),
         client.get("/api/integrity", params={"case_id": "no_such_case"}),
+    ]
+    calls[("get", "/api/replay/recorded")] = [
+        client.get("/api/replay/recorded", params={"case_id": EVENT}),
+        client.get("/api/replay/recorded", params={"case_id": EVENT, "agent_variant": "agent_plus_market"}),
+        client.get("/api/replay/recorded", params={"case_id": "no_such_case"}),
+        client.get("/api/replay/recorded", params={"case_id": EVENT, "agent_variant": "nope"}),
     ]
     assert set(calls) == PRE_REVEAL
     return [resp for group in calls.values() for resp in group]
