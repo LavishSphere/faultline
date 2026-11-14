@@ -69,7 +69,7 @@ BINDING_TOL = 1e-6
 # Solver path vs simulate() path: the largest allowed gap in dollars before OPTIMAL is refused.
 AGREEMENT_TOL = 1e-6
 # Solver values smaller than this are treated as zero when the plan is read back (removes round-off like -1e-12).
-ZERO_TOL = 1e-9
+ZERO_TOL = 1e-7
 # Stage-2 tie-break acceptance (§4): the tie-broken plan's J may exceed the stage-1 optimum J* by at most
 # max(COST_TIE_REL_TOL * |J*|, COST_TIE_ABS_TOL) (solver round-off); otherwise the stage-1 plan is reported.
 COST_TIE_REL_TOL = 1e-9
@@ -543,7 +543,7 @@ def _tie_break(prob: _Problem, sol1: np.ndarray) -> tuple[np.ndarray, str | None
     failure = f"stage 2 MILP: {stage2.message}"
     for start in starts:
         lb, ub = prob.fixed_binaries(start)
-        polished = prob.solve(tb, lb, ub, np.zeros(prob.ix.n), cost_row)
+        polished = prob.solve(tb, lb, ub, np.zeros(prob.ix.n), cost_row, options={"presolve": False})
         if polished.status != 0 or polished.x is None:
             failure = f"stage 2 LP: {polished.message}"
             continue

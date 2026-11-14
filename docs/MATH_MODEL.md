@@ -189,6 +189,61 @@ For outcome $y \in \{0,1\}$ and forecast $p \in [0,1]$:
 - $5 \le n < 30$: show the numbers with a `small sample` caveat
 - Say "agent better than market" **only if** the CI upper bound $< 0$. Otherwise `No improvement measured`.
 
+### Calibration: reliability bins and Brier decomposition (`calibration.py`, issue #86)
+
+*Descriptive only; it ranks no forecaster.* Computed per forecaster (naive, market, agent) from the scorecard's
+per-event scores, after the reveal. Same display rules: $n < 5$ events gives `INSUFFICIENT DATA` and no table;
+$5 \le n < 30$ carries the `small sample` caveat. Real-historical and synthetic events are never pooled.
+
+**Bins.** $K = 5$ equal-width bins: bin $k = [k/K, (k+1)/K)$ for $k < K-1$, last bin $[(K-1)/K, 1]$
+(so $0.2 \to$ bin 2 of 5 and $p = 1 \to$ bin 5). For bin $k$ with $n_k$ forecasts: mean forecast $\bar p_k$, observed
+frequency $\bar o_k = (\#\text{YES})/n_k$, and the Wilson 95% interval ($z = 1.96$) on $\bar o_k$:
+
+$$
+\frac{\bar o_k + \frac{z^2}{2n_k}}{1 + \frac{z^2}{n_k}} \;\pm\; \frac{z}{1 + \frac{z^2}{n_k}}\sqrt{\frac{\bar o_k(1-\bar o_k)}{n_k} + \frac{z^2}{4n_k^2}},
+\quad\text{clamped to } [0, 1].
+$$
+
+Bins with $n_k < 3$ are listed but flagged "too few to read"; empty bins show count 0 and no values.
+
+**Decomposition** (Murphy 1973), $N$ events, base rate $\bar o = \frac1N\sum_i y_i$:
+
+$$
+\text{BS} = \tfrac1N\textstyle\sum_i (p_i - y_i)^2,\quad
+\text{REL} = \tfrac1N\sum_k n_k(\bar p_k - \bar o_k)^2,\quad
+\text{RES} = \tfrac1N\sum_k n_k(\bar o_k - \bar o)^2,\quad
+\text{UNC} = \bar o(1 - \bar o).
+$$
+
+With binning, $\text{BS} = \text{REL} - \text{RES} + \text{UNC}$ holds exactly **only if the forecasts within each bin are
+equal**. In general (Stephenson et al. 2008)
+$\text{BS} = \text{REL} - \text{RES} + \text{UNC} + (\text{WBV} - 2\,\text{WBC})$, with
+$\text{WBV} = \frac1N\sum_k\sum_{i\in k}(p_i - \bar p_k)^2$ and $\text{WBC} = \frac1N\sum_k\sum_{i\in k}(p_i - \bar p_k)(y_i - \bar o_k)$;
+the within-bin term $\text{WBV} - 2\,\text{WBC}$ is reported so the numbers reconcile exactly.
+
+**Forecasts from a scorecard.** The scorecard stores per-event Brier $b$, not $p$. With one snapshot,
+$p = \sqrt b$ if $y = 0$ and $p = 1 - \sqrt b$ if $y = 1$ (exact; rounded to 12 decimals so a price on a bin edge stays
+in its bin). An event averaged over several snapshots has no single $p$: it is excluded and listed.
+
+**Hand-worked example** (SYNTHETIC; reproduced in `tests/test_calibration.py`). Six $(p, y)$: (0.1, 0), (0.3, 0),
+(0.3, 1), (0.7, 1), (0.8, 0), (0.9, 1). $\bar o = 0.5$, $\text{UNC} = 0.25$,
+$\text{BS} = (0.01 + 0.09 + 0.49 + 0.09 + 0.64 + 0.01)/6 = 1.33/6 = 0.221667$.
+
+| bin | $n_k$ | $\bar p_k$ | $\bar o_k$ | $n_k(\bar p_k-\bar o_k)^2$ | $n_k(\bar o_k-\bar o)^2$ | Wilson 95% |
+|---|---|---|---|---|---|---|
+| [0, 0.2) | 1 | 0.1 | 0 | 0.01 | 0.25 | [0, 0.793457] ($= z^2/(1+z^2)$) |
+| [0.2, 0.4) | 2 | 0.3 | 0.5 | 0.08 | 0 | [0.094529, 0.905471] |
+| [0.4, 0.6) | 0 | | | | | empty |
+| [0.6, 0.8) | 1 | 0.7 | 1 | 0.09 | 0.25 | [0.206543, 1] |
+| [0.8, 1.0] | 2 | 0.85 | 0.5 | 0.245 | 0 | [0.094529, 0.905471] |
+
+(Every bin has $n_k < 3$, so all are flagged "too few to read". For $n_k = 2$, one YES: centre
+$(0.5 + 0.9604)/2.9208 = 0.5$, half-width $(1.96/2.9208)\sqrt{0.125 + 0.2401} = 0.405471$.)
+$\text{REL} = 0.425/6 = 0.070833$, $\text{RES} = 0.5/6 = 0.083333$, so $\text{REL} - \text{RES} + \text{UNC} = 1.425/6 = 0.2375 \ne \text{BS}$.
+Only bin [0.8, 1.0] mixes forecasts (0.8 with NO, 0.9 with YES; $\bar p = 0.85$, $\bar o = 0.5$):
+$\text{WBV} = 0.005/6$, $\text{WBC} = (0.025 + 0.025)/6 = 0.05/6$, within-bin term $= (0.005 - 0.1)/6 = -0.095/6 = -0.015833$,
+and $0.2375 - 0.015833 = 0.221667 = \text{BS}$.
+
 ### What n ≈ 15 can and can't tell us (statistical review, issue #80)
 
 *Explanatory only: no formula or rule above changes. The model below is `[assumed]` and every number in this
