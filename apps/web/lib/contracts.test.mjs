@@ -119,7 +119,7 @@ test("n >= 5 requires summary and comparison", () => {
 
 test("the verdict must be a known string, and AGENT_BETTER holds exactly when ci_high < 0", () => {
   assert.deepEqual([...KNOWN_VERDICTS].sort(), ["INSUFFICIENT DATA", "No improvement measured", "agent better than market"].sort());
-  refused(body([card(5, { verdict: "agent beats market" })]), /known verdict/);
+  refused(body([card(5, { verdict: "UNKNOWN VERDICT" })]), /known verdict/);
   const better = card(5, { verdict: "agent better than market" });
   refused(body([better]), /disagrees with the interval/); // ci_high = 0.01 >= 0
   accepted(body([{ ...better, comparison: { ...better.comparison, ci_high: -0.001 } }]));
