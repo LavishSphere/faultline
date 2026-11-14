@@ -264,6 +264,21 @@ export interface VariantCard {
   alsoServed: ScorecardRecord[];
 }
 
+/** One plain-words line per scored variant (#124): what the model was shown. UI copy, not data. */
+export const VARIANT_PLAIN: Record<ScorableVariant, string> = {
+  agent_only: "Agent only: the model saw evidence, no market price",
+  agent_plus_market: "Agent + market: the model also saw the market price at the cutoff",
+};
+
+/**
+ * The API's notes that name this variant (e.g. "No recorded scorecard for agent_plus_market (NOT AVAILABLE).").
+ * Selection only: matched on the variant key as a whole word, strings returned verbatim.
+ */
+export function notesForVariant(notes: string[], variant: ScorableVariant): string[] {
+  const word = new RegExp(`(^|[^a-z_])${variant}($|[^a-z_])`);
+  return notes.filter((n) => word.test(n));
+}
+
 /** First item per variant, in the API's order. Selection only: nothing is merged, pooled or re-ranked. */
 export function firstPerVariant(data: BenchmarkResponse): Partial<Record<ScorableVariant, VariantCard>> {
   const out: Partial<Record<ScorableVariant, VariantCard>> = {};
