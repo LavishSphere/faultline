@@ -351,6 +351,23 @@ export interface SimulateResponse {
   baseline: SimulationResult;
   result: SimulationResult;
   deltas: CascadeDeltas;
+  /**
+   * The business's liquidity floor C_min (MATH_MODEL §4.1, §10), read from the fixture; null when it sets none.
+   * Optional: an older API build does not send it, and the floor line then reads NOT AVAILABLE.
+   */
+  min_cash_floor?: number | null;
+  /** First week of `result` with C_t < C_min, computed server-side; null if cash never falls below it. */
+  first_week_below_floor?: number | null;
+  /** Every week of `result` with C_t < C_min, ascending, computed server-side; empty if none. */
+  weeks_below_floor?: number[];
+}
+
+/** The simulate response's floor fields, or null when this API build does not send them (NOT AVAILABLE). */
+export function floorOf(
+  r: SimulateResponse,
+): { floor: number; firstBelow: number | null; weeksBelow: number[] } | null {
+  if (r.min_cash_floor === undefined || r.min_cash_floor === null || r.weeks_below_floor === undefined) return null;
+  return { floor: r.min_cash_floor, firstBelow: r.first_week_below_floor ?? null, weeksBelow: r.weeks_below_floor };
 }
 
 const isNum = (v: unknown): v is number => typeof v === "number" && Number.isFinite(v);
@@ -384,6 +401,14 @@ function checkSimulateResponse(v: unknown): string | null {
   if (!d || typeof d !== "object" || !d.nodes || typeof d.nodes !== "object") return "deltas missing";
   if (!Array.isArray(d.edges)) return "deltas.edges missing";
   if (!isNum(d.min_cash_delta) || !isNum(d.ending_cash_delta)) return "deltas cash summary missing";
+  if (!(r.min_cash_floor === undefined || r.min_cash_floor === null || isNum(r.min_cash_floor))) return "min_cash_floor malformed";
+  const first = r.first_week_below_floor;
+  if (!(first === undefined || first === null || isNum(first))) return "first_week_below_floor malformed";
+  const below = r.weeks_below_floor;
+  if (!(below === undefined || (Array.isArray(below) && below.every(isNum)))) return "weeks_below_floor malformed";
+  if (Array.isArray(below) && (below[0] ?? null) !== (first ?? null)) {
+    return "first_week_below_floor does not match weeks_below_floor";
+  }
   for (const [name, node] of Object.entries(d.nodes as Record<string, unknown>)) {
     const n = node as Record<string, unknown> | null;
     if (!n || !isNumArray(n.per_week, T) || !isNum(n.max_abs) || !isNum(n.at_end)) {
@@ -450,6 +475,10 @@ export interface OptimizeResponse {
   /** NO FEASIBLE PLAN: the highest minimum cash any plan can reach (the floor would have to be lowered to this). */
   max_feasible_cash_floor: number | null;
   diagnostic: string | null;
+  /** z̄, the configured payroll-cut cap per week (MATH_MODEL §4, §10); optional for older API builds (#157). */
+  payroll_cut_cap?: number;
+  /** L_p, the supplier payment lag in weeks (MATH_MODEL §3, §10); optional for older API builds (#157). */
+  supplier_lag_weeks?: number;
 }
 
 const OPTIMIZE_STATUSES = new Set<string>(["OPTIMAL", "NO FEASIBLE PLAN", "SOLVER ERROR"]);
@@ -469,6 +498,8 @@ function checkOptimizeResponse(v: unknown): string | null {
   if (r.status === "NO FEASIBLE PLAN" && !(r.max_feasible_cash_floor === null || isNum(r.max_feasible_cash_floor))) {
     return "max_feasible_cash_floor malformed";
   }
+  if (!(r.payroll_cut_cap === undefined || isNum(r.payroll_cut_cap))) return "payroll_cut_cap malformed";
+  if (!(r.supplier_lag_weeks === undefined || isNum(r.supplier_lag_weeks))) return "supplier_lag_weeks malformed";
   return null;
 }
 

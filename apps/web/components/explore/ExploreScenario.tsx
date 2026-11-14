@@ -20,7 +20,9 @@ import {
   type ShockValues,
   type ValueSource,
 } from "@/lib/explore";
-import { CascadeGraph, formatDelta } from "../CascadeGraph";
+import { usd, usdCentsFloor, usdDelta } from "@/lib/format";
+import { CascadeGraph } from "../CascadeGraph";
+import { CashNegativeReadout, MinCashSublabel, payrollOffNote } from "../CashReadouts";
 import { FinancialReadout } from "../FinancialReadout";
 import { NotAvailable, Panel } from "../Panel";
 import type { ProvenanceInput } from "../ProvenanceBadge";
@@ -73,8 +75,6 @@ const ORIGIN_LABEL: Record<Origin, string> = {
   human: "Edited by you",
 };
 
-const USD = new Intl.NumberFormat("en-US", { style: "currency", currency: "USD", maximumFractionDigits: 0 });
-const usd = (n: number) => USD.format(Math.round(n) || 0);
 
 const keyOf = (p: { block: ShockBlock; param: string }): Key => `${p.block}.${p.param}`;
 
@@ -295,7 +295,7 @@ export function ExploreScenario({ analysis }: { analysis: ExploreAnalysis }) {
             })
           : null}
 
-        <PayrollSwitch checked={protect} onChange={setProtect} />
+        <PayrollSwitch checked={protect} onChange={setProtect} cap={opt.kind === "ok" ? (opt.data.payroll_cut_cap ?? null) : null} />
 
         <div className="flex flex-col gap-2 border-t border-line pt-4">
           <div className="flex flex-wrap items-center gap-3">
@@ -421,7 +421,6 @@ function Results({
   const r = data?.result ?? null;
   const b = data?.baseline ?? null;
   const d = data?.deltas ?? null;
-  const delta = (n: number) => formatDelta(n, "usd");
 
   let status: string;
   let tone = "text-muted";
@@ -455,19 +454,9 @@ function Results({
           provenance={prov}
           size="fit"
           dimmed={stale}
-          sublabel={r && b && d ? `${delta(d.min_cash_delta)} vs baseline ${usd(b.min_cash)}` : undefined}
+          sublabel={data ? <MinCashSublabel data={data} /> : undefined}
         />
-        <FinancialReadout
-          label="Runway"
-          value={r ? (r.runway_week === null ? { above: r.horizon_weeks } : r.runway_week) : null}
-          format="weeks"
-          prefix="week"
-          unit={r && r.runway_week === null ? "weeks" : undefined}
-          provenance={prov}
-          size="fit"
-          dimmed={stale}
-          sublabel={r && b ? `first week C_t < 0 · API “${r.runway_label}” · baseline “${b.runway_label}”` : undefined}
-        />
+        <CashNegativeReadout data={data} provenance={prov} dimmed={stale} />
         <FinancialReadout
           label="Week of minimum cash"
           value={r ? r.min_cash_week : null}
@@ -485,7 +474,7 @@ function Results({
           provenance={prov}
           size="fit"
           dimmed={stale}
-          sublabel={r && b && d ? `${delta(d.ending_cash_delta)} vs baseline ${usd(b.ending_cash)}` : undefined}
+          sublabel={r && b && d ? `${usdDelta(d.ending_cash_delta)} vs baseline ${usd(b.ending_cash)}` : undefined}
         />
       </div>
       {/* React Flow needs a definite height: the same flex chain as the CASCADE screen (a min-height alone gives 0). */}
@@ -496,7 +485,16 @@ function Results({
   );
 }
 
-function PayrollSwitch({ checked, onChange }: { checked: boolean; onChange: (v: boolean) => void }) {
+function PayrollSwitch({
+  checked,
+  onChange,
+  cap,
+}: {
+  checked: boolean;
+  onChange: (v: boolean) => void;
+  /** z̄ as served by POST /api/optimize; null until it answers. */
+  cap: number | null;
+}) {
   return (
     <div className="flex items-center justify-between gap-4 border-t border-line/70 pt-3">
       <div className="flex min-w-0 flex-col gap-0.5">
@@ -504,7 +502,7 @@ function PayrollSwitch({ checked, onChange }: { checked: boolean; onChange: (v: 
           Protect payroll
         </span>
         <span id="explore-protect-note" className="font-mono text-[10px] text-muted">
-          {checked ? "On: the optimizer may not cut payroll (z_t = 0)" : "Off: payroll cuts allowed up to z̄"} · sent
+          {checked ? "On: the optimizer may not cut payroll (z_t = 0)" : payrollOffNote(cap)} · sent
           to POST /api/optimize on Confirm
         </span>
       </div>
@@ -606,7 +604,7 @@ function RecoveryPlan({
               <p className="font-mono text-xs">
                 Highest floor a plan can hold:{" "}
                 <span className="num" data-testid="explore-max-feasible-floor">
-                  {data.max_feasible_cash_floor === null ? "NOT AVAILABLE" : usd(data.max_feasible_cash_floor)}
+                  {data.max_feasible_cash_floor === null ? "NOT AVAILABLE" : usdCentsFloor(data.max_feasible_cash_floor)}
                 </span>
               </p>
               <p className="font-mono text-[10px] text-text-2">Solver: {data.solver_message}</p>

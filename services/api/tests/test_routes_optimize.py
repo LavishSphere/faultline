@@ -56,7 +56,11 @@ def test_feasible_case_is_the_engine_result_labelled_simulated(client):
     assert body["business_provenance"] == "SYNTHETIC"
     assert body["status"] == "OPTIMAL"
     expected = _engine(SHARP_DIP, True)
-    assert {k: v for k, v in body.items() if k != "business_provenance"} == expected
+    served = {"business_provenance", "payroll_cut_cap", "supplier_lag_weeks"}
+    assert {k: v for k, v in body.items() if k not in served} == expected
+    # #157 (F15, F18): the configured z-bar and L_p from the fixture, so the screen never hardcodes them.
+    assert body["payroll_cut_cap"] == DOC["optimizer_parameters"]["payroll_cut_cap"] == 0.1
+    assert body["supplier_lag_weeks"] == DOC["business"]["supplier_lag_weeks"] == 2
     assert body["scenario_name"] == SHARP_DIP["name"]
     assert body["protect_payroll"] is True
     assert body["actions"] and body["binding_constraints"]

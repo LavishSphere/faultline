@@ -115,7 +115,7 @@ function CaseTimeline({ c }: { c: ReplayCasePublic | null }) {
     <section aria-labelledby="rewind-timeline" className="overflow-hidden rounded-lg border border-line bg-elevated">
       <div className="flex min-h-11 flex-wrap items-center justify-between gap-2 border-b border-line px-5 py-2.5">
         <h2 id="rewind-timeline" className="font-mono text-[11px] uppercase tracking-[0.14em] text-text-2">
-          <span className="text-muted">A.0</span> Historical timeline
+          <span className="text-muted">A.0</span> {c?.synthetic ? "Fictional timeline" : "Case timeline"}
         </h2>
         {c ? <CaseBadges c={c} /> : <ProvenanceBadge kind="NOT AVAILABLE" detail="No case loaded" />}
       </div>

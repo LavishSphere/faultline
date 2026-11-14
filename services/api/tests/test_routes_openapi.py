@@ -38,8 +38,12 @@ def test_simulate_contract_in_schema():
     op = schema["paths"]["/api/simulate"]["post"]
     ok = op["responses"]["200"]["content"]["application/json"]["schema"]
     body = _ref(schema, ok["$ref"])
-    assert set(body["properties"]) == {"provenance", "business_provenance", "baseline", "result", "deltas"}
-    assert set(body["required"]) == {"provenance", "business_provenance", "baseline", "result", "deltas"}
+    keys = {
+        "provenance", "business_provenance", "baseline", "result", "deltas",
+        "min_cash_floor", "first_week_below_floor", "weeks_below_floor",  # #157 (F2): floor C_min, §4.1/§10
+    }
+    assert set(body["properties"]) == keys
+    assert set(body["required"]) == keys
     err = op["responses"]["422"]["content"]["application/json"]["schema"]
     assert set(_ref(schema, err["$ref"])["properties"]) == {"code", "message", "errors"}
     req = op["requestBody"]["content"]["application/json"]["schema"]
