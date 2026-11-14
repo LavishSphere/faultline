@@ -200,7 +200,6 @@ export const PENDING_ENDPOINTS = {
   replayRun: "POST /api/replay/run",
   reveal: "POST /api/replay/{prediction_id}/reveal",
   simulate: "POST /api/simulate",
-  optimize: "POST /api/optimize",
   benchmark: "GET /api/benchmark",
 } as const;
 

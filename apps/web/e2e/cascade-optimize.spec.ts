@@ -45,7 +45,7 @@ test.describe("CASCADE recovery plan", () => {
     await expect(page.getByText("with recovery plan", { exact: false }).first()).toBeVisible();
   });
 
-  test("severe drop with payroll protected reads NO FEASIBLE PLAN and the API's smallest feasible floor", async ({ page }) => {
+  test("severe drop with payroll protected reads NO FEASIBLE PLAN and the API's highest floor a plan can hold", async ({ page }) => {
     await page.goto("/cascade/");
     await expect(page.locator("#cascade-demand-delta")).toBeEnabled();
     await page.locator("#cascade-demand-end").fill("10");
@@ -77,5 +77,44 @@ test.describe("CASCADE recovery plan", () => {
     await sw.click();
     expect((await direct(page, await unprotected)).status).toBe("OPTIMAL");
     await expect(page.getByTestId("recovery-plan")).toHaveAttribute("data-status", "OPTIMAL");
+  });
+
+  test("flipping Protect payroll on never shows the old plan's payroll cuts while the new answer is pending", async ({ page }) => {
+    await page.goto("/cascade/");
+    await expect(page.locator("#cascade-demand-delta")).toBeEnabled();
+    await page.locator("#cascade-demand-end").fill("10");
+    await page.locator("#cascade-demand-start").fill("5");
+    await page.locator("#cascade-demand-recovery").fill("4");
+    await page.locator("#cascade-demand-delta").fill("50");
+
+    // Protect off: the API's plan for this shock uses payroll cuts (test_optimizer.py pins that), so they are listed.
+    const plan = page.getByTestId("recovery-plan");
+    await expect(plan).toHaveAttribute("data-status", "OPTIMAL");
+    await expect(page.getByTestId("chosen-actions").getByText(/^Payroll cut/).first()).toBeVisible();
+
+    // Hold the protect-on request at the network until the assertions below have run.
+    let release!: () => void;
+    const held = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    await page.route(OPTIMIZE_URL, async (route) => {
+      if (route.request().postDataJSON()?.protect_payroll === true) await held;
+      await route.continue();
+    });
+
+    const sw = page.getByRole("switch", { name: "Protect payroll" });
+    const sent = page.waitForRequest((r) => isOptimize(r) && r.postDataJSON()?.protect_payroll === true);
+    await sw.click();
+    // During the debounce and while the request is held: no plan rows at all, only the pending state.
+    await expect(plan).toHaveAttribute("data-status", "PENDING");
+    await expect(page.getByText(/^Payroll cut/)).toHaveCount(0);
+    await sent;
+    await expect(plan).toHaveAttribute("data-status", "PENDING");
+    await expect(page.getByText(/^Payroll cut/)).toHaveCount(0);
+    await expect(page.getByText("Solving for the current inputs", { exact: false })).toBeVisible();
+
+    release();
+    await expect(plan).toHaveAttribute("data-status", "NO FEASIBLE PLAN");
+    await expect(page.getByText(/^Payroll cut/)).toHaveCount(0);
   });
 });

@@ -85,6 +85,8 @@ export function CascadeWorkbench() {
   const [protect, setProtect] = useState(false);
   const [opt, setOpt] = useState<OptState>({ kind: "loading", last: null });
   const [applied, setApplied] = useState<Applied | null>(null);
+  /** Optimize has its own retry, so retrying one request never re-sends the other. */
+  const [optRetry, setOptRetry] = useState(0);
   const lastOpt = useRef<OptimizeResponse | null>(null);
   const firstOpt = useRef(true);
 
@@ -134,7 +136,7 @@ export function CascadeWorkbench() {
       clearTimeout(timer);
       controller.abort();
     };
-  }, [optKey, retry]);
+  }, [optKey, optRetry]);
 
   // One in-flight /api/simulate at a time: a newer input aborts the older request before it can land.
   useEffect(() => {
@@ -341,7 +343,7 @@ export function CascadeWorkbench() {
           if (opt.kind === "ok" && opt.key === optKey && opt.data.plan) setApplied({ optKey, plan: opt.data.plan });
         }}
         onClear={() => setApplied(null)}
-        onRetry={() => setRetry((n) => n + 1)}
+        onRetry={() => setOptRetry((n) => n + 1)}
       />
     </div>
   );
@@ -693,7 +695,11 @@ function RecoveryPlan({
   onClear: () => void;
   onRetry: () => void;
 }) {
-  const data = opt.kind === "ok" ? opt.data : opt.kind === "loading" ? opt.last : null;
+  // Only an answer to the current inputs is rendered. While the debounce runs or a request is in flight, the
+  // previous plan is withheld: it may hold payroll cuts the switch now forbids, or be OPTIMAL where the new answer
+  // is NO FEASIBLE PLAN.
+  const pending = stale || opt.kind === "loading";
+  const data = opt.kind === "ok" && !pending ? opt.data : null;
   const provenance: ProvenanceInput[] = data
     ? [data.provenance as ProvenanceInput, data.business_provenance as ProvenanceInput]
     : ["NOT AVAILABLE"];
@@ -737,20 +743,25 @@ function RecoveryPlan({
       </div>
 
       {data === null ? (
-        <NotAvailable
-          endpoint="optimize"
-          note="No recovery plan is shown until POST /api/optimize answers this exact scenario."
-        />
+        <div data-testid="recovery-plan" data-status={pending ? "PENDING" : "NOT AVAILABLE"}>
+          <NotAvailable
+            note={
+              pending
+                ? "Solving for the current inputs… No earlier plan is shown while POST /api/optimize answers."
+                : "No recovery plan is shown until POST /api/optimize answers this exact scenario."
+            }
+          />
+        </div>
       ) : (
-        <div className={stale ? "opacity-60" : undefined} data-testid="recovery-plan" data-status={data.status}>
+        <div data-testid="recovery-plan" data-status={data.status}>
           {data.status === "OPTIMAL" ? (
-            <OptimalPlan data={data} applied={applied} canApply={!stale} onApply={onApply} onClear={onClear} />
+            <OptimalPlan data={data} applied={applied} onApply={onApply} onClear={onClear} />
           ) : data.status === "NO FEASIBLE PLAN" ? (
             <div className="flex flex-col gap-1.5 rounded-md border border-fail/60 px-4 py-3 text-fail">
               <p className="font-mono text-sm font-semibold uppercase tracking-[0.12em]">NO FEASIBLE PLAN</p>
               <p className="text-sm leading-relaxed">{data.diagnostic ?? "NOT AVAILABLE: the API gave no diagnostic."}</p>
               <p className="font-mono text-xs">
-                Smallest feasible floor:{" "}
+                Highest floor a plan can hold:{" "}
                 <span className="num" data-testid="max-feasible-floor">
                   {data.max_feasible_cash_floor === null ? "NOT AVAILABLE" : usd(data.max_feasible_cash_floor)}
                 </span>
@@ -772,13 +783,11 @@ function RecoveryPlan({
 function OptimalPlan({
   data,
   applied,
-  canApply,
   onApply,
   onClear,
 }: {
   data: OptimizeResponse;
   applied: boolean;
-  canApply: boolean;
   onApply: () => void;
   onClear: () => void;
 }) {
@@ -838,7 +847,7 @@ function OptimalPlan({
               Remove plan
             </button>
           ) : (
-            <button type="button" onClick={onApply} disabled={!canApply} className="rounded-md border border-viable/70 px-3 py-1.5 font-mono text-[11px] uppercase tracking-[0.12em] text-viable hover:bg-hover disabled:cursor-not-allowed disabled:opacity-50">
+            <button type="button" onClick={onApply} className="rounded-md border border-viable/70 px-3 py-1.5 font-mono text-[11px] uppercase tracking-[0.12em] text-viable hover:bg-hover">
               Apply plan
             </button>
           )}
