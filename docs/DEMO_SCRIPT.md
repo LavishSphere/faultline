@@ -91,11 +91,14 @@ Seconds are estimates at 150 spoken words a minute, plus pauses for clicks. If y
 - **Say (numbers are from the running API on `main`, see below):** "A fictional three-store grocer, labeled synthetic. No shock: it ends the half-year at 63,000. A bad quarter: rates up two points, demand down a fifth, main supplier out three weeks. Cash falls below our 25,000 floor in week 20 and ends at 13,950: 49,050 worse."
 - **Then click:** the **Protect payroll** switch in C.1 (off by default).
   **Say:** "Now, Protect payroll. The optimizer must keep cash above the floor without cutting wages, or say NO FEASIBLE PLAN. Protecting people's jobs is a hard limit in the maths."
-  Then read the plan **only from panel C.3 Recovery plan**. On 2026-11-14 (after the tie-break #136) the API gave,
-  for the bad quarter with Protect payroll on: **Chosen actions (7)**, all purchase cuts, week 18 ($1,126.92) and
-  weeks 19–24 ($1,653.85 each), together $11,050; **Min cash after plan $25,000 · week 20** (exactly the floor);
-  objective 550; no payroll cut (see [Where the numbers come from](#where-the-numbers-come-from)). With the switch
-  off the API returns the **same plan**: the same 7 cuts in the same weeks, the same $11,050, objective 550. Payroll
+  Then read the plan **only from panel C.3 Recovery plan**. On 2026-11-14 (after the tie-break #136 and the
+  stock-out cost #103) the API gave, for the bad quarter with Protect payroll on: **Chosen actions (10)**: purchase
+  cuts in weeks 22 ($1,006.36), 23 and 24 ($10,000 each, the weekly cap), together $21,006.36, bridged by revolver
+  draws in weeks 20–24 (together $12,406.96) repaid in weeks 25–26; **Min cash after plan $25,000 · week 20**
+  (exactly the floor); objective 1,922.21; no payroll cut (see
+  [Where the numbers come from](#where-the-numbers-come-from)). The cuts come late because a purchase cut now costs
+  lost sales for every week stock stays below its service level (MATH_MODEL §3, #103). With the switch off the API
+  returns the **same plan**: the same 10 actions in the same weeks, objective 1,922.21. Payroll
   is the costliest lever, so the optimizer doesn't use it here anyway. So don't say the switch changed this plan;
   its point is the guarantee. (Capex is 0 in the demo
   business and the revolver must be repaid by week 26, so neither fixes the bad quarter on its own.)
@@ -190,20 +193,20 @@ The other three named scenarios, each sent the same way (`scenario_id` + the ser
 | `supplier-outage-3wk` | 42,000 (26) | −21,000 |
 | `bad-quarter` | 13,950 (26) | −49,050 |
 
-The recovery plan (step 3), from `POST /api/optimize` on 2026-11-14 at `80deee2` (after the optimizer tie-break
-#136; FastAPI `TestClient`, same app as uvicorn), body `{"scenario_id": "bad-quarter", "shock": <the served
+The recovery plan (step 3), from the optimizer on 2026-11-14 on the #103 branch (after the optimizer tie-break
+#136 and the stock-out cost #103; `core.optimizer.optimize`, which `POST /api/optimize` calls), body `{"scenario_id": "bad-quarter", "shock": <the served
 bad-quarter shock>, "protect_payroll": true | false}`. Both answers have `"status": "OPTIMAL"`,
 `"provenance": "SIMULATED"`, `"business_provenance": "SYNTHETIC"`, and the two plans are identical (same actions,
 weeks and amounts):
 
 | Field | `protect_payroll: true` | `protect_payroll: false` |
 |---|---|---|
-| `actions` | 7 purchase cuts: week 18 (1,126.92), weeks 19–24 (1,653.85 each) | 7 purchase cuts: week 18 (1,126.92), weeks 19–24 (1,653.85 each) |
-| sum of purchase cuts | 11,050 | 11,050 |
-| payroll cut, revolver draw, backup supplier, capex, expansion | none | none |
+| `actions` | purchase cuts week 22 (1,006.36), weeks 23–24 (10,000 each); revolver draws weeks 20–24 (1,126.92, 1,656.45, 1,821.29, 3,465.74, 4,336.55), repaid week 25 (5,547.08) and week 26 (6,859.88) | the same 10 actions |
+| sum of purchase cuts | 21,006.36 | 21,006.36 |
+| payroll cut, backup supplier, capex, expansion | none | none |
 | `min_cash` / `min_cash_week` | 25,000 / week 20 | 25,000 / week 20 |
-| `objective` (`disruption_cost`) | 550 (552.50) | 550 (552.50) |
-| `binding_constraints` | liquidity floor, weeks 20–26 | liquidity floor, weeks 20–26 |
+| `objective` (`disruption_cost`) | 1,922.21 (1,924.71) | 1,922.21 (1,924.71) |
+| `binding_constraints` | liquidity floor, weeks 20–26; purchase-cut cap, weeks 23–24; terminal revolver | the same |
 
 Other calls used in this script:
 
@@ -354,8 +357,8 @@ Do this on the demo laptop before going on stage (the script author could not ru
       "-$49,050 vs baseline $63,000", **Ending cash $13,950**, runway still more than 26 weeks. If any figure differs,
       say the on-screen figure and tell the lead (the engine or data changed after this script).
 - [ ] Badges on C.0 and C.2 read `SIMULATED` and `SYNTHETIC`.
-- [ ] Protect payroll: toggle it. C.3 should list 7 purchase cuts (week 18, then weeks 19–24, together $11,050) and
-      **Min cash after plan $25,000 · week 20**; with the switch off, the same 7 cuts in the same weeks. If C.3
+- [ ] Protect payroll: toggle it. C.3 should list purchase cuts in weeks 22–24 (together $21,006.36) and revolver
+      draws in weeks 20–24, with **Min cash after plan $25,000 · week 20**; with the switch off, the same plan. If C.3
       differs, read the screen and tell the lead.
 - [ ] `/research`: cutoff `2026-07-01T00:00:00Z` → Apply cutoff → 4 sources shown, 2 not yet public; Sequoia shows no source.
 - [ ] `/rewind`, `/decision`, `/reveal`: are the 4 real cases listed? Does the DECISION run complete? Is the Reveal button enabled?

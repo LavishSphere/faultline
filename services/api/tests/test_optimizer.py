@@ -330,15 +330,40 @@ def test_named_scenarios_above_the_floor_need_no_action():
         assert res.actions == []
 
 
-def test_bad_quarter_is_fixed_by_purchase_cuts_in_both_modes():
-    # No-action min cash is 13,950 at week 26 (tests/test_scenarios.py), 11,050 below the floor. A purchase cut is a
-    # permanent saving and the cheapest permanent lever: total cut 11,050 (harm 0.05 x 11,050 = 552.50), within the
-    # inventory headroom I_0 - I_min = 25,000. The revolver cannot help week 26 because B_26 <= B_0 = 0.
+# Stock-out cost (issue #103, MATH_MODEL §3, §10): every purchase cut leaves the demo business below its service level
+# I^svc = 65,000 for the rest of the horizon and loses 0.20 of sales per $ cut per week. The cut itself is paid back
+# two weeks later (L_p = 2), so a cut v in week w <= 24 raises C_26 by v minus the stock-out cost
+# 0.20 v (0.35 (25 - w) + 1.0 + 0.8)  (lost sales cost 0.35 once settled, 1.0 in week 25, 0.8 in week 26):
+#   net per $: week 22 -> 1 - 0.57 = 0.43;  week 23 -> 1 - 0.50 = 0.50;  week 24 -> 1 - 0.43 = 0.57.
+# Earlier cuts net less (week 18 -> 1 - 0.71 = 0.29), so the optimizer cuts as late as possible and bridges the earlier
+# weeks with the revolver. Lost sales after week 26 are not counted (MATH_MODEL §10 "Known limits").
+NET_PER_DOLLAR = {w: 1.0 - 0.2 * (0.35 * (25 - w) + 1.8) for w in range(1, 25)}
+
+
+def c26_gain(plan: ActionPlan) -> float:
+    """C_26 gained from the plan's purchase cuts, net of stock-out lost margin (formula above; cuts in weeks <= 24)."""
+    assert all(v == 0.0 for v in plan.purchase_cut[24:])  # a week-25/26 cut would be paid back only after week 26
+    return sum(NET_PER_DOLLAR[w] * v for w, v in enumerate(plan.purchase_cut[:24], start=1))
+
+
+def test_bad_quarter_is_fixed_by_late_purchase_cuts_in_both_modes():
+    # No-action min cash is 13,950 at week 26 (tests/test_scenarios.py), 11,050 below the floor. Before issue #103 a
+    # cut of exactly 11,050 fixed it (harm 552.50). Now each $ cut nets at most 0.57 at week 26, so the plan cuts the
+    # late weeks first (10,000 in each of weeks 24 and 23: 5,700 + 5,000) and the rest in week 22, and the revolver
+    # bridges the earlier weeks; its interest is a cost the cuts must also cover:
+    #   0.57 v_24 + 0.50 v_23 + 0.43 v_22 - revolver interest = 11,050.
     for protect in (False, True):
         res = run(DEMO, SCENARIOS["bad-quarter"], protect)
         assert res.status == OPTIMAL
-        assert sum(res.plan.purchase_cut) == approx(11_050.0)
-        assert res.disruption_cost == approx(552.5)
+        sim = simulate(DEMO, SCENARIOS["bad-quarter"], res.plan)
+        assert c26_gain(res.plan) - sum(sim.revolver_interest) == approx(11_050.0)
+        assert res.plan.purchase_cut[22] == approx(10_000.0) and res.plan.purchase_cut[23] == approx(10_000.0)
+        assert sum(res.plan.purchase_cut[:21]) == approx(0.0)  # nothing before week 22
+        assert sum(res.plan.purchase_cut) <= 25_000.0 + TOL  # I_0 - I_min
+        assert res.disruption_cost == approx(
+            0.05 * sum(res.plan.purchase_cut) + 0.01 * sum(res.plan.revolver_draw) + 0.01 * sum(sim.inventory_shortfall)
+        )
+        assert res.disruption_cost == pytest.approx(1_924.71, abs=0.01)  # engine value (was 552.50 before #103)
         assert res.plan.payroll_cut == [approx(0.0)] * 26
         assert res.min_cash == approx(25_000.0)
         assert "liquidity floor, week 26" in res.binding_constraints
@@ -352,8 +377,9 @@ def test_deep_slump_keeps_purchases_non_negative():
     # 70% drop in weeks 5-8: S_t = 15,000, so purchases before any cut are 0.65 x 15,000 = 9,750 in those weeks,
     # below the 10,000/wk cut cap. Before the P_t >= 0 row the optimizer could choose v_5 = 10,000 (P_5 = -250), which
     # simulate() now rejects (issue #39). No-action min cash is 1,115.38 in week 8.
-    # Permanent loss 0.35 x 0.7 x 50,000 x 4 = 49,000 -> C_26 = 14,000, so cuts must total 11,000 plus the revolver
-    # interest; the week-7/8 trough is bridged by the revolver and repaid.
+    # Permanent loss 0.35 x 0.7 x 50,000 x 4 = 49,000 -> C_26 = 14,000, so the cuts must add 11,000 plus the revolver
+    # interest to C_26, net of their stock-out cost (NET_PER_DOLLAR above); the week-7/8 trough is bridged by the
+    # revolver and repaid. (Before issue #103: cuts of exactly 11,000 + interest.)
     shock = _deep_slump()
     assert simulate(DEMO, shock, ActionPlan()).min_cash == approx(1_115.384615)
     for protect in (False, True):
@@ -364,8 +390,10 @@ def test_deep_slump_keeps_purchases_non_negative():
         assert res.cash == [approx(c) for c in sim.cash]
         assert res.min_cash == approx(25_000.0)
         interest = sum(sim.revolver_interest)
-        assert sum(res.plan.purchase_cut) == approx(11_000.0 + interest)
-        assert res.disruption_cost == approx(0.05 * sum(res.plan.purchase_cut) + 0.01 * sum(res.plan.revolver_draw))
+        assert c26_gain(res.plan) == approx(11_000.0 + interest)
+        assert res.disruption_cost == approx(
+            0.05 * sum(res.plan.purchase_cut) + 0.01 * sum(res.plan.revolver_draw) + 0.01 * sum(sim.inventory_shortfall)
+        )
         assert res.plan.payroll_cut == [approx(0.0)] * 26
 
 
@@ -396,15 +424,12 @@ def assert_same_plan(a, b):
 
 
 def test_deep_slump_same_plan_with_protect_on_and_off():
-    # Lead review on PR #69: both modes cost 677.34 but cut in different weeks (v_5 = 10,000 vs v_3 = 10,000), so
-    # flipping "Protect payroll" moved the cuts although payroll is never cut. With the tie-break both give one plan.
-    # Hand check (70% drop weeks 5-8, L_p = 2, so a week-t cut is paid out in week t+2):
-    #   no-action C_7 = 14,788.462, so weeks <= 5 must cut 25,000 - 14,788.462 = 10,211.538 to keep C_7 at the floor.
-    #   Latest first: v_5 = 9,750 (all of week 5's purchases, P_5 = 0), v_4 = 10,211.538 - 9,750 = 461.538.
-    #   Week 8 (no-action C_8 = 1,115.385) is bridged by a week-8 draw repaid in week 9, at 10%/52 interest.
-    #   The rest of the permanent cut, 11,000 + interest - 10,211.538, goes in week 6 (paid in week 8):
-    #   v_6 = 788.462 + 0.10/52 x y_8 with y_8 = 25,000 - 1,115.385 - 10,211.538 - v_6 = 13,673.077 - v_6
-    #   -> v_6 = (520 x 788.462 + 13,673.077) / 521 = 423,673.077 / 521 = 813.192, y_8 = q_9 = 12,859.885.
+    # Lead review on PR #69: before the tie-break both modes cost the same but cut in different weeks, so flipping
+    # "Protect payroll" moved the cuts although payroll is never cut. With the tie-break (#104) both give one plan.
+    # With the stock-out cost (#103) a permanent purchase cut loses theta x shortfall of sales every week it stays below
+    # the service level, so it is cheapest as late as possible: the plan bridges the slump with the revolver (draws in
+    # weeks 7-8) and makes the permanent cuts in weeks 22-24, two of them at the v-bar = 10,000 weekly cap. Cost
+    # 2,118.55 is the engine value (679.84 before #103).
     shock = _deep_slump()
     off = run(DEMO, shock, protect=False)
     on = run(DEMO, shock, protect=True)
@@ -412,12 +437,11 @@ def test_deep_slump_same_plan_with_protect_on_and_off():
     assert off.plan.payroll_cut == [0.0] * 26 and on.plan.payroll_cut == [0.0] * 26
     assert_same_plan(off, on)
     assert off.objective == approx(on.objective)
+    assert off.disruption_cost == pytest.approx(2_118.55, abs=0.01)
     cuts = off.plan.purchase_cut
-    assert [t for t, v in enumerate(cuts, start=1) if v > 0] == [4, 5, 6]
-    assert cuts[3:6] == [approx(461.538462), approx(9_750.0), approx(423_673.076923 / 521)]
-    assert off.plan.revolver_draw[7] == approx(13_673.076923 - 423_673.076923 / 521)  # week 8: 12,859.885
-    assert off.plan.revolver_repay[8] == approx(13_673.076923 - 423_673.076923 / 521)  # week 9
-    assert sum(off.plan.revolver_draw) == approx(off.plan.revolver_draw[7])
+    assert [t for t, v in enumerate(cuts, start=1) if v > 0] == [22, 23, 24]
+    assert cuts[22] == approx(10_000.0) and cuts[23] == approx(10_000.0)  # v-bar cap
+    assert [t for t, y in enumerate(off.plan.revolver_draw, start=1) if y > 0][:2] == [7, 8]  # bridge the slump
 
 
 TIE_BREAK_SCENARIOS = [(sid, DEMO, SCENARIOS[sid]) for sid in SCENARIOS] + [
@@ -446,17 +470,18 @@ def test_named_scenarios_same_plan_with_protect_on_and_off():
         assert_same_plan(off, on)
 
 
-def test_bad_quarter_cuts_just_in_time():
-    # Before the tie-break, protect on put 3,307.69 in week 21 and nothing in week 22 (same total, same cost 550.00).
-    # Latest-first (L_p = 2): no-action cash first dips below 25,000 in week 20 (23,873.08, short 1,126.92) and then
-    # falls 1,653.85/wk (the 1,423.08/wk baseline loss plus 600,000 x 2%/52 = 230.77/wk of extra interest) to 13,950 in
-    # week 26. So week 18 cuts 1,126.92 (paid in week 20) and weeks 19-24 each cut the next 1,653.85:
-    # 1,126.92 + 6 x 1,653.85 = 11,050.
-    for protect in (False, True):
-        cuts = run(DEMO, SCENARIOS["bad-quarter"], protect).plan.purchase_cut
-        assert [t for t, v in enumerate(cuts, start=1) if v > 0] == list(range(18, 25))
-        assert cuts[18:24] == [approx(1_653.846154)] * 6
-        assert cuts[17] == approx(11_050.0 - 6 * 1_653.846154)
+def test_bad_quarter_same_plan_and_late_cuts():
+    # Before the tie-break, protect on and off cut in different weeks at the same cost. With the tie-break (#104) and
+    # the stock-out cost (#103), both modes give one plan: the revolver bridges weeks 20-24 and the permanent cuts sit
+    # in weeks 22-24 (two at the 10,000 cap), as late as possible because every week a cut stays below the service
+    # level costs lost sales. Cost 1,924.71 and the hand identity for the cuts are checked in
+    # test_bad_quarter_is_fixed_by_late_purchase_cuts_in_both_modes.
+    plans = [run(DEMO, SCENARIOS["bad-quarter"], protect) for protect in (False, True)]
+    assert_same_plan(*plans)
+    cuts = plans[0].plan.purchase_cut
+    assert [t for t, v in enumerate(cuts, start=1) if v > 0] == [22, 23, 24]
+    assert cuts[22] == approx(10_000.0) and cuts[23] == approx(10_000.0)
+    assert plans[0].plan.payroll_cut == [0.0] * 26
 
 
 def test_tie_break_puts_a_tied_payroll_cut_in_the_latest_week():
@@ -515,7 +540,8 @@ def test_tie_break_keeps_no_feasible_plan():
     res = run(DEMO, _severe_drop(), protect=True)
     assert res.status == NO_FEASIBLE_PLAN
     assert res.plan is None
-    assert res.max_feasible_cash_floor == approx(22_375.0)
+    # 22,375 before #103; hand bound in test_severe_drop_feasible_only_with_payroll_cuts
+    assert res.max_feasible_cash_floor == pytest.approx(10_070.50, abs=0.01)
 
 
 # ---------------------------------------------------------------- reporting round-off (issue #147)
@@ -607,8 +633,11 @@ def test_sharp_dip_uses_revolver_and_respects_floors():
     # Every dollar drawn is repaid (B_26 <= B_0 = 0); its interest J^R is a permanent cost the cuts must also cover.
     assert res.revolver_balance[-1] <= DEMO.revolver_balance_0 + TOL
     assert sum(res.plan.revolver_repay) == approx(sum(res.plan.revolver_draw))
+    # Issue #103: the cuts must add 4,000 + interest to C_26 net of their stock-out cost (NET_PER_DOLLAR above). The
+    # cheapest place is week 24 (0.57 per $): 7,366.67 x 0.57 = 4,199.00, of which 199.00 covers the revolver interest.
     interest = sum(simulate(DEMO, _sharp_dip(), res.plan).revolver_interest)
-    assert sum(res.plan.purchase_cut) == approx(4_000.0 + interest)
+    assert c26_gain(res.plan) == approx(4_000.0 + interest)
+    assert res.plan.purchase_cut[23] == approx(sum(res.plan.purchase_cut))  # all in week 24
     assert min(res.cash) >= 25_000.0 - TOL
     assert "terminal revolver" in res.binding_constraints
 
@@ -632,21 +661,44 @@ def _severe_drop() -> ScenarioShock:
 def test_severe_drop_feasible_only_with_payroll_cuts():
     # Lost sales: 25,000 x 6 weeks + recovery (m = 0.625, 0.75, 0.875, 1) 18,750 + 12,500 + 6,250 + 0 = 187,500.
     # Permanent cash loss 0.35 x 187,500 = 65,625 -> C_26 = 63,000 - 65,625 = -2,625 without action.
-    # Purchase cuts can add at most I_0 - I_min = 25,000 -> 22,375, still 2,625 short of C_min = 25,000.
+    # Purchase cuts total at most I_0 - I_min = 25,000. Net of stock-out cost (NET_PER_DOLLAR above), the most they can
+    # add to C_26 is the late weeks first: 10,000 x 0.57 (week 24) + 10,000 x 0.50 (week 23) + 5,000 x 0.43 (week 22)
+    # = 12,850, so C_26 <= -2,625 + 12,850 = 10,225 (before issue #103: -2,625 + 25,000 = 22,375).
     # The revolver must be repaid by week 26; there is no outage, capex or expansion. So only payroll closes it.
+    best_c26_without_payroll = -2_625.0 + 0.57 * 10_000 + 0.50 * 10_000 + 0.43 * 5_000  # 10,225
     allowed = run(DEMO, _severe_drop(), protect=False)
     assert allowed.status == OPTIMAL
     assert sum(allowed.plan.purchase_cut) == approx(25_000.0)
     payroll_cut = sum(z * 12_000.0 for z in allowed.plan.payroll_cut)
-    assert payroll_cut >= 2_625.0 - TOL
+    assert payroll_cut >= 25_000.0 - best_c26_without_payroll - TOL  # at least 14,775
+    assert payroll_cut == pytest.approx(14_939.50, abs=0.01)  # engine value (2,625 before #103); the rest is interest
     assert max(allowed.plan.payroll_cut) <= 0.10 + TOL  # z-bar
     assert min(allowed.inventory) >= 40_000.0 - TOL  # I_min
     assert "inventory floor, week 26" in allowed.binding_constraints
 
     protected = run(DEMO, _severe_drop(), protect=True)
     assert protected.status == NO_FEASIBLE_PLAN
-    # Highest reachable minimum cash without payroll cuts: -2,625 + 25,000 = 22,375.
-    assert protected.max_feasible_cash_floor == approx(22_375.0)
+    # Highest reachable minimum cash without payroll cuts: at most 10,225 (above); the engine finds 10,070.50, the gap
+    # being the interest on the revolver that bridges the weeks 10-24 trough.
+    assert protected.max_feasible_cash_floor <= best_c26_without_payroll + TOL
+    assert protected.max_feasible_cash_floor == pytest.approx(10_070.50, abs=0.01)
+
+
+def test_stock_shortfall_cost_must_be_positive():
+    """§4.9 (issue #103): with c_u = 0 the shortfall u_t would not be pinned to max(0, I^svc_t - I_t), and the solver's
+    lost sales could differ from simulate()'s, so a zero weight is refused."""
+    with pytest.raises(ValueError):
+        DisruptionCosts(stock_shortfall_per_dollar_week=0.0)
+    assert DisruptionCosts().stock_shortfall_per_dollar_week == 0.01  # MATH_MODEL §10 proposal
+
+
+def test_optimizer_shortfall_matches_simulator_stockouts():
+    """The solver's u_t equals simulate()'s inventory shortfall (§4.9), so its stock-out lost sales and cash agree."""
+    res = run(DEMO, SCENARIOS["bad-quarter"], protect=True)
+    sim = simulate(DEMO, SCENARIOS["bad-quarter"], res.plan)
+    assert sum(sim.stockout_lost_sales) > 0.0  # the plan does run below the service level
+    assert sim.inventory_shortfall == [approx(max(0.0, 65_000.0 - i)) for i in sim.inventory]  # m_t = 1 after week 12
+    assert res.cash == [approx(c) for c in sim.cash]
 
 
 def test_protect_payroll_sets_every_payroll_cut_to_zero():
@@ -848,16 +900,13 @@ def test_restaurant_distributor_loss_covenant_changes_the_plan():
 def test_grocer_baseline_breaches_a_bank_covenant_with_payroll_protected():
     """The §10 grocer loses money before any shock: OCF = -500 a week, baseline DSCR -0.54.
 
-    With Protect payroll the only lever that raises OCF is a purchase cut (total I_0 - I_min = 25,000; a cut in
-    week t is paid out in week t+2). The six windows 3-6, 7-10, ..., 23-26 do not overlap; each starts at -2,000 and
-    needs DSCR_min x 4 x 923.08 = 3,692.31 DSCR_min. So 6 x (2,000 + 3,692.31 DSCR_min) <= 25,000, i.e.
-    DSCR_min <= (25,000/6 - 2,000) / 3,692.31 = 0.586806. Cuts of 4,166.67 in weeks 2, 6, ..., 22 reach it exactly.
-    Any bank-style covenant (1.20) is NO FEASIBLE PLAN, even with no shock at all.
+    With Protect payroll the only lever that raises OCF is a purchase cut. Without the stock-out cost the bound was
+    6 x (2,000 + 3,692.31 DSCR_min) <= 25,000, i.e. DSCR_min <= 0.587. With it (#103) a cut raises OCF once, when
+    paid, then loses theta = 0.20 of sales per $ short every later week (about 0.07 of OCF per $ per week once
+    settled), so repairing the early windows deepens the later ones: no positive covenant is reachable at all.
+    Any bank-style covenant (1.20) is NO FEASIBLE PLAN, even with no shock.
     """
-    best = (25_000 / 6 - 2_000) / (4 * 600_000 * 0.08 / 52)
-    assert best == pytest.approx(0.586806, abs=1e-6)
-    assert optimize(DEMO, BASELINE, True, SEC10, covenant_dscr_min=best - 1e-4).status == OPTIMAL
-    assert optimize(DEMO, BASELINE, True, SEC10, covenant_dscr_min=best + 1e-4).status == NO_FEASIBLE_PLAN
+    assert optimize(DEMO, BASELINE, True, SEC10, covenant_dscr_min=0.01).status == NO_FEASIBLE_PLAN
     res = optimize(DEMO, BASELINE, True, SEC10, covenant_dscr_min=COVENANT)
     assert res.status == NO_FEASIBLE_PLAN
     assert "the covenant is what makes this scenario infeasible" in res.diagnostic
@@ -865,21 +914,25 @@ def test_grocer_baseline_breaches_a_bank_covenant_with_payroll_protected():
         assert optimize(DEMO, shock, True, SEC10, covenant_dscr_min=COVENANT).status == NO_FEASIBLE_PLAN, shock.name
 
 
-def test_grocer_meets_the_covenant_only_by_cutting_payroll():
-    """Protect payroll off: the grocer can reach DSCR 1.20 at baseline, but only by cutting payroll.
+def test_grocer_cannot_meet_a_bank_covenant_even_cutting_payroll():
+    """Protect payroll off. Before the stock-out cost (#103) the grocer reached 1.20 with 25,000 of purchase cuts plus
+    13,584.62 of payroll cuts. With it, purchase cuts lose later sales: the optimizer certifies a plan at 0.73 (which
+    re-simulates to a rolling DSCR >= 0.73 in every window, with payroll cut) and none at 0.90 or 1.20.
 
-    Each of the six non-overlapping windows (3-6, ..., 23-26) needs 1.20 x 3,692.31 - (-2,000) = 6,430.77 more OCF,
-    38,584.62 in total. Purchase cuts supply at most 25,000, so payroll cuts must supply at least 13,584.62; the
-    optimizer uses exactly that. Cost: 0.05 x 25,000 + 5 x 13,584.62 = 69,173.08 (versus 0 without the covenant).
-    """
-    need = 6 * (COVENANT * 4 * 600_000 * 0.08 / 52 + 2_000)
-    res = optimize(DEMO, BASELINE, False, SEC10, covenant_dscr_min=COVENANT)
+    Between 0.74 and 0.80 the covenant can make a larger stock shortfall u_t look useful (it shifts OCF between
+    windows), so the solver's u_t may exceed the true shortfall. MATH_MODEL §4 documents this; the re-simulation check
+    must then withhold the plan (SOLVER ERROR), never report OPTIMAL with a cash path simulate() can't reproduce."""
+    res = optimize(DEMO, BASELINE, False, SEC10, covenant_dscr_min=0.73)
     assert res.status == OPTIMAL
-    payroll_cut = sum(z * 12_000 for z in res.plan.payroll_cut)
-    assert sum(res.plan.purchase_cut) == approx(25_000.0)
-    assert payroll_cut == approx(need - 25_000)  # 13,584.62
-    assert res.disruption_cost == approx(0.05 * 25_000 + 5 * (need - 25_000))
-    assert min(rolling_dscr(simulate(DEMO, BASELINE, res.plan))) >= COVENANT - 1e-9
+    assert sum(res.plan.payroll_cut) > 0.0  # purchase cuts alone can't get there
+    assert min(rolling_dscr(simulate(DEMO, BASELINE, res.plan))) >= 0.73 - 1e-9
+    for dscr_min in (0.90, COVENANT):
+        assert optimize(DEMO, BASELINE, False, SEC10, covenant_dscr_min=dscr_min).status == NO_FEASIBLE_PLAN
+    for dscr_min in (0.74, 0.75, 0.80):  # the documented gray zone: never a wrong plan
+        r = optimize(DEMO, BASELINE, False, SEC10, covenant_dscr_min=dscr_min)
+        assert r.status in (SOLVER_ERROR, NO_FEASIBLE_PLAN) or (
+            r.status == OPTIMAL and min(rolling_dscr(simulate(DEMO, BASELINE, r.plan))) >= dscr_min - 1e-9
+        )
 
 
 def test_weekly_covenant_window_is_stricter():

@@ -11,6 +11,15 @@ the lowest balance is at week 26 in every cell and V(a, y) = C_26 = 63,000 + (ca
   * a purchase cut v_t is paid for L_p = 2 weeks later, so cuts in weeks 1-8 raise C_26 by exactly sum_t v_t;
   * +25bp on the 600,000 floating term loan costs 600,000 x 0.0025 / 52 = 28.846 a week;
   * a lost sales dollar costs the 35% gross margin once receipts and payables have settled.
+
+Stock-out cost (issue #103, MATH_MODEL §3, §10): the service level is I^svc_t = sigma I_0 m_t = 65,000 x m_t
+(sigma = 1: the opening stock, 2 weeks of cost of goods, scaled by the demand multiplier), so WAIT never runs short,
+and each $ of stock below it loses 0.20 of sales a week. Effect of lost sales l_t on C_26 (receipts a l_t in week t
+and (1-a) l_t in t+1; the purchase (1-g) l_t not made is a payment saved in t+2):
+  * weeks 1-24: 0.35 per $ (settled: the gross margin);
+  * week 25: 1.00 per $ (the saved payment would fall in week 27);
+  * week 26: 0.80 per $ (only the same-week 80% of receipts falls inside the horizon).
+So a shortfall of u held from week w to week 26 costs 0.20 u x (0.35 (25 - w) + 1.0 + 0.8) of C_26.
 """
 
 from __future__ import annotations
@@ -42,14 +51,54 @@ PROBABILITIES = (0.0, 0.5, 1.0)
 
 BASE_C26 = 63_000.0  # planning path: 100,000 - 26 x 1,423.077 (MATH_MODEL §10)
 RATE_25BP_WEEKLY = 600_000 * 0.0025 / 52  # 28.846...
+THETA = 0.20  # stock-out lost sales per $ of shortfall per week (MATH_MODEL §10, issue #103)
 
-# FOMC: YES = Fed holds -> +25bp from week 2, so 25 weeks (2..26) of extra interest = 721.154.
-FOMC_HIT = 25 * RATE_25BP_WEEKLY
+
+def stockout_cost(shortfall_by_week: dict[int, float]) -> float:
+    """C_26 cost of stock-out lost sales 0.20 u_t, with the week weights in the module docstring."""
+    weight = {**{t: 0.35 for t in range(1, 25)}, 25: 1.0, 26: 0.8}
+    return sum(THETA * u * weight[t] for t, u in shortfall_by_week.items())
+
+
+# FOMC: YES = Fed holds -> +25bp from week 2, so 25 weeks (2..26) of extra interest = 721.154, and (issue #103 proposal)
+# demand 1% lower from week 2: 500 of sales lost a week in weeks 2-26. By week 26 receipts lose 500 x 25 - 0.2 x 500
+# = 12,400 and payables fall 0.65 x 500 x 23 (weeks 2-24) = 7,475: 4,925. Total 5,646.154.
+FOMC_RATE = 25 * RATE_25BP_WEEKLY
+FOMC_DEMAND = 500 * 25 - 0.2 * 500 - 0.65 * 500 * 23
+FOMC_HIT = FOMC_RATE + FOMC_DEMAND
+# A hold lowers the service level to 65,000 x 0.99 = 64,350 from week 2, so ACT's 650 cut (HEDGE: 325) in week 2 is
+# surplus stock if YES (no shortfall) and a shortfall in weeks 2-26 if NO:
+#   ACT  NO: 0.20 x 650 x (0.35 x 23 + 1.0 + 0.8) = 130 x 9.85 = 1,280.50;  HEDGE NO: 65 x 9.85 = 640.25.
+FOMC_SO_ACT = stockout_cost({t: 650.0 for t in range(2, 27)})  # 1,280.50
+FOMC_SO_HEDGE = stockout_cost({t: 325.0 for t in range(2, 27)})  # 640.25
+# Break-even, ACT vs WAIT (MATH_MODEL §8), from the payoffs below:
+#   ACT - WAIT = +650 if YES, 650 - 1,280.50 = -630.50 if NO
+#   p* = 630.50 / (630.50 + 650) = 630.50 / 1,280.50 = 1,261 / 2,561 = 0.492386...
+# HEDGE is exactly halfway between ACT and WAIT in both states, so all three lines cross at the same p*.
+FOMC_P_STAR = 630.50 / 1_280.50
 # CPI: YES = hot print -> +25bp from week 4 (23 weeks = 663.462) and -3% demand on 50,000 in weeks 3-14
 # (12 x 1,500 = 18,000) plus the 4-week recovery m_t = 1 - 0.03 (1 - k/4): 1,125 + 750 + 375 + 0 = 2,250.
 # Lost sales 20,250 x 0.35 = 7,087.50. Total 7,750.962.
 CPI_LOST_SALES = 12 * 1_500 + 1_125 + 750 + 375
 CPI_HIT = 23 * RATE_25BP_WEEKLY + 0.35 * CPI_LOST_SALES
+# CPI stock-out (issue #103). A hot print lowers the service level by 3% x 65,000 = 1,950 in weeks 3-14, then by
+# 1,462.50, 975 and 487.50 in weeks 15-17, and by 0 from week 18. ACT cuts 975 in week 3 (inventory 64,025), HEDGE
+# 487.50 (inventory 64,512.50).
+#   ACT  YES: short 487.50 in week 17 and 975 in weeks 18-26 -> 0.35 x (97.50 + 7 x 195) + 195 x 1.8 = 862.875
+#   ACT  NO : short 975 in weeks 3-26 -> 195 x (0.35 x 22 + 1.8) = 1,852.50
+#   HEDGE YES: short 487.50 in weeks 18-26 -> 0.35 x 7 x 97.50 + 97.50 x 1.8 = 414.375
+#   HEDGE NO : short 487.50 in weeks 3-26 -> 97.50 x 9.5 = 926.25
+CPI_SO = {
+    ("ACT", 1): stockout_cost({17: 487.5, **{t: 975.0 for t in range(18, 27)}}),
+    ("ACT", 0): stockout_cost({t: 975.0 for t in range(3, 27)}),
+    ("HEDGE", 1): stockout_cost({t: 487.5 for t in range(18, 27)}),
+    ("HEDGE", 0): stockout_cost({t: 487.5 for t in range(3, 27)}),
+}
+# Net effect against WAIT: HEDGE +73.125 if YES, -438.75 if NO; ACT +112.125 if YES, -877.50 if NO. Break-evens:
+#   WAIT -> HEDGE: 438.75 / (438.75 + 73.125) = 6/7 = 0.857143
+#   HEDGE -> ACT : ACT - HEDGE = +39 if YES, -438.75 if NO -> 438.75 / (438.75 + 39) = 45/49 = 0.918367
+CPI_P_STAR_WAIT_HEDGE = 6 / 7
+CPI_P_STAR_HEDGE_ACT = 45 / 49
 # Supply disruption: YES = 40% of 50,000 lost for weeks 5-7 = 60,000 of sales x 0.35 = 21,000 (as scenarios.json).
 OUTAGE_HIT = 0.35 * 3 * 0.40 * 50_000
 BACKUP_FEE = 2_000.0  # F_b, week 1, both states
@@ -57,12 +106,15 @@ BACKUP_PREMIUM = 0.12 * 0.65 * 0.40 * 50_000 * 3  # pi (1-g) S_core lambda x 3 w
 REVOLVER_CARRY = 21_000 * (0.08 + 0.02) / 52 * 8  # B_{t-1} = 21,000 for t = 5..12 -> 323.077
 
 HAND_V = {  # (frame, policy) -> (V(a, 1), V(a, 0))
-    ("fomc-rate-decision", "ACT"): (BASE_C26 + 1_000 - FOMC_HIT, BASE_C26 + 1_000),  # 63,278.85 / 64,000
-    ("fomc-rate-decision", "WAIT"): (BASE_C26 - FOMC_HIT, BASE_C26),  # 62,278.85 / 63,000
-    ("fomc-rate-decision", "HEDGE"): (BASE_C26 + 500 - FOMC_HIT, BASE_C26 + 500),  # 62,778.85 / 63,500
-    ("cpi-surprise", "ACT"): (BASE_C26 + 8_000 - CPI_HIT, BASE_C26 + 8_000),  # 63,249.04 / 71,000
+    ("fomc-rate-decision", "ACT"): (BASE_C26 + 650 - FOMC_HIT, BASE_C26 + 650 - FOMC_SO_ACT),  # 58,003.85 / 62,369.50
+    ("fomc-rate-decision", "WAIT"): (BASE_C26 - FOMC_HIT, BASE_C26),  # 57,353.85 / 63,000
+    ("fomc-rate-decision", "HEDGE"): (BASE_C26 + 325 - FOMC_HIT,
+                                      BASE_C26 + 325 - FOMC_SO_HEDGE),  # 57,678.85 / 62,684.75
+    ("cpi-surprise", "ACT"): (BASE_C26 + 975 - CPI_HIT - CPI_SO[("ACT", 1)],
+                              BASE_C26 + 975 - CPI_SO[("ACT", 0)]),  # 55,361.16 / 62,122.50
     ("cpi-surprise", "WAIT"): (BASE_C26 - CPI_HIT, BASE_C26),  # 55,249.04 / 63,000
-    ("cpi-surprise", "HEDGE"): (BASE_C26 + 4_000 - CPI_HIT, BASE_C26 + 4_000),  # 59,249.04 / 67,000
+    ("cpi-surprise", "HEDGE"): (BASE_C26 + 487.5 - CPI_HIT - CPI_SO[("HEDGE", 1)],
+                                BASE_C26 + 487.5 - CPI_SO[("HEDGE", 0)]),  # 55,322.16 / 62,561.25
     ("supply-disruption", "ACT"): (BASE_C26 - BACKUP_FEE - BACKUP_PREMIUM, BASE_C26 - BACKUP_FEE),  # 56,320 / 61,000
     ("supply-disruption", "WAIT"): (BASE_C26 - OUTAGE_HIT, BASE_C26),  # 42,000 / 63,000
     ("supply-disruption", "HEDGE"): (BASE_C26 - OUTAGE_HIT - REVOLVER_CARRY, BASE_C26 - REVOLVER_CARRY),
@@ -207,18 +259,59 @@ def test_payoffs_match_hand_arithmetic(frame_id, name):
 # ---------------------------------------------------------------- what the frames say about the decision
 
 
-@pytest.mark.parametrize("frame_id", ["fomc-rate-decision", "cpi-surprise"])
-def test_rate_and_cpi_frames_have_no_break_even(frame_id):
-    """Honest finding: in this model no action's cash effect depends on a rate or demand shock (the revolver is
-    undrawn here, and the model has no rate hedge), and a purchase cut raises cash in both states (no stock-outs,
-    MATH_MODEL §3). So ACT >= HEDGE >= WAIT in BOTH states and the forecast p cannot change the recommendation."""
-    ev = by_name(evaluate(FRAMES[frame_id], 0.5))
-    for value in ("value_if_yes", "value_if_no"):
-        assert getattr(ev["ACT"], value) > getattr(ev["HEDGE"], value) > getattr(ev["WAIT"], value)
-    for p in [k / 20 for k in range(21)]:
-        assert evaluate(FRAMES[frame_id], p).recommendation == "ACT"
-    # ACT is sized to the YES hit, so even if YES happens it ends at least as high as the plan's lowest balance.
-    assert ev["ACT"].value_if_yes >= ev["WAIT"].value_if_no
+def p_star(a, b) -> float:
+    """MATH_MODEL §8: E[V | a] = E[V | b] at p* = (V(b,0) - V(a,0)) / ((V(a,1) - V(a,0)) - (V(b,1) - V(b,0)))."""
+    return (b.value_if_no - a.value_if_no) / ((a.value_if_yes - a.value_if_no) - (b.value_if_yes - b.value_if_no))
+
+
+def test_fomc_break_even_probability():
+    """Issue #103: ACT (cut 650 of stock in week 2) vs WAIT cross at p* = 630.50 / 1,280.50 = 0.4924 (hand arithmetic
+    at the top). ACT releases 650 of surplus stock if the Fed holds and demand softens, and loses 1,280.50 of margin to
+    stock-outs if it cuts as planned. Below p* WAIT is recommended, above it ACT."""
+    ev = by_name(evaluate(FRAMES["fomc-rate-decision"], 0.5))
+    act, wait, hedge = ev["ACT"], ev["WAIT"], ev["HEDGE"]
+    assert act.value_if_yes - wait.value_if_yes == pytest.approx(650.0, abs=1e-6)  # no stock-out if the Fed holds
+    assert act.value_if_no - wait.value_if_no == pytest.approx(650.0 - 1_280.50, abs=1e-6)
+    star = p_star(act, wait)
+    assert star == pytest.approx(FOMC_P_STAR, abs=0.01)  # the issue #103 acceptance test, to 0.01
+    assert star == pytest.approx(0.49238579, abs=1e-6)
+    assert 0.0 < star < 1.0
+    assert p_star(act, hedge) == pytest.approx(star, abs=1e-9)  # HEDGE is halfway: all three lines meet at p*
+    assert evaluate(FRAMES["fomc-rate-decision"], star - 1e-3).recommendation == "WAIT"
+    assert evaluate(FRAMES["fomc-rate-decision"], star + 1e-3).recommendation == "ACT"
+    assert [evaluate(FRAMES["fomc-rate-decision"], p).recommendation for p in PROBABILITIES] == ["WAIT", "ACT", "ACT"]
+
+
+def test_cpi_break_even_probabilities():
+    """Issue #103: WAIT up to 6/7 = 0.857, HEDGE between 6/7 and 45/49 = 0.918, ACT above (hand arithmetic at the top).
+    A hot print lowers demand for a quarter, but a cut is permanent, so the stock is short again once demand recovers:
+    a cut only pays if a hot print is very likely."""
+    ev = by_name(evaluate(FRAMES["cpi-surprise"], 0.5))
+    act, wait, hedge = ev["ACT"], ev["WAIT"], ev["HEDGE"]
+    assert p_star(hedge, wait) == pytest.approx(CPI_P_STAR_WAIT_HEDGE, abs=1e-6)
+    assert p_star(act, hedge) == pytest.approx(CPI_P_STAR_HEDGE_ACT, abs=1e-6)
+    assert 0.0 < CPI_P_STAR_WAIT_HEDGE < CPI_P_STAR_HEDGE_ACT < 1.0
+    recs = {p: evaluate(FRAMES["cpi-surprise"], p).recommendation for p in P_GRID}
+    assert {p for p, r in recs.items() if r == "WAIT"} == {p for p in P_GRID if p < CPI_P_STAR_WAIT_HEDGE}
+    assert recs[0.9] == "HEDGE" and recs[0.95] == recs[1.0] == "ACT"
+
+
+def test_fomc_purchase_cuts_cost_nothing_if_the_fed_holds_and_rate_alone_gives_no_break_even():
+    """MATH_MODEL §8 (issue #103): the break-even comes from the demand channel. With the demand effect removed from
+    the YES state (rate only), every policy differs from WAIT by the same amount in both states, so p* cannot exist even
+    with the stock-out cost: the rate changes only term-loan interest, which no policy here touches."""
+    frame = FRAMES["fomc-rate-decision"]
+    yes = ScenarioShock.model_validate(frame["shock_if_yes"])
+    for pol in policies(frame):
+        assert max(simulate(BUSINESS, yes, pol.plan).inventory_shortfall) == pytest.approx(0.0, abs=1e-9)
+    rate_only = yes.model_copy(update={"demand": None})
+    no = ScenarioShock.model_validate(frame["shock_if_no"])
+    res = evaluate_policies(BUSINESS, rate_only, no, policies(frame), 0.5, protect_payroll=True)
+    ev = by_name(res)
+    for name in ("ACT", "HEDGE"):
+        gap_yes = ev[name].value_if_yes - ev["WAIT"].value_if_yes
+        gap_no = ev[name].value_if_no - ev["WAIT"].value_if_no
+        assert gap_yes == pytest.approx(gap_no, abs=1e-6)
 
 
 def test_supply_disruption_break_even_probability():
@@ -278,7 +371,8 @@ P_GRID = [k / 20 for k in range(21)]
 def test_forecast_sensitive_flag_matches_the_engine(frame_id):
     """forecast_sensitive is true exactly when the recommended policy changes somewhere on p = 0, 0.05, ..., 1,
     i.e. when the frame has a break-even p* (test_supply_disruption_break_even_probability,
-    test_rate_and_cpi_frames_have_no_break_even). A frame whose answer ignores the forecast must say so."""
+    test_fomc_break_even_probability, test_cpi_break_even_probabilities). A frame whose answer ignores the forecast
+    must say so."""
     frame = FRAMES[frame_id]
     recommendations = {evaluate(frame, p).recommendation for p in P_GRID}
     assert frame["forecast_sensitive"] is (len(recommendations) > 1)
@@ -295,10 +389,13 @@ def final_number(text: str) -> float:
     return float(NUMBER.findall(text)[-1].replace(",", ""))
 
 
-def value(frame_id: str, policy: str, shock: dict) -> float:
+NO_STOCKOUT = BUSINESS.model_copy(update={"stockout_lost_sales_rate": 0.0})  # theta = 0: stock-out cost switched off
+
+
+def value(frame_id: str, policy: str, shock: dict, params=BUSINESS) -> float:
     """V(a, y) = min_t C_t from the engine, for one policy under one shock (MATH_MODEL §8)."""
     plan = next(p["plan"] for p in FRAMES[frame_id]["policies"] if p["name"] == policy)
-    res = simulate(BUSINESS, ScenarioShock.model_validate(shock), ActionPlan.model_validate(plan))
+    res = simulate(params, ScenarioShock.model_validate(shock), ActionPlan.model_validate(plan))
     return min(res.cash)
 
 
@@ -308,9 +405,16 @@ def yes_channels(frame_id: str, channels: tuple[str, ...]) -> dict:
 
 
 def engine_amount(frame_id: str, policy: str, check: tuple) -> float:
-    no = FRAMES[frame_id]["shock_if_no"]
-    if check[0] == "yes":  # cost that only hits in YES: V(a, NO) - V(a, YES restricted to the channel)
-        return value(frame_id, policy, no) - value(frame_id, policy, yes_channels(frame_id, check[1]))
+    frame = FRAMES[frame_id]
+    no = frame["shock_if_no"]
+    if check[0] == "yes":
+        # cost that only hits in YES: V(a, NO) - V(a, YES restricted to the channel), measured with the stock-out cost
+        # off so the channel's own cost is separated from the stock-out line (with theta = 0 this is the pre-#103 check)
+        return (value(frame_id, policy, no, NO_STOCKOUT)
+                - value(frame_id, policy, yes_channels(frame_id, check[1]), NO_STOCKOUT))
+    if check[0] == "stockout":  # stock-out lost margin in state y: V(a, y) with theta = 0 minus V(a, y)
+        shock = frame["shock_if_yes"] if check[1] == 1 else no
+        return value(frame_id, policy, shock, NO_STOCKOUT) - value(frame_id, policy, shock)
     # cost paid in both states: V(WAIT, NO) - V(a, NO)
     return value(frame_id, "WAIT", no) - value(frame_id, policy, no)
 
@@ -318,6 +422,14 @@ def engine_amount(frame_id: str, policy: str, check: tuple) -> float:
 FEE_CHECKS = {
     **{("fomc-rate-decision", a, "Extra term-loan interest if the Fed holds"): ("yes", ("rate",))
        for a in POLICY_NAMES},
+    **{("fomc-rate-decision", a, "Lost gross margin on lower demand if the Fed holds"): ("yes", ("demand",))
+       for a in POLICY_NAMES},
+    ("fomc-rate-decision", "ACT", "Stock-out lost margin if the Fed cuts (inventory 650 below the service level)"):
+        ("stockout", 0),
+    ("fomc-rate-decision", "HEDGE", "Stock-out lost margin if the Fed cuts (inventory 325 below the service level)"):
+        ("stockout", 0),
+    **{("cpi-surprise", a, "Stock-out lost margin if the print is hot"): ("stockout", 1) for a in ("ACT", "HEDGE")},
+    **{("cpi-surprise", a, "Stock-out lost margin if the print is in line"): ("stockout", 0) for a in ("ACT", "HEDGE")},
     **{("cpi-surprise", a, "Extra term-loan interest if the print is hot"): ("yes", ("rate",)) for a in POLICY_NAMES},
     **{("cpi-surprise", a, "Lost gross margin on lower demand if the print is hot"): ("yes", ("demand",))
        for a in POLICY_NAMES},

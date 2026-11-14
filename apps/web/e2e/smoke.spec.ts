@@ -222,7 +222,7 @@ test.describe("DECISION · ACT / WAIT / HEDGE", () => {
   /** Same display formatting as components/decision/SplitView.tsx: formatting only, no arithmetic. */
   const USD2 = new Intl.NumberFormat("en-US", { style: "currency", currency: "USD", maximumFractionDigits: 2 });
 
-  test("payoffs equal the API for every policy; the forecast-insensitive caveat is shown verbatim", async ({ page }) => {
+  test("payoffs equal the API for every policy; a caveat note appears exactly for forecast-insensitive frames", async ({ page }) => {
     await page.goto("/decision/");
     const select = page.locator("#decision-frame");
     await expect(select).toBeVisible();
@@ -251,9 +251,18 @@ test.describe("DECISION · ACT / WAIT / HEDGE", () => {
       frames: { id: string; forecast_sensitive: boolean; caveat: string | null }[];
     };
     const insensitive = frames.frames.find((f) => !f.forecast_sensitive && f.caveat);
-    expect(insensitive, "at least one frame carries a caveat").toBeTruthy();
-    await select.selectOption(insensitive!.id);
-    await expect(page.getByRole("note").getByText(insensitive!.caveat!, { exact: true })).toBeVisible();
+    if (insensitive) {
+      await select.selectOption(insensitive.id);
+      await expect(page.getByRole("note").getByText(insensitive.caveat!, { exact: true })).toBeVisible();
+    } else {
+      // Since #103 (stock-out cost) every frame has a break-even, so none is forecast-insensitive and the
+      // DECISION screen must show no caveat note for any of them.
+      expect(frames.frames.every((f) => f.forecast_sensitive && !f.caveat), "every frame forecast-sensitive").toBe(true);
+      for (const f of frames.frames) {
+        await select.selectOption(f.id);
+        await expect(page.getByRole("note")).toHaveCount(0);
+      }
+    }
   });
 
   test("no case: no frame is selected and no POST /api/decision is sent until the presenter picks", async ({ page }) => {

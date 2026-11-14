@@ -314,7 +314,7 @@ that are not on `main` yet.
 - **On screen:** `Break-even p*`
 - **Short:** The probability at which the top two strategies have equal expected value.
 - **Long:** p-star = (V(b,0) − V(a,0)) / ((V(a,1) − V(a,0)) − (V(b,1) − V(b,0))) for the top two feasible strategies a and b (MATH_MODEL §8). On either side of it the recommendation flips. NOT AVAILABLE when the two lines are parallel, fewer than two are feasible, or it falls outside 0 to 1.
-- **Example:** Supply-disruption frame: 0.1225 between ACT and WAIT. The FOMC and CPI frames read NOT AVAILABLE: ACT and HEDGE differ by the same amount in both states.
+- **Example:** FOMC frame: 0.4924 (WAIT below, ACT above; HEDGE lies exactly between). CPI frame: 0.857 between WAIT and HEDGE, 0.918 between HEDGE and ACT. Supply-disruption frame: 0.1225 between ACT and WAIT.
 - **Source:** Engine run computed for this glossary: POST /api/decision on all 3 frames in decision_frames.json.
 - **Screens:** DECISION
 - **MATH_MODEL:** §8
@@ -702,7 +702,7 @@ that are not on `main` yet.
 - **On screen:** `Recovery plan`, `Recovery plan · deterministic optimizer`, `Chosen actions`
 - **Short:** The least harmful set of actions that keeps every hard limit.
 - **Long:** A deterministic optimizer (MILP, MATH_MODEL §4) picks from: backup supplier, defer capex, delay expansion, purchase cuts, revolver draws and, only if allowed, a payroll cut. It minimizes weighted disruption cost while holding the cash floor, revolver limit and inventory floor. No LLM can override it.
-- **Example:** Bad quarter, payroll protected: purchase cuts in weeks 18 to 24 keep minimum cash at exactly 25,000, for a disruption cost of 552.50.
+- **Example:** Bad quarter, payroll protected: purchase cuts in weeks 22 to 24 plus revolver draws in weeks 20 to 24 keep minimum cash at exactly 25,000, for a disruption cost of 1,924.71.
 - **Source:** Engine run computed for this glossary: POST /api/optimize on scenarios.json bad-quarter, protect payroll on, SYNTHETIC demo business.
 - **Screens:** CASCADE, EXPLORE
 - **MATH_MODEL:** §4, §10
@@ -732,7 +732,7 @@ that are not on `main` yet.
 - **On screen:** `Objective`, `disruption cost`
 - **Short:** The optimizer's score for how harmful a plan is; lower is better.
 - **Long:** Objective = weighted disruption cost of the chosen actions, minus a tiny tie-break for more cash: 0.0001 × minimum cash (MATH_MODEL §4). The weights are the finance owner's non-cash harm per action (§10), from 0.01 per dollar drawn on the revolver to 5.00 per dollar of payroll cut.
-- **Example:** Bad quarter plan: disruption cost 552.50; objective 552.50 − 0.0001 × 25,000 = 550.00.
+- **Example:** Bad quarter plan: disruption cost 1,924.71; objective 1,924.71 − 0.0001 × 25,000 = 1,922.21.
 - **Source:** Engine run computed for this glossary: POST /api/optimize on scenarios.json bad-quarter, protect payroll on, SYNTHETIC demo business.
 - **Screens:** CASCADE, EXPLORE
 - **MATH_MODEL:** §4, §10

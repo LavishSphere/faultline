@@ -142,16 +142,13 @@ replay model gets only the gated evidence: no web, no tools."
 `services/api/tests/test_agents_local_ollama.py::test_request_carries_only_the_given_prompt_no_system_no_tools_no_date`.
 
 ### 18. "Does ACT/WAIT/HEDGE actually depend on the forecast?"
-**Say:** "In the supply frame, yes: there's a break-even probability. In the rate and inflation frames, not yet, and
-the screen says so. A fix is being built."
-**Backed by:** `services/api/data/decision_frames.json` (#71: `forecast_sensitive` and `caveat`);
-`services/api/tests/test_decision_frames.py::test_supply_disruption_break_even_probability` (p* = 2,000 / 16,320 =
-0.1225), `::test_rate_and_cpi_frames_have_no_break_even`; the caveat is shown by
-`apps/web/components/decision/SplitView.tsx`. Fix: **PENDING: #103**.
-
----
-
-## 4. Societal impact
+**Say:** "Yes. Cutting stock now costs lost sales, so every frame has a break-even probability: about 49% for the
+Fed frame, 86% and 92% for inflation, 12% for a supplier outage. Below it, wait; above it, act."
+**Backed by:** `services/api/data/decision_frames.json` (#103: `forecast_sensitive` is true for all three frames);
+MATH_MODEL §3 (stock-out cost) and §8; `services/api/tests/test_decision_frames.py::test_fomc_break_even_probability`
+(p* = 630.50 / 1,280.50 = 0.4924), `::test_cpi_break_even_probabilities` (6/7 and 45/49),
+`::test_supply_disruption_break_even_probability` (p* = 2,000 / 16,320 = 0.1225); shown by
+`apps/web/components/decision/SplitView.tsx`. The Fed frame's YES state includes a 1% demand drop (ILLUSTRATIVE).
 
 ### 19. "What stops the AI from cutting payroll?"
 **Say:** "The AI never chooses actions. With Protect payroll on, any plan that cuts payroll is rejected by a hard

@@ -110,6 +110,19 @@ def test_break_even_flips_the_recommendation(client):
     assert below["recommendation"] == "WAIT" and above["recommendation"] == "ACT"
 
 
+def test_fomc_break_even_is_available(client):
+    """Issue #103: with the stock-out cost the FOMC frame has a break-even, p* = 630.50 / 1,280.50 = 0.4924
+    (hand arithmetic in tests/test_decision_frames.py). At p = 0.5 the top two are ACT and HEDGE, which meet at the
+    same p* because HEDGE is exactly halfway between ACT and WAIT."""
+    body = client.post("/api/decision", json={"frame_id": "fomc-rate-decision", "p_yes": 0.5}).json()
+    assert body["forecast_sensitive"] is True and body["caveat"] is None
+    be = body["break_even"]
+    assert be["status"] == "AVAILABLE" and be["policies"] == ["ACT", "HEDGE"]
+    assert be["p_star"] == pytest.approx(630.50 / 1_280.50, abs=1e-6)
+    below = client.post("/api/decision", json={"frame_id": "fomc-rate-decision", "p_yes": 0.48}).json()
+    assert below["recommendation"] == "WAIT" and body["recommendation"] == "ACT"
+
+
 @pytest.mark.parametrize("frame_id", [f for f, v in FRAMES.items() if not v["forecast_sensitive"]])
 def test_forecast_insensitive_frames_have_no_break_even(client, frame_id):
     body = client.post("/api/decision", json={"frame_id": frame_id, "p_yes": 0.5}).json()
