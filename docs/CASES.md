@@ -275,7 +275,7 @@ The answer was not chosen by anyone. It comes from a random seed and a fixed rul
 statement). The documents describe a real but minority risk
 (a strike was authorised, but both sides call the talks constructive and a mediator is booked). The draw does not
 depend on the text, so the best possible forecast for this case is 0.35, and no forecaster can beat that in
-expectation. If a synthetic market price is added later (see below), it should be 0.35, which makes the
+expectation. The case's SYNTHETIC market price (added in #105, see below) is therefore 0.35, which makes the
 synthetic "market" calibrated by construction.
 
 **Honest timeline.** The seed was generated at 2026-11-13T20:00:29Z. The case file (with the commitment and the
@@ -318,7 +318,7 @@ The case carries one SYNTHETIC quote (issue #105), on the `synthetic` venue adde
 | `collected_at` | 2026-11-14T15:00:00Z: when the price was written into the file (nothing was fetched) |
 
 **Why 0.35, and when it was fixed.** 0.35 is `p_draw`, the probability in the published draw rule
-(YES if 100 × h < 35 × 2^256). The case file merged in #92 (squash commit `0f8407d`) already stated it before any
+(YES if 100 × h < 35 × 2^256). The case file proposed in #92, merged via #128 (squash commit `0f8407d`), already stated it before any
 forecast: `services/api/data/demo_cases/synthetic_distributor-depot.json`, line 110,
 `curation_notes.market.intended_synthetic_price`: "the intended SYNTHETIC price is p_draw = 0.35 (calibrated by
 construction). No price was typed into this file." The price was **written** into the file later (2026-11-14), and
@@ -327,11 +327,12 @@ way: the draw does not depend on anything a market could know, so 0.35 is the ca
 
 What changes:
 - the gate reports a SYNTHETIC market baseline of 0.35 for this case;
-- the `agent_plus_market` variant now runs; `agent_only` is unchanged and never sees the price (its snapshot hash
-  is still `sha256:125e3b56…`);
+- the `agent_plus_market` variant now runs; `agent_only` is unchanged and never sees the price (its payload hash is
+  unchanged). The case's `snapshot_hash` now covers the evidence plus the selected quote, as for the July FOMC case:
+  `sha256:ae1d59bb…`;
 - `build_scorecard` gives the case a row with a SYNTHETIC market baseline. Alone (n = 1) it reads
   `INSUFFICIENT DATA` (MATH_MODEL §6, n < 5); it is never OFFICIAL and never pooled with the real cases;
-- `case_sha256` changed (now `69aa7ab6…`). No forecast or recorded run had been saved for the old content.
+- `case_sha256` changed (now `51623d9b…`). No forecast or recorded run had been saved for the old content.
 
 ### Never pooled with real cases
 
@@ -346,5 +347,5 @@ order.
 forecasts to be scored mix synthetic and real cases, it stops with an error telling the caller to pass `case_set`
 (`"real"` or `"synthetic"`), and nothing is revealed. It also checks that each forecast's `synthetic` flag (fixed by the gate when the forecast was saved) agrees with
 the sealed file's `provenance` (`SYNTHETIC` here). A scorecard made only of synthetic cases is labelled
-`ILLUSTRATIVE: Synthetic demo fixtures`. A committed synthetic case without a forecast does not block the OFFICIAL
+`ILLUSTRATIVE: Synthetic demo fixtures` once it has 5 or more events (below 5 it reads `INSUFFICIENT DATA`). A committed synthetic case without a forecast does not block the OFFICIAL
 label for the real cases (`test_synthetic_committed_cases_without_forecasts_do_not_block_official`).

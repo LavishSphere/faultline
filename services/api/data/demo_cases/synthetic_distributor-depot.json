@@ -13,7 +13,7 @@
       "synthetic_distributor-depot.backup-supplier-quote"
     ],
     "market_quote_id": "synthetic:FAULTLINE-SYN-DEPOT",
-    "snapshot_hash": "sha256:125e3b56522511a3c13ffe0420cf373b696edfc6f68f52bf039e3e989134d974",
+    "snapshot_hash": "sha256:ae1d59bb60009b92a53b491b34e902bf706295ade427141d691e9de5305a4e82",
     "synthetic": true,
     "contamination_flag": "unlikely",
     "provenance": "SYNTHETIC"
@@ -123,12 +123,12 @@
     "market": {
       "status": "SYNTHETIC",
       "quote": "synthetic:FAULTLINE-SYN-DEPOT at 0.35, ts 2026-09-14T11:00:00Z (1 hour before as_of), venue 'synthetic', labelled SYNTHETIC (issue #105, enabled by the synthetic venue in #102).",
-      "why_0_35": "0.35 is p_draw, the probability in the published draw rule (YES if 100*h < 35*2**256). The case file committed in #92 (squash-merged as 0f8407d) already stated 'the intended SYNTHETIC price is p_draw = 0.35' in curation_notes.market.intended_synthetic_price, before any forecast. Because the draw does not depend on anything the market could know, 0.35 is the calibrated price by construction; it carries no information about the drawn answer.",
+      "why_0_35": "0.35 is p_draw, the probability in the published draw rule (YES if 100*h < 35*2**256). The case file proposed in #92, merged via #128 (squash 0f8407d), already stated 'the intended SYNTHETIC price is p_draw = 0.35' in curation_notes.market.intended_synthetic_price, before any forecast. Because the draw does not depend on anything the market could know, 0.35 is the calibrated price by construction; it carries no information about the drawn answer.",
       "collected_at_meaning": "collected_at is when the price was written into this file (2026-11-14), after the seed was generated; nothing was fetched (markets.base, synthetic venue).",
-      "scoring": "The market baseline for this case is SYNTHETIC: its scorecard is always ILLUSTRATIVE and never pooled with real cases."
+      "scoring": "Alone (n = 1) its scorecard reads INSUFFICIENT DATA (MATH_MODEL §6, n < 5); with 5 or more synthetic cases it reads ILLUSTRATIVE; never OFFICIAL, never pooled with real cases."
     },
     "contamination": "unlikely (never 'none'): the question and documents are invented and the answer is a fresh random draw, so no model can have learned it in pretraining.",
-    "snapshot_hash": "sha256 of the canonical JSON of the agent_only gated payload at as_of (evidence only: the agent_only variant never sees the market quote, so adding the SYNTHETIC quote in #105 left it unchanged), computed with core.temporal_gate and core.provenance. The agent_plus_market payload, which includes the SYNTHETIC 0.35 quote, hashes to sha256:ae1d59bb60009b92a53b491b34e902bf706295ade427141d691e9de5305a4e82.",
+    "snapshot_hash": "sha256 of the canonical JSON of the gated payload at as_of: evidence plus the selected market quote (the SYNTHETIC 0.35 quote), as for the July FOMC case; computed with core.temporal_gate and core.provenance. The agent_only payload (evidence only, never the quote) is unchanged by #105: sha256:125e3b56522511a3c13ffe0420cf373b696edfc6f68f52bf039e3e989134d974.",
     "scoring": "Synthetic. Never pooled with real historical cases (core/evaluator.py refuses a mix) and never counted in the real-case n. See docs/CASES.md, 'Synthetic fallback case'."
   }
 }
