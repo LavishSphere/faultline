@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { API_BASE } from "@/lib/api";
 import {
   BENCHMARK_PATH,
@@ -21,6 +21,9 @@ import {
 import { Field, Panel } from "./Panel";
 import type { ProvenanceInput } from "./ProvenanceBadge";
 import { BUTTON_SECONDARY, FailureReport, Missing, Num } from "./reveal/ui";
+import { cardBadges, isSynthetic } from "./scorecard/badges";
+import { ResultsChart } from "./scorecard/ResultsChart";
+import { ScoreRace } from "./scorecard/ScoreRace";
 
 /**
  * D.1 Benchmark (SPEC §6, MATH_MODEL §6): agent vs market-only vs naive (p = 0.5) on identical (event_id, as_of)
@@ -41,7 +44,20 @@ import { BUTTON_SECONDARY, FailureReport, Missing, Num } from "./reveal/ui";
 
 type Load = { kind: "loading" } | { kind: "done"; result: Result<BenchmarkResponse> };
 
-export function Scorecard({ revealedPredictionId = null }: { revealedPredictionId?: string | null }) {
+/** What the results chart (D.2 Results by event) needs from this panel's own GET /api/benchmark. */
+export interface BenchmarkCards {
+  cards: Partial<Record<ScorableVariant, VariantCard>>;
+  loading: boolean;
+}
+
+export function Scorecard({
+  revealedPredictionId = null,
+  onCards,
+}: {
+  revealedPredictionId?: string | null;
+  /** Given: the parent places the results chart (full width on REVEAL). Absent: it renders below the cards. */
+  onCards?: (c: BenchmarkCards) => void;
+}) {
   const [load, setLoad] = useState<Load>({ kind: "loading" });
   const abortRef = useRef<AbortController | null>(null);
 
@@ -64,7 +80,15 @@ export function Scorecard({ revealedPredictionId = null }: { revealedPredictionI
   const result = load.kind === "done" ? load.result : null;
   const data = result?.ok ? result.data : null;
   const failure = result && !result.ok ? result : null;
-  const cards = data ? firstPerVariant(data) : {};
+  const cards = useMemo(() => (data ? firstPerVariant(data) : {}), [data]);
+  const loading = load.kind === "loading";
+  const reportRef = useRef(onCards);
+  useEffect(() => {
+    reportRef.current = onCards;
+  }, [onCards]);
+  useEffect(() => {
+    reportRef.current?.({ cards, loading });
+  }, [cards, loading]);
 
   // While the request is in flight nothing is known yet: no badge claims NOT AVAILABLE (or anything else).
   const headerBadges: ProvenanceInput[] =
@@ -140,6 +164,8 @@ export function Scorecard({ revealedPredictionId = null }: { revealedPredictionI
           );
         })}
       </div>
+
+      {onCards ? null : <ResultsChart cards={cards} loading={loading} revealedPredictionId={revealedPredictionId} />}
     </div>
   );
 }
@@ -167,19 +193,6 @@ function forecasterName(key: string, agentVariant: string): string {
   if (key === "market") return "Market-only";
   if (key === agentVariant) return "Agent";
   return key;
-}
-
-function isSynthetic(card: ScorecardData): boolean {
-  return card.provenance === "SYNTHETIC" || card.case_set === "synthetic";
-}
-
-function cardBadges(card: ScorecardData): ProvenanceInput[] {
-  const out: ProvenanceInput[] = ["RECORDED RUN"];
-  if (card.provenance) out.push(card.provenance);
-  if (card.case_set === "synthetic" && card.provenance !== "SYNTHETIC") out.push("SYNTHETIC");
-  if (isSynthetic(card) || card.label.startsWith("ILLUSTRATIVE")) out.push("ILLUSTRATIVE");
-  if (card.verdict === "INSUFFICIENT DATA") out.push("INSUFFICIENT DATA");
-  return out;
 }
 
 const ORIGIN_TEXT: Record<ScorecardRecord["origin"], string> = {
@@ -243,6 +256,8 @@ function ScorecardCard({ entry, revealedPredictionId }: { entry: VariantCard; re
           <Stat label="Predictions ignored" value={card.ignored_predictions.length} />
         </div>
       </div>
+
+      <ScoreRace card={card} />
 
       <div className="relative overflow-x-auto">
         <table className="w-full min-w-[480px] border-collapse text-left">

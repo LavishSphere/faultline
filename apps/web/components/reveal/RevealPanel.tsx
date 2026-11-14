@@ -6,6 +6,7 @@ import { API_BASE } from "@/lib/api";
 import { Field, Panel } from "../Panel";
 import { ProvenanceBadge } from "../ProvenanceBadge";
 import { BUTTON_PRIMARY, FailureReport, Missing, Num } from "./ui";
+import { UnsealSequence } from "./UnsealSequence";
 
 /**
  * D.0 Historical outcome (SPEC §2 Screen D, §5). The presenter names a persisted prediction (prefilled from
@@ -144,19 +145,10 @@ export function RevealPanel({
 
 function Revealed({ data }: { data: RevealResponse }) {
   const { prediction: p, sealed, scores } = data;
+  // Keyed by the reveal, so a new reveal replays the sequence from the sealed frame.
   return (
-    <div className="flex flex-col gap-6">
-      <div className="flex flex-col gap-2">
-        <p className="kicker">Outcome · {sealed.event_id}</p>
-        <p
-          className={`display text-[clamp(3rem,5vw,4.5rem)] leading-none ${sealed.outcome === "YES" ? "text-viable" : "text-fail"}`}
-        >
-          {sealed.outcome}
-        </p>
-        <p className="font-mono text-[11px] text-muted">
-          y = <span className="num text-text-2">{data.y}</span> · resolved{" "}
-          <span className="text-text-2">{sealed.resolved_at ?? "not stated"}</span>
-        </p>
+    <UnsealSequence key={`${p.prediction_id}-${data.reveal_seq}`} data={data}>
+      <div className="-mt-3 flex flex-col gap-2">
         <a
           href={sealed.source_url}
           target="_blank"
@@ -255,7 +247,7 @@ function Revealed({ data }: { data: RevealResponse }) {
           </div>
         </dl>
       </details>
-    </div>
+    </UnsealSequence>
   );
 }
 
