@@ -79,6 +79,12 @@ MIXED_MARKET_LABEL = (
     f'"synthetic:" refs: {SYNTHETIC_QUOTE_LABEL}; other refs: {MARKET_LABEL}'
 )
 
+# official_blocker while FAULTLINE_DEMO_STORE is set (#155): a demo scratch store never earns OFFICIAL.
+DEMO_SCRATCH_BLOCKER = (
+    "demo_scratch_store: forecasts in a demo scratch store can't be OFFICIAL; "
+    "the official result is the committed RECORDED RUN"
+)
+
 # Exclusions an operator could cause on purpose (skip a run, re-run, peek, use other case data). Any of them on a
 # real committed case blocks the OFFICIAL label. The other reasons are fixed by committed, reviewed data.
 OPERATOR_REASONS = frozenset(
@@ -584,7 +590,8 @@ def build_scorecard(
     configured sealed folder (hence the configured store); no ``OPERATOR_REASONS`` exclusion on any real or
     uncommitted case (only ``committed_synthetic_events`` are exempt); and every scored forecast persisted before
     the FIRST counted reveal anywhere in the store (``first_counted_reveal``: logged-SYNTHETIC reveals of
-    committed SYNTHETIC cases do not count).
+    committed SYNTHETIC cases do not count); and FAULTLINE_DEMO_STORE not set (read at call time; else
+    ``DEMO_SCRATCH_BLOCKER``, #155).
     """
     if not isinstance(vault, OutcomeVault):
         raise TypeError("build_scorecard needs the OutcomeVault; predictions are read from its store")
@@ -729,6 +736,8 @@ def build_scorecard(
         blockers.append(f"cases were not loaded by EvidenceStore.from_dir() from {configured_cases_dir()}")
     if not _same_path(vault.sealed_dir, configured_sealed_dir()):
         blockers.append(f"the vault does not use the configured sealed-outcome folder {configured_sealed_dir()}")
+    if get_settings().demo_store_set:
+        blockers.append(DEMO_SCRATCH_BLOCKER)
     operator = [x for x in exclusions if x.reason in OPERATOR_REASONS and x.event_id not in exempt_synthetic]
     for reason in sorted({x.reason for x in operator}):
         hit = sorted({x.event_id for x in operator if x.reason == reason})

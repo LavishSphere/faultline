@@ -17,6 +17,7 @@ from __future__ import annotations
 
 import importlib.util
 import json
+import os
 import re
 import sqlite3
 import sys
@@ -226,6 +227,12 @@ def _demo_main(monkeypatch):
     served = []
     monkeypatch.chdir(API_DIR)
     monkeypatch.setattr(uvicorn, "run", lambda app, **kw: served.append(get_settings().predictions_db))
+    # main() writes os.environ directly; register both keys with monkeypatch so they are restored after the test.
+    for key in ("FAULTLINE_PREDICTIONS_DB", "FAULTLINE_DEMO_STORE"):
+        current = os.environ.get(key)
+        monkeypatch.setenv(key, current if current is not None else "")
+        if current is None:
+            monkeypatch.delenv(key)
     return demo.main(), served
 
 

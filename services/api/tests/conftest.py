@@ -53,3 +53,5 @@ def _scratch_predictions_db(tmp_path_factory, monkeypatch):
     monkeypatch.setenv(
         "FAULTLINE_PREDICTIONS_DB", str(tmp_path_factory.mktemp("predictions_db") / "predictions.sqlite3")
     )
+    # A demo shell's FAULTLINE_DEMO_STORE would block every OFFICIAL label (#155); tests that need it set it.
+    monkeypatch.delenv("FAULTLINE_DEMO_STORE", raising=False)

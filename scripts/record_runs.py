@@ -551,6 +551,11 @@ def main(argv: list[str] | None = None) -> int:
                 f"prediction store: {store.path} (NOT the official store {DEFAULT_PREDICTIONS_DB}; "
                 "FAULTLINE_PREDICTIONS_DB is set)"
             )
+        if settings.demo_store_set:
+            print(
+                "WARNING: FAULTLINE_DEMO_STORE is set, so no scorecard from this run can be OFFICIAL "
+                "(demo_scratch_store blocker, #155). Unset it for the official run."
+            )
         provider = LocalOllamaProvider.from_settings()
 
     try:
