@@ -17,10 +17,32 @@ export function fmtSigned(x: number): string {
   return `${x < 0 ? "−" : "+"}${Math.abs(x).toFixed(4)}`;
 }
 
-export function Num({ value, signed = false, className = "" }: { value: number; signed?: boolean; className?: string }) {
+/**
+ * Signed, for the Δ Brier interval: 6 decimals, or the API's raw value when 0 < |x| < 1e-4 (so a tiny end is never
+ * shown as a rounded 0 on the wrong side of zero).
+ */
+export function fmtPrecise(x: number): string {
+  if (x === 0) return "0.000000";
+  const sign = x < 0 ? "−" : "+";
+  const abs = Math.abs(x);
+  return `${sign}${abs < 1e-4 ? String(abs) : abs.toFixed(6)}`;
+}
+
+export function Num({
+  value,
+  signed = false,
+  precise = false,
+  className = "",
+}: {
+  value: number;
+  signed?: boolean;
+  /** fmtPrecise (signed, 6 decimals or raw); for interval ends. */
+  precise?: boolean;
+  className?: string;
+}) {
   return (
     <span className={`num ${className}`} title={String(value)}>
-      {signed ? fmtSigned(value) : fmt4(value)}
+      {precise ? fmtPrecise(value) : signed ? fmtSigned(value) : fmt4(value)}
     </span>
   );
 }

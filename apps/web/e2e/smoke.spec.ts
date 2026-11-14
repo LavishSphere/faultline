@@ -157,11 +157,17 @@ test.describe("REVEAL", () => {
       await expect(page.getByTestId("scorecard-label")).toHaveText(first.label);
       await expect(page.getByTestId("scorecard-verdict")).toHaveText(first.verdict);
     } else {
+      // No scorecard served: NOT AVAILABLE, never INSUFFICIENT DATA (that verdict belongs to a served card, #117).
       await expect(page.getByTestId("scorecard-label")).toHaveCount(0);
-      await expect(page.getByText("Insufficient data", { exact: true })).toBeVisible();
+      await expect(page.getByTestId("scorecard-empty")).toHaveText("Not available");
+      await expect(page.getByText("Insufficient data", { exact: true })).toHaveCount(0);
     }
-    // The outcome stays sealed until an explicit click.
+    // The outcome stays sealed until an explicit click, and nothing on the scorecard is marked as this forecast.
     await expect(page.getByText("Sealed", { exact: true })).toBeVisible();
+    await expect(page.getByText("← this forecast")).toHaveCount(0);
+    // Per-event outcomes (y of every scored event) start collapsed.
+    const perEvent = page.getByTestId("per-event-outcomes");
+    if (await perEvent.count()) await expect(perEvent).not.toHaveAttribute("open", /.*/);
 
     await page.waitForTimeout(500);
     expect(apiCalls.filter((c) => c.startsWith("POST")), "no POST (reveal / compute) on page load").toEqual([]);

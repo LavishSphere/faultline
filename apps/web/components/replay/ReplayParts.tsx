@@ -61,7 +61,7 @@ export function failureHeadline(f: ReplayFailure, pendingIssue?: string): { titl
     case "conflict":
       return { title: "Not saved: prediction exists", tone: "text-risk" };
     case "data_invalid":
-      return { title: "Case data failed a check", tone: "text-fail" };
+      return { title: "Failed a data check", tone: "text-fail" };
     case "validation":
       return { title: (f.code && VALIDATION_HEADLINES[f.code]) || "Request rejected", tone: "text-risk" };
     case "leak":
@@ -80,14 +80,17 @@ export function FailureNote({
   note,
   size = "md",
   action,
+  headline,
 }: {
   failure: ReplayFailure;
   pendingIssue?: string;
   note?: ReactNode;
   size?: "sm" | "md" | "lg";
   action?: ReactNode;
+  /** Replaces the default headline (e.g. a run that got no answer is not "API unreachable"). */
+  headline?: { title: string; tone: string };
 }) {
-  const { title, tone } = failureHeadline(failure, pendingIssue);
+  const { title, tone } = headline ?? failureHeadline(failure, pendingIssue);
   const sizeClass = size === "lg" ? "text-2xl md:text-3xl" : size === "sm" ? "text-sm" : "text-lg";
   return (
     <div className="flex flex-col gap-1.5" role={failure.kind === "leak" ? "alert" : undefined}>

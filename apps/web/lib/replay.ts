@@ -153,8 +153,8 @@ export interface SkepticProblem {
  */
 export interface MarketAtCutoff {
   status: "AVAILABLE" | "NOT AVAILABLE";
-  /** Server label text, shown verbatim. Optional here while PR #111 may change it. */
-  label?: string;
+  /** Server label text (markets/base.py MarketLabel), shown verbatim. Required since PR #111 settled it. */
+  label: string;
   /** `"<venue>:<market_id>"`. */
   ref: string | null;
   venue: Venue | null;
@@ -162,8 +162,8 @@ export interface MarketAtCutoff {
   quote_kind: QuoteKind | null;
   ts: string | null;
   p_yes: number | null;
-  /** The case file's provenance (REAL_HISTORICAL or SYNTHETIC). Optional here while PR #111 is open. */
-  provenance?: WireProvenance | null;
+  /** The quote's provenance as the gate projects it (SYNTHETIC for any quote on a SYNTHETIC case); null when NOT AVAILABLE. */
+  provenance: WireProvenance | null;
   note: string | null;
 }
 
@@ -211,25 +211,29 @@ export interface GatedQuote {
   volume: string | null;
   open_interest: string | null;
   period_seconds: number | null;
-  /** Server label text, shown verbatim. Optional while PR #111 is open. */
-  label?: string;
-  /** Not served on main; PR #111's quotes carry it (SYNTHETIC exactly when venue is synthetic). */
-  provenance?: WireProvenance;
+  /** Server label text (markets/base.py MarketLabel), shown verbatim. */
+  label: string;
+  /** SYNTHETIC for every quote on a SYNTHETIC case (and for venue synthetic), else REAL_HISTORICAL. */
+  provenance: WireProvenance;
 }
 
 /**
- * A synthetic benchmark price (venue `synthetic` or provenance SYNTHETIC): always shown with a SYNTHETIC badge and
- * the server's label, never as a real market, and with no raw payload. Read from served fields only.
+ * A synthetic benchmark price: venue `synthetic`, provenance SYNTHETIC, or any quote on a synthetic case (a
+ * hand-written kalshi/polymarket-shaped quote in a SYNTHETIC case is just as fictional). Always shown with a
+ * SYNTHETIC badge and the server's label, never as a real market. Read from served fields only.
  */
-export function isSyntheticQuote(q: { venue: Venue | null; provenance?: WireProvenance | null }): boolean {
-  return q.venue === "synthetic" || q.provenance === "SYNTHETIC";
+export function isSyntheticQuote(
+  q: { venue: Venue | null; provenance?: WireProvenance | null },
+  c: Pick<ReplayCasePublic, "synthetic" | "provenance"> | null,
+): boolean {
+  return q.venue === "synthetic" || q.provenance === "SYNTHETIC" || !!c?.synthetic || c?.provenance === "SYNTHETIC";
 }
 
 /** Venue/kind/provenance must agree (PR #111's rule); a mismatch would mislabel a price, so it is refused. */
 function syntheticMismatch(q: Record<string, unknown>, at: string): string | null {
   const venue = q.venue === "synthetic";
   if (venue !== (q.quote_kind === "synthetic")) return `${at}: quote_kind "synthetic" and venue "synthetic" disagree`;
-  if (venue && q.provenance !== undefined && q.provenance !== null && q.provenance !== "SYNTHETIC") {
+  if (venue && q.provenance !== "SYNTHETIC") {
     return `${at}: a synthetic-venue quote is labelled ${String(q.provenance)} (refused)`;
   }
   return null;
@@ -437,20 +441,19 @@ function checkSkeptic(v: unknown): string | null {
   return null;
 }
 
-const MARKET_KEYS = ["status", "ref", "venue", "market_id", "quote_kind", "ts", "p_yes", "note"] as const;
-/** On main both are always served; kept optional so PR #111 cannot turn the panel into "malformed". */
-const MARKET_OPTIONAL_KEYS = ["label", "provenance"] as const;
+/** `label` and `provenance` are required since PR #111 settled them (#117 item F). */
+const MARKET_KEYS = ["status", "label", "ref", "venue", "market_id", "quote_kind", "ts", "p_yes", "provenance", "note"] as const;
 
 /** `MarketAtCutoff`, including the server's invariant that NOT AVAILABLE carries no quote value. */
 function checkMarketAtCutoff(m: unknown, at: string, asOf: string): string | null {
   if (!isObj(m)) return `${at} is not an object`;
-  const keys = exactKeys(m, MARKET_KEYS, at, MARKET_OPTIONAL_KEYS);
+  const keys = exactKeys(m, MARKET_KEYS, at);
   if (keys) return keys;
-  if (m.label !== undefined && !isStr(m.label)) return `${at}.label malformed`;
+  if (!isStr(m.label) || !m.label.trim()) return `${at}.label malformed`;
   if (!isNullOr(m.note, isStr)) return `${at}.note malformed`;
   if (m.status === "NOT AVAILABLE") {
     const quoteFields = ["ref", "venue", "market_id", "quote_kind", "ts", "p_yes", "provenance"];
-    const filled = quoteFields.find((k) => m[k] !== null && m[k] !== undefined);
+    const filled = quoteFields.find((k) => m[k] !== null);
     return filled ? `${at} is NOT AVAILABLE but carries "${filled}"` : null;
   }
   if (m.status !== "AVAILABLE") return `${at}.status malformed`;
@@ -460,9 +463,7 @@ function checkMarketAtCutoff(m: unknown, at: string, asOf: string): string | nul
   if (!isInstant(m.ts)) return `${at}.ts malformed`;
   if (Date.parse(m.ts) > Date.parse(asOf)) return `${at} is stamped after the cutoff (refused)`;
   if (!isProb(m.p_yes)) return `${at}.p_yes is not in [0, 1]`;
-  if (!(m.provenance === undefined || isNullOr(m.provenance, isWireProvenance))) {
-    return `${at}.provenance is not a known wire label`;
-  }
+  if (!isWireProvenance(m.provenance)) return `${at}.provenance is not a known wire label`;
   return syntheticMismatch(m, at);
 }
 
@@ -510,9 +511,9 @@ const EVIDENCE_KEYS = [
   "evidence_id", "title", "published_at", "available_at", "source_url", "content", "provenance",
 ] as const;
 const QUOTE_KEYS = [
-  "venue", "market_id", "p_yes", "quote_kind", "ts", "spread", "volume", "open_interest", "period_seconds",
+  "venue", "market_id", "p_yes", "quote_kind", "ts", "spread", "volume", "open_interest", "period_seconds", "label",
+  "provenance",
 ] as const;
-const QUOTE_OPTIONAL_KEYS = ["label", "provenance"] as const;
 const EVIDENCE_BODY_KEYS = [
   "status", "event_id", "as_of", "case_as_of", "items", "market_quotes", "market_at_cutoff", "excluded_by_reason",
   "notes",
@@ -552,11 +553,11 @@ export function checkCaseEvidence(body: unknown, c: Pick<ReplayCasePublic, "even
     const q: unknown = body.market_quotes[i];
     const at = `market_quotes[${i}]`;
     if (!isObj(q)) return `${at} is not an object`;
-    const x = exactKeys(q, QUOTE_KEYS, at, QUOTE_OPTIONAL_KEYS);
+    const x = exactKeys(q, QUOTE_KEYS, at);
     if (x) return x;
     if (!isStr(q.market_id)) return `${at}.market_id missing`;
-    if (q.label !== undefined && !isStr(q.label)) return `${at}.label malformed`;
-    if (q.provenance !== undefined && !isWireProvenance(q.provenance)) return `${at}.provenance malformed`;
+    if (!isStr(q.label) || !q.label.trim()) return `${at}.label malformed`;
+    if (!isWireProvenance(q.provenance)) return `${at}.provenance malformed`;
     if (!isVenue(q.venue)) return `${at}.venue malformed`;
     const mismatch = syntheticMismatch(q, at);
     if (mismatch) return mismatch;
@@ -701,6 +702,13 @@ export async function getCaseEvidence(
 }
 
 /**
+ * How long the browser waits for POST /api/replay/run. The server may take longer than 360 s (up to 180 s per model
+ * call x 2 attempts, plus the tagger), so 420 s. When it expires the server may still finish and SAVE the forecast;
+ * the screen says so and asks before a second run (#117 A/B).
+ */
+export const RUN_TIMEOUT_MS = 420_000;
+
+/**
  * POST /api/replay/run `{case_id, variant}` (routes/replay.py). Only ever called from an explicit click: it runs the
  * local model and persists a prediction before any reveal. Generous timeout because a local model can be slow; no
  * progress is invented. In public mode the route is admin-only (401/403 ADMIN_TOKEN_REQUIRED); this client never
@@ -712,7 +720,7 @@ export async function runReplay(
   signal?: AbortSignal,
 ): Promise<ReplayResult<ReplayRun>> {
   const caseId = c.event_id;
-  const res = await request("POST", REPLAY_RUN_PATH, 180_000, signal, { case_id: caseId, variant });
+  const res = await request("POST", REPLAY_RUN_PATH, RUN_TIMEOUT_MS, signal, { case_id: caseId, variant });
   if (!res.ok) return res;
   const run = readReplayRun(res.data);
   if (typeof run === "string") {
@@ -829,17 +837,28 @@ export const selectionStore = {
  * route) supplies one. The persisted copy lives server-side (PredictionStore).
  */
 const runs = new Map<string, ReplayRun>();
+/** Keys whose POST got no answer (timeout or cancel): the server may have saved a forecast we never saw. */
+const unanswered = new Set<string>();
 const runListeners = new Set<() => void>();
 let runsVersion = 0;
+const notifyRuns = () => {
+  runsVersion += 1;
+  runListeners.forEach((l) => l());
+};
 
 export const runStore = {
   key: (eventId: string, variant: ForecastVariant) => `${eventId}|${variant}`,
   get: (eventId: string, variant: ForecastVariant): ReplayRun | undefined => runs.get(`${eventId}|${variant}`),
   put(run: ReplayRun, variant: ForecastVariant) {
     runs.set(`${run.prediction.event_id}|${variant}`, run);
-    runsVersion += 1;
-    runListeners.forEach((l) => l());
+    notifyRuns();
   },
+  /** Record that a run for `key` got no answer; it may still have been saved server-side. */
+  markUnanswered(key: string) {
+    unanswered.add(key);
+    notifyRuns();
+  },
+  isUnanswered: (key: string) => unanswered.has(key),
   version: () => runsVersion,
   subscribe(listener: () => void) {
     runListeners.add(listener);

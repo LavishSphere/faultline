@@ -10,8 +10,10 @@
  * - `services/api/models.py`: `Prediction`, `ApiError`.
  *
  * Nothing here computes a score, a mean, an interval or a verdict. The shape checks confirm that the fields the UI
- * renders are present and typed, and that the API's own display rules (MATH_MODEL §6) hold for each card; a body
- * that fails them is `malformed` → NOT AVAILABLE, never patched up. Keys outside the checked set are not rendered.
+ * renders are present and typed, and spot-check a few of the API's display rules (MATH_MODEL §6) and invariants as
+ * defence in depth (see `checkScorecard`). They cannot prove a card correct: a card that passes is shown as the
+ * API's claim, labeled with its provenance. A body that fails is `malformed` → NOT AVAILABLE, never patched up.
+ * Keys outside the checked set are not rendered.
  *
  * `POST /api/benchmark/compute` (admin only, reveals outcomes) is deliberately NOT wrapped here: the UI never calls it.
  */
@@ -84,6 +86,15 @@ export interface MarketBaselineScores {
   p_yes: number;
   brier: number;
   log_loss: number;
+  /** The API's label for this baseline price (synthetic or market-implied), shown verbatim (#117). */
+  label: string;
+  /** `"<venue>:<market_id>"` frozen before reveal; a `synthetic:` ref is a case author's price, not a market. */
+  ref: string | null;
+}
+
+/** A synthetic-venue baseline ref (PR #111): never a real market. Read from the served ref only. */
+export function isSyntheticRef(ref: string | null | undefined): boolean {
+  return typeof ref === "string" && ref.startsWith("synthetic:");
 }
 
 /** replay.NaiveBaselineScores: scores of the constant forecast p = 0.5. */
@@ -189,7 +200,7 @@ export interface Comparison {
   seed: number;
 }
 
-/** Optional case-set tag (PR #111, not merged): present only on APIs that send it. */
+/** Case-set tag (PR #111). Older snapshots may omit it or send null; neither rejects the response. */
 export type CaseSet = "real" | "synthetic";
 
 /** evaluator.Scorecard. `label`, `verdict` and `caveat` are display strings set by the API (MATH_MODEL §6). */
@@ -212,12 +223,14 @@ export interface Scorecard {
   comparison: Comparison | null;
   /** Why a real-historical scorecard is not OFFICIAL; empty when it is. */
   official_blockers: string[];
-  case_set?: CaseSet;
+  case_set?: CaseSet | null;
 }
 
 /** routes/benchmark.ScorecardRecord: where items[i] came from, and its hashes. */
 export interface ScorecardRecord {
   agent_variant: ScorableVariant;
+  /** real or synthetic case set (PR #111); absent or null on an API that does not send it. */
+  case_set?: CaseSet | null;
   recorded_at: string;
   source: "compute_route" | "record_runs_script";
   /** committed: data/recorded_runs/ in git (official run script); computed: var/scorecards/ on that server. */
@@ -309,6 +322,10 @@ const isNumRecord = (v: unknown): v is Record<string, number> => isObj(v) && Obj
 const isSha = (v: unknown): v is string => isStr(v) && /^[0-9a-f]{64}$/.test(v);
 const isShaOrNull = (v: unknown): v is string | null => v === null || isSha(v);
 const isScorable = (v: unknown): v is ScorableVariant => (SCORABLE_VARIANTS as readonly unknown[]).includes(v);
+const FORECAST_VARIANTS: readonly string[] = ["agent_only", "agent_plus_market", "hosted_comparator"];
+const isForecastVariant = (v: unknown): v is ForecastVariant => isStr(v) && FORECAST_VARIANTS.includes(v);
+const DECISIONS: readonly string[] = ["act", "wait", "hedge"];
+const isCaseSetOrAbsent = (v: unknown) => v === undefined || v === null || v === "real" || v === "synthetic";
 
 const EXCLUSION_REASONS = Object.keys(EXCLUSION_REASON_TEXT);
 
@@ -319,12 +336,18 @@ const EXCLUSION_REASONS = Object.keys(EXCLUSION_REASON_TEXT);
 const MIN_EVENTS = 5;
 const SMALL_SAMPLE_EVENTS = 30;
 const INSUFFICIENT_DATA = "INSUFFICIENT DATA";
+const AGENT_BETTER = "agent better than market";
+const NO_IMPROVEMENT = "No improvement measured";
+/** core/evaluator.py verdict strings: every verdict the API can send. */
+export const KNOWN_VERDICTS: readonly string[] = [AGENT_BETTER, NO_IMPROVEMENT, INSUFFICIENT_DATA];
 
 function checkPrediction(p: unknown, at: string): string | null {
   if (!isObj(p)) return `${at} missing`;
-  for (const k of ["prediction_id", "event_id", "as_of", "agent_model", "variant", "decision", "rationale", "recorded_at"]) {
+  for (const k of ["prediction_id", "event_id", "as_of", "agent_model", "rationale", "recorded_at"]) {
     if (!isStr(p[k])) return `${at}.${k} missing`;
   }
+  if (!isForecastVariant(p.variant)) return `${at}.variant is not a known variant`;
+  if (!isStr(p.decision) || !DECISIONS.includes(p.decision)) return `${at}.decision is not act/wait/hedge`;
   if (!isSha(p.prompt_sha256) || !isSha(p.snapshot_sha256)) return `${at} prompt/snapshot sha256 malformed`;
   if (!isNum(p.p_yes) || p.p_yes < 0 || p.p_yes > 1) return `${at}.p_yes is not a probability`;
   if (!isNum(p.temperature)) return `${at}.temperature missing`;
@@ -378,6 +401,9 @@ export function checkRevealResponse(body: unknown, requestedId: string): string 
     if (!isObj(m) || !isNum(m.p_yes) || m.p_yes < 0 || m.p_yes > 1 || !isNum(m.brier) || !isNum(m.log_loss)) {
       return "baselines.market malformed";
     }
+    // #117: the label is shown verbatim and the ref decides the SYNTHETIC badge, so both must be served.
+    if (!isStr(m.label) || !m.label.trim()) return "baselines.market.label missing";
+    if (!isStrOrNull(m.ref)) return "baselines.market.ref malformed";
   }
   return null;
 }
@@ -390,7 +416,7 @@ function checkScorecard(c: unknown, at: string): string | null {
   if (!(c.provenance === null || (isStr(c.provenance) && PROVENANCE_VALUES.includes(c.provenance)))) {
     return `${at}.provenance is not a known value or null`;
   }
-  if (!isStr(c.agent_variant)) return `${at}.agent_variant missing`;
+  if (!isForecastVariant(c.agent_variant)) return `${at}.agent_variant is not a known variant`;
   if (!isStrArray(c.forecasters) || c.forecasters.length === 0) return `${at}.forecasters missing`;
   if (!isStr(c.market_label)) return `${at}.market_label missing`;
   if (!isInt(c.n_events) || c.n_events < 0) return `${at}.n_events malformed`;
@@ -398,6 +424,8 @@ function checkScorecard(c: unknown, at: string): string | null {
   if (!isObj(c.exclusions_by_reason) || !Object.values(c.exclusions_by_reason).every(isInt)) {
     return `${at}.exclusions_by_reason malformed`;
   }
+  const unknownReason = Object.keys(c.exclusions_by_reason).find((r) => !EXCLUSION_REASONS.includes(r));
+  if (unknownReason !== undefined) return `${at}.exclusions_by_reason has unknown reason "${unknownReason}"`;
   if (!Array.isArray(c.exclusions)) return `${at}.exclusions missing`;
   for (let i = 0; i < c.exclusions.length; i++) {
     const x = c.exclusions[i];
@@ -409,9 +437,10 @@ function checkScorecard(c: unknown, at: string): string | null {
   if (!Array.isArray(c.ignored_predictions)) return `${at}.ignored_predictions missing`;
   for (let i = 0; i < c.ignored_predictions.length; i++) {
     const x = c.ignored_predictions[i];
-    if (!isObj(x) || !isStr(x.prediction_id) || !isStr(x.event_id) || !isStr(x.as_of) || !isStr(x.reason)) {
+    if (!isObj(x) || !isStr(x.prediction_id) || !isStr(x.event_id) || !isStr(x.as_of)) {
       return `${at}.ignored_predictions[${i}] malformed`;
     }
+    if (x.reason !== "persisted_after_outcome_revealed") return `${at}.ignored_predictions[${i}].reason is not known`;
   }
   if (!Array.isArray(c.per_event)) return `${at}.per_event missing`;
   if (c.per_event.length !== c.n_events) return `${at}.per_event length differs from n_events`;
@@ -440,19 +469,35 @@ function checkScorecard(c: unknown, at: string): string | null {
       if (!isNum(k[f])) return `${at}.comparison.${f} missing`;
     }
     if (!isInt(k.n_resamples) || !isInt(k.seed)) return `${at}.comparison n_resamples / seed missing`;
-    if (!isStr(k.agent_variant)) return `${at}.comparison.agent_variant missing`;
+    if (!isForecastVariant(k.agent_variant)) return `${at}.comparison.agent_variant is not a known variant`;
+    if (k.agent_variant !== c.agent_variant) return `${at}.comparison.agent_variant differs from the card's variant`;
     if (k.baseline !== "market" || k.metric !== "brier") return `${at}.comparison baseline/metric not market/brier`;
   }
   if (!isStrArray(c.official_blockers)) return `${at}.official_blockers missing`;
-  if (c.case_set !== undefined && c.case_set !== "real" && c.case_set !== "synthetic") {
-    return `${at}.case_set is not real or synthetic`;
-  }
-  // The API's own display rules (MATH_MODEL §6), checked, never applied: a card that breaks them is not shown.
+  if (!isCaseSetOrAbsent(c.case_set)) return `${at}.case_set is not real, synthetic or null`;
+  // Defence in depth: some of the API's own display rules (MATH_MODEL §6), checked, never applied. A card that
+  // breaks one is not shown. Passing them does not make the card correct; the API remains the source of truth.
+  if (!KNOWN_VERDICTS.includes(c.verdict)) return `${at}.verdict is not a known verdict`;
   if (c.n_events < MIN_EVENTS && (c.verdict !== INSUFFICIENT_DATA || c.summary !== null || c.comparison !== null)) {
     return `${at}: n = ${c.n_events} < ${MIN_EVENTS} but the card is not INSUFFICIENT DATA without summary/comparison`;
   }
+  if (c.n_events >= MIN_EVENTS) {
+    if (!isObj(c.summary) || !isObj(c.comparison)) {
+      return `${at}: n = ${c.n_events} >= ${MIN_EVENTS} but summary or comparison is missing`;
+    }
+    if (c.verdict === INSUFFICIENT_DATA) return `${at}: n = ${c.n_events} >= ${MIN_EVENTS} but the verdict is INSUFFICIENT DATA`;
+    if ((c.verdict === AGENT_BETTER) !== (c.comparison.ci_high as number) < 0) {
+      return `${at}: verdict "${c.verdict}" disagrees with the interval (ci_high < 0 exactly when "${AGENT_BETTER}")`;
+    }
+  }
   if (c.n_events >= MIN_EVENTS && c.n_events < SMALL_SAMPLE_EVENTS && c.caveat === null) {
     return `${at}: n = ${c.n_events} < ${SMALL_SAMPLE_EVENTS} but no small-sample caveat`;
+  }
+  if (c.n_events >= SMALL_SAMPLE_EVENTS && c.caveat !== null) {
+    return `${at}: n = ${c.n_events} >= ${SMALL_SAMPLE_EVENTS} but a small-sample caveat is set`;
+  }
+  if (c.label.startsWith("OFFICIAL") && (c.provenance !== "REAL_HISTORICAL" || c.official_blockers.length > 0)) {
+    return `${at}: labeled OFFICIAL but not REAL_HISTORICAL with no official_blockers`;
   }
   return null;
 }
@@ -467,6 +512,7 @@ function checkRecord(r: unknown, at: string): string | null {
   if (!isStr(r.file) || !r.file) return `${at}.file missing`;
   if (!isSha(r.scorecard_sha256) || !isSha(r.snapshot_sha256)) return `${at} sha256 malformed`;
   if (!isStrArray(r.agent_models)) return `${at}.agent_models malformed`;
+  if (!isCaseSetOrAbsent(r.case_set)) return `${at}.case_set is not real, synthetic or null`;
   return null;
 }
 
