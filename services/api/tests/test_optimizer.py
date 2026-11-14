@@ -497,6 +497,61 @@ def test_tie_break_keeps_no_feasible_plan():
     assert res.max_feasible_cash_floor == approx(22_375.0)
 
 
+# ---------------------------------------------------------------- reporting round-off (issue #147)
+#
+# After the tie-break (#104) some plans sit on C_min = 25,000 in several weeks, and the solver's cash differs between
+# those weeks by ~4e-12. That must not move the reported min-cash week, and B_t = -4e-13 must not be reported.
+
+CHALLENGES = {
+    c["id"]: ScenarioShock.model_validate(c["shock"])
+    for c in json.loads((DATA / "judge_challenges.json").read_text(encoding="utf-8"))["challenges"]
+}
+ALL_NAMED = {
+    **{f"scenario {k}": v for k, v in SCENARIOS.items()},
+    **{f"challenge {k}": v for k, v in CHALLENGES.items()},
+}
+
+
+def test_min_cash_week_ignores_round_off_between_tied_weeks():
+    # Hand case: week 1 is 4e-12 above week 3, which is the exact minimum. Within tolerance -> week 1 (first tie).
+    assert optimizer_module._min_cash_week([25_000.0 + 4e-12, 30_000.0, 25_000.0], 25_000.0) == 1
+    # A real gap (1 cent, far above max(1e-6, 1e-9 x 25,000) = 2.5e-5) is not a tie: the strict minimum wins.
+    assert optimizer_module._min_cash_week([25_000.01, 30_000.0, 25_000.0], 25_000.0) == 3
+
+
+def test_distributor_strike_min_cash_week_is_the_first_week_on_the_floor():
+    # Judge's Challenge "distributor strike": the plan sits on C_min in week 5 and again in week 26. #136 reported
+    # week 26 (C_26 was 4e-12 below C_5); the first tied week is the one to report.
+    for protect in (False, True):
+        res = run(DEMO, CHALLENGES["judge-distributor-strike"], protect)
+        assert res.status == OPTIMAL
+        assert res.min_cash == approx(DEMO.min_cash)
+        tol = max(1e-6, 1e-9 * abs(res.min_cash))
+        tied = [t for t, c in enumerate(res.cash, start=1) if c - res.min_cash <= tol]
+        assert len(tied) >= 2 and tied[-1] == 26  # a genuine tie: more than one week on the floor
+        assert res.min_cash_week == tied[0]
+        assert all(c - res.min_cash > tol for c in res.cash[: res.min_cash_week - 1])
+
+
+@pytest.mark.parametrize("label", sorted(ALL_NAMED))
+def test_reported_paths_have_no_round_off_around_zero(label):
+    # Every named scenario and Judge's Challenge, both modes: no negative revolver balance (plant closure with
+    # payroll cuts allowed used to report B_t = -4.03e-13), and no |x| < ZERO_TOL residue in any reported path.
+    for protect in (False, True):
+        res = run(DEMO, ALL_NAMED[label], protect)
+        if res.status != OPTIMAL:
+            continue
+        assert all(b >= 0.0 for b in res.revolver_balance), label
+        for path in (res.cash, res.revolver_balance, res.inventory):
+            assert all(x == 0.0 or abs(x) >= optimizer_module.ZERO_TOL for x in path), label
+
+
+def test_plant_closure_with_payroll_cuts_reports_zero_revolver_balance():
+    res = run(DEMO, CHALLENGES["judge-plant-closure"], protect=False)
+    assert res.status == OPTIMAL
+    assert min(res.revolver_balance) == 0.0
+
+
 def _long_outage() -> ScenarioShock:
     kappa = [1.0, 1.0] + [0.0] * 12 + [1.0] * 12  # primary supplier down weeks 3-14
     return ScenarioShock(name="outage weeks 3-14", supplier=SupplierOutage(availability=kappa, dependent_share=0.4))
