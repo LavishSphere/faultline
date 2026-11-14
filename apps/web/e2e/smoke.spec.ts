@@ -256,9 +256,31 @@ test.describe("DECISION · ACT / WAIT / HEDGE", () => {
     await expect(page.getByRole("note").getByText(insensitive!.caveat!, { exact: true })).toBeVisible();
   });
 
+  test("no case: no frame is selected and no POST /api/decision is sent until the presenter picks", async ({ page }) => {
+    const sent: Request[] = [];
+    page.on("request", (r) => {
+      if (r.method() === "POST" && r.url() === DECISION_URL) sent.push(r);
+    });
+    await page.goto("/decision/");
+    await expect(page.locator("#decision-frame")).toHaveValue("");
+    await expect(page.getByText("Choose a decision frame", { exact: true }).last()).toBeVisible();
+    await expect(page.locator("[data-policy]")).toHaveCount(0);
+    await page.waitForTimeout(500);
+    expect(sent.length, "POST /api/decision before a frame is picked").toBe(0);
+  });
+
+  test("the SYNTHETIC distributor-depot case opens the supply-disruption frame", async ({ page }) => {
+    await page.goto("/decision/");
+    const answered = page.waitForResponse((r) => isDecisionFor(r.request(), "supply-disruption"));
+    await page.locator("#decision-case").selectOption("synthetic_distributor-depot");
+    await expect(page.locator("#decision-frame")).toHaveValue("supply-disruption");
+    expect((await answered).status()).toBe(200);
+  });
+
   test("no horizontal scroll at 390 px", async ({ page }) => {
     await page.setViewportSize({ width: 390, height: 844 });
     await page.goto("/decision/");
+    await page.locator("#decision-frame").selectOption("supply-disruption");
     await expect(page.locator('[data-policy="HEDGE"]')).toBeVisible();
     const overflow = await page.evaluate(
       () => document.documentElement.scrollWidth - document.documentElement.clientWidth,

@@ -150,6 +150,14 @@ def test_bad_requests_are_coded_422(client, payload):
     assert r.json()["code"] == "VALIDATION_ERROR"
 
 
+def test_missing_business_provenance_is_500_not_a_default(client, data_dir):
+    doc = json.loads((data_dir / "decision_frames.json").read_text(encoding="utf-8"))
+    del doc["business_provenance"]
+    (data_dir / "decision_frames.json").write_text(json.dumps(doc), encoding="utf-8")
+    r = client.get("/api/decision/frames")
+    assert r.status_code == 500 and r.json()["code"] == "DATA_INVALID"
+
+
 def test_missing_frames_file_is_503(client, data_dir):
     (data_dir / "decision_frames.json").unlink()
     for r in (client.get("/api/decision/frames"),

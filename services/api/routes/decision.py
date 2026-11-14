@@ -163,9 +163,16 @@ def _summary(frame: dict[str, Any]) -> FrameSummary:
 )
 def list_frames(settings: Annotated[Settings, Depends(get_settings)]) -> FramesResponse:
     doc = _load_frames(settings)
+    label = doc.get("business_provenance")
+    if label not in ("SYNTHETIC", "ILLUSTRATIVE"):  # a missing or unknown label is never filled in
+        raise RouteError(
+            ErrorCode.DATA_INVALID,
+            f"{FRAMES_FILE} must state `business_provenance` (SYNTHETIC or ILLUSTRATIVE).",
+            status_code=500,
+        )
     return FramesResponse(
         provenance="ILLUSTRATIVE",
-        business_provenance=doc.get("business_provenance", "SYNTHETIC"),
+        business_provenance=label,
         status=str(doc.get("status", "")),
         payoff=str(doc.get("payoff", "")),
         frames=[_summary(f) for f in doc["frames"]],

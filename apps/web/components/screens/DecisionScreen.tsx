@@ -164,7 +164,7 @@ export function DecisionScreen({ step }: { step: Step }) {
           Alternative strategies · ACT / WAIT / HEDGE
         </h2>
         <SplitView
-          eventId={selected ? selected.event_id : null}
+          caseRef={selected ? { event_id: selected.event_id, synthetic: selected.synthetic } : null}
           chosen={valid ? valid.prediction.decision : null}
           agent={valid ? { p: valid.prediction.p_yes, label: "agent p (forecast)" } : null}
           market={marketInput(selected, run, evidence)}

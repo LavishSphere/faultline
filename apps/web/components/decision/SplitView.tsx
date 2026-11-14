@@ -8,9 +8,9 @@ import {
   DECISION_PATH,
   NO_SAFE_POLICY,
   evaluateDecision,
+  frameForCase,
   getDecisionFrames,
   type DecisionResponse,
-  type FrameSummary,
   type FramesResponse,
   type PolicyResult,
 } from "@/lib/decision";
@@ -23,6 +23,9 @@ import type { Decision } from "@/lib/replay";
  * the API served one). Every payoff, E[V], feasibility flag, recommendation and break-even p* is the API's; nothing is
  * computed here. With neither p, one request at p = 0 is made only to read V(a, YES), V(a, NO) and feasibility (they
  * do not depend on p); its E[V] and recommendation are not shown.
+ *
+ * The frame comes from `frameForCase` (explicit id rules). When no rule matches, nothing is selected and no request
+ * is sent until the presenter picks a frame, so a forecast is never plugged into another question's payoffs.
  */
 
 export interface ProbabilityInput {
@@ -37,13 +40,6 @@ const fmtUsd = (v: number | null) => (v === null ? undefined : USD.format(v));
 const fmtP = (p: number) => p.toFixed(4);
 
 type Load<T> = { kind: "loading" } | { kind: "done"; result: ApiResult<T> };
-
-/** Pick a frame whose question type names the case (e.g. "fomc" in "fomc-2026-jul"); presenter can change it. */
-function matchFrame(frames: FrameSummary[], eventId: string | null): string | null {
-  const id = (eventId ?? "").toLowerCase();
-  const hit = frames.find((f) => id.includes(f.question_type.split("_")[0] ?? "\u0000"));
-  return (hit ?? frames[0])?.id ?? null;
-}
 
 function useDecision(frameId: string | null, p: number | null): Load<DecisionResponse> | null {
   const [state, setState] = useState<{ key: string; load: Load<DecisionResponse> } | null>(null);
@@ -61,18 +57,20 @@ function useDecision(frameId: string | null, p: number | null): Load<DecisionRes
 }
 
 export function SplitView({
-  eventId,
+  caseRef,
   chosen,
   agent,
   market,
 }: {
-  eventId: string | null;
+  /** The selected replay case (id + SYNTHETIC flag), used only to choose the frame. */
+  caseRef: { event_id: string; synthetic: boolean } | null;
   chosen: Decision | null;
   agent: ProbabilityInput | null;
   market: ProbabilityInput | null;
 }) {
   const [frames, setFrames] = useState<Load<FramesResponse>>({ kind: "loading" });
-  const [picked, setPicked] = useState<string | null>(null);
+  // The presenter's pick applies to the case it was made on; a new case starts from frameForCase again.
+  const [picked, setPicked] = useState<{ caseId: string | null; frameId: string } | null>(null);
 
   useEffect(() => {
     const ctrl = new AbortController();
@@ -86,7 +84,10 @@ export function SplitView({
     () => (frames.kind === "done" && frames.result.ok ? frames.result.data.frames : []),
     [frames],
   );
-  const frameId = picked && list.some((f) => f.id === picked) ? picked : matchFrame(list, eventId);
+  const caseId = caseRef ? caseRef.event_id : null;
+  const servedIds = list.map((f) => f.id);
+  const pickedHere = picked && picked.caseId === caseId && servedIds.includes(picked.frameId) ? picked.frameId : null;
+  const frameId = pickedHere ?? frameForCase(caseRef, servedIds);
   const frame = list.find((f) => f.id === frameId) ?? null;
 
   const atAgent = useDecision(frameId, agent ? agent.p : null);
@@ -117,9 +118,10 @@ export function SplitView({
           <select
             id="decision-frame"
             value={frameId ?? ""}
-            onChange={(e) => setPicked(e.target.value)}
+            onChange={(e) => setPicked(e.target.value ? { caseId, frameId: e.target.value } : null)}
             className="w-full min-w-0 rounded-md border border-line bg-bg px-2 py-1.5 font-mono text-xs text-text md:w-auto"
           >
+            {frameId === null ? <option value="">Choose a decision frame</option> : null}
             {list.map((f) => (
               <option key={f.id} value={f.id}>
                 {f.id}
@@ -135,6 +137,16 @@ export function SplitView({
         ) : null}
       </div>
 
+      {frame === null ? (
+        <Panel code="B.4-6" title="ACT / WAIT / HEDGE" provenance="NOT AVAILABLE">
+          <p className="font-mono text-sm uppercase tracking-[0.08em] text-muted">Choose a decision frame</p>
+          <p className="mt-1 text-xs leading-relaxed text-muted">
+            {caseRef ? `No decision frame is mapped to ${caseRef.event_id}.` : "No case selected."} Pick the frame that
+            matches the question; no payoff is requested until then.
+          </p>
+        </Panel>
+      ) : null}
+
       {frame && !frame.forecast_sensitive && frame.caveat ? (
         <div role="note" className="rounded-lg border border-risk/60 bg-risk/10 px-4 py-3">
           <p className="font-mono text-[11px] uppercase tracking-[0.14em] text-risk">Forecast does not change the call</p>
@@ -142,10 +154,12 @@ export function SplitView({
         </div>
       ) : null}
 
-      <div className="grid min-w-0 grid-cols-1 gap-3 md:grid-cols-2">
-        <Recommendation which="agent" input={agent} state={atAgent} />
-        <Recommendation which="market" input={market} state={atMarket} />
-      </div>
+      {frame ? (
+        <div className="grid min-w-0 grid-cols-1 gap-3 md:grid-cols-2">
+          <Recommendation which="agent" input={agent} state={atAgent} />
+          <Recommendation which="market" input={market} state={atMarket} />
+        </div>
+      ) : null}
 
       <div className="grid min-w-0 grid-cols-1 gap-4 md:grid-cols-3">
         {(frame?.policies ?? []).map((fp) => {

@@ -152,3 +152,24 @@ export async function evaluateDecision(
   const problem = checkDecision(res.data, req);
   return problem ? { ok: false, kind: "malformed", error: `malformed decision payload: ${problem}` } : res;
 }
+
+/**
+ * Which decision frame a replay case belongs to, by explicit rule on its id (cases carry no question type yet).
+ * `fomc-*` -> the FOMC frame; ids naming CPI -> the CPI frame; SYNTHETIC cases about a distributor / supplier / depot
+ * -> the supply-disruption frame. Anything else -> null: no frame is selected and no POST /api/decision is sent until
+ * the presenter picks one, so a forecast is never plugged into another question's payoffs. The frame must also be in
+ * the served listing.
+ */
+export function frameForCase(
+  c: { event_id: string; synthetic?: boolean } | null,
+  servedFrameIds: readonly string[],
+): string | null {
+  if (!c) return null;
+  const id = c.event_id.toLowerCase();
+  const synthetic = c.synthetic === true || id.startsWith("synthetic");
+  let frame: string | null = null;
+  if (/^fomc-/.test(id)) frame = "fomc-rate-decision";
+  else if (/(^|[-_])cpi([-_]|$)/.test(id)) frame = "cpi-surprise";
+  else if (synthetic && /distributor|supplier|depot/.test(id)) frame = "supply-disruption";
+  return frame !== null && servedFrameIds.includes(frame) ? frame : null;
+}

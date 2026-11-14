@@ -8,7 +8,7 @@
     "start": "next start",
     "lint": "eslint .",
     "typecheck": "tsc --noEmit",
-    "test": "node --import ./lib/test-hooks.mjs --test components/cascade/scenarioInputs.test.mjs lib/contracts.test.mjs",
+    "test": "node --import ./lib/test-hooks.mjs --test components/cascade/scenarioInputs.test.mjs lib/contracts.test.mjs lib/decision.test.mjs",
     "e2e": "playwright test"
   },
   "dependencies": {

@@ -276,7 +276,7 @@ $$
 p^* = \frac{V(b,0) - V(a,0)}{\big(V(a,1) - V(a,0)\big) - \big(V(b,1) - V(b,0)\big)}.
 $$
 $p^*$ is NOT AVAILABLE when fewer than two policies are feasible in both states, when the denominator is $0$ (within
-\$10^{-6}$: the two lines are parallel, so the ranking never depends on $p$), or when $p^* \notin [0,1]$.
+$10^{-6}$ dollars: the two lines are parallel, so the ranking never depends on $p$), or when $p^* \notin [0,1]$.
 
 ## 9. Golden test cases (hand-checked; must be in `tests/test_financials.py`)
 
