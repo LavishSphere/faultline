@@ -211,3 +211,80 @@ test.describe("REVEAL", () => {
     expect(overflow, "no horizontal page scroll at 390 px").toBeLessThanOrEqual(0);
   });
 });
+
+test.describe("DECISION · ACT / WAIT / HEDGE", () => {
+  const DECISION_URL = `${E2E_API_BASE}/api/decision`;
+  const FRAMES_URL = `${E2E_API_BASE}/api/decision/frames`;
+  const isDecisionFor = (r: Request, frameId: string) =>
+    r.method() === "POST" &&
+    r.url() === DECISION_URL &&
+    (r.postDataJSON() as { frame_id?: string } | null)?.frame_id === frameId;
+  /** Same display formatting as components/decision/SplitView.tsx: formatting only, no arithmetic. */
+  const USD2 = new Intl.NumberFormat("en-US", { style: "currency", currency: "USD", maximumFractionDigits: 2 });
+
+  test("payoffs equal the API for every policy; the forecast-insensitive caveat is shown verbatim", async ({ page }) => {
+    await page.goto("/decision/");
+    const select = page.locator("#decision-frame");
+    await expect(select).toBeVisible();
+
+    const answered = page.waitForResponse((r) => isDecisionFor(r.request(), "supply-disruption"));
+    await select.selectOption("supply-disruption");
+    const response = await answered;
+    expect(response.status()).toBe(200);
+
+    const direct = await page.request.post(DECISION_URL, { data: response.request().postDataJSON() });
+    expect(direct.status(), "direct POST /api/decision").toBe(200);
+    const body = (await direct.json()) as {
+      provenance: string;
+      policies: { name: string; value_if_yes: number; value_if_no: number }[];
+    };
+    expect(body.provenance).toBe("SIMULATED");
+    expect(body.policies.map((p) => p.name)).toEqual(["ACT", "WAIT", "HEDGE"]);
+    for (const p of body.policies) {
+      const col = page.locator(`[data-policy="${p.name}"]`);
+      await expect(col.getByText(USD2.format(p.value_if_yes), { exact: true })).toBeVisible();
+      await expect(col.getByText(USD2.format(p.value_if_no), { exact: true })).toBeVisible();
+      await expect(col.getByText(/^SIMULATED/).first()).toBeVisible();
+    }
+
+    const frames = (await (await page.request.get(FRAMES_URL)).json()) as {
+      frames: { id: string; forecast_sensitive: boolean; caveat: string | null }[];
+    };
+    const insensitive = frames.frames.find((f) => !f.forecast_sensitive && f.caveat);
+    expect(insensitive, "at least one frame carries a caveat").toBeTruthy();
+    await select.selectOption(insensitive!.id);
+    await expect(page.getByRole("note").getByText(insensitive!.caveat!, { exact: true })).toBeVisible();
+  });
+
+  test("no case: no frame is selected and no POST /api/decision is sent until the presenter picks", async ({ page }) => {
+    const sent: Request[] = [];
+    page.on("request", (r) => {
+      if (r.method() === "POST" && r.url() === DECISION_URL) sent.push(r);
+    });
+    await page.goto("/decision/");
+    await expect(page.locator("#decision-frame")).toHaveValue("");
+    await expect(page.getByText("Choose a decision frame", { exact: true }).last()).toBeVisible();
+    await expect(page.locator("[data-policy]")).toHaveCount(0);
+    await page.waitForTimeout(500);
+    expect(sent.length, "POST /api/decision before a frame is picked").toBe(0);
+  });
+
+  test("the SYNTHETIC distributor-depot case opens the supply-disruption frame", async ({ page }) => {
+    await page.goto("/decision/");
+    const answered = page.waitForResponse((r) => isDecisionFor(r.request(), "supply-disruption"));
+    await page.locator("#decision-case").selectOption("synthetic_distributor-depot");
+    await expect(page.locator("#decision-frame")).toHaveValue("supply-disruption");
+    expect((await answered).status()).toBe(200);
+  });
+
+  test("no horizontal scroll at 390 px", async ({ page }) => {
+    await page.setViewportSize({ width: 390, height: 844 });
+    await page.goto("/decision/");
+    await page.locator("#decision-frame").selectOption("supply-disruption");
+    await expect(page.locator('[data-policy="HEDGE"]')).toBeVisible();
+    const overflow = await page.evaluate(
+      () => document.documentElement.scrollWidth - document.documentElement.clientWidth,
+    );
+    expect(overflow).toBeLessThanOrEqual(0);
+  });
+});

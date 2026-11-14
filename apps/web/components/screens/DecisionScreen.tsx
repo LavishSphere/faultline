@@ -6,7 +6,7 @@ import { EvidenceDrawer } from "../EvidenceDrawer";
 import { FinancialReadout } from "../FinancialReadout";
 import { IntegrityPanel } from "../integrity/IntegrityPanel";
 import { Field, Panel } from "../Panel";
-import { DecisionFrames } from "../replay/DecisionFrames";
+import { SplitView } from "../decision/SplitView";
 import { MarketAtCutoff, marketSource } from "../replay/MarketAtCutoff";
 import { ModelReadiness } from "../replay/ModelReadiness";
 import { CaseBadges, CutoffLine, FailureNote, Hash, InFlight, TextButton } from "../replay/ReplayParts";
@@ -37,7 +37,7 @@ import type { Step } from "@/lib/steps";
  *
  * A run happens only when the presenter clicks Run; every failure (public-mode admin gate, model down, refused
  * prompt, rejected answer) is shown as what it is, never as a canned forecast. A run the server flags as saved after a
- * reveal carries a visible "not blind" caveat. ACT / WAIT / HEDGE payoffs are #45's and are NOT AVAILABLE here.
+ * reveal carries a visible "not blind" caveat. ACT / WAIT / HEDGE payoffs come from POST /api/decision (#55).
  */
 export function DecisionScreen({ step }: { step: Step }) {
   const { load, retry } = useReplayCases();
@@ -163,7 +163,12 @@ export function DecisionScreen({ step }: { step: Step }) {
         <h2 id="branches-heading" className="kicker">
           Alternative strategies · ACT / WAIT / HEDGE
         </h2>
-        <DecisionFrames chosen={valid ? valid.prediction.decision : null} />
+        <SplitView
+          caseRef={selected ? { event_id: selected.event_id, synthetic: selected.synthetic } : null}
+          chosen={valid ? valid.prediction.decision : null}
+          agent={valid ? { p: valid.prediction.p_yes, label: "agent p (forecast)" } : null}
+          market={marketInput(selected, run, evidence)}
+        />
       </section>
 
       <IntegrityPanel code="B.8" caseId={caseId} predictionId={predictionId} />
@@ -179,6 +184,14 @@ export function DecisionScreen({ step }: { step: Step }) {
       ) : null}
     </div>
   );
+}
+
+/** The market-implied p the API served for this case (run baseline, else the evidence route), or null. */
+function marketInput(c: ReplayCasePublic | null, run: ReplayRun | null, evidence: EvidenceState) {
+  const m = c ? marketSource(run, evidence)?.market : undefined;
+  if (!m || m.status !== "AVAILABLE" || m.p_yes === null) return null;
+  const synthetic = isSyntheticQuote(m, c);
+  return { p: m.p_yes, label: synthetic ? "market p (SYNTHETIC price)" : "market p (market-implied, price-derived)" };
 }
 
 function marketBadge(c: ReplayCasePublic | null, run: ReplayRun | null, evidence: EvidenceState) {
