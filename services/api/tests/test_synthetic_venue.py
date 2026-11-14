@@ -17,7 +17,10 @@ import pytest
 from fastapi.testclient import TestClient
 from pydantic import ValidationError
 from test_replay_seal import Clock, sealed_dict, write_sealed
+from test_routes_replay import gate_case_file, make_world
+from test_routes_replay import run as run_replay
 from test_scoring import _pred, rows_for, scored_world
+from test_temporal_gate import AS_OF as GATE_AS_OF
 from test_temporal_gate import COLLECTED, make_case, make_quote, quote_dict, write_case_file
 
 from core import store as store_module
@@ -29,6 +32,7 @@ from core.evaluator import (
     _synthetic_exempt_events,
     build_scorecard,
     event_case_sets,
+    market_label_for,
 )
 from core.store import PredictionStore
 from core.temporal_gate import CaseRecord, EvidenceStore, SyntheticQuoteOnRealCase
@@ -767,3 +771,36 @@ def test_a_forecast_whose_context_is_in_the_other_population_is_never_revealed(t
     assert event_case_sets(None, vault.store.all_records()) == {"synthetic_sv_000": "real"}
     card = build_scorecard(vault, case_set="real")
     assert card.exclusions_by_reason == {"context_mismatch": 1} and _reveal_rows(vault.store) == []
+
+
+# ---------------------------------------------------------------- reveal: the market baseline's label (#117)
+
+
+def test_reveal_labels_a_synthetic_market_baseline_from_its_frozen_ref(tmp_path, monkeypatch):
+    """The reveal's market baseline carries the ref frozen before reveal and the label that ref implies, so the UI
+    never shows a synthetic price as "market-implied (price-derived)"."""
+    monkeypatch.delenv("FAULTLINE_MODE", raising=False)
+    world = make_world(tmp_path, monkeypatch)
+    payload = gate_case_file(market_quote_id=REF)
+    payload["market_quotes"] = [syn_quote_dict(GATE_AS_OF - timedelta(hours=2))]
+    world.write_case(payload)
+    client = world.client()
+    ran = run_replay(client, "agent_plus_market")
+    assert ran.status_code == 200, ran.text
+    assert ran.json()["market_at_cutoff"]["ref"] == REF
+    pid = ran.json()["prediction"]["prediction_id"]
+
+    resp = client.post(f"/api/replay/{pid}/reveal")
+    assert resp.status_code == 200, resp.text
+    market = resp.json()["baselines"]["market"]
+    assert market["ref"] == REF == PredictionStore(world.db).get_record(pid).context.market_baseline_ref
+    assert market["label"] == SYNTHETIC_QUOTE_LABEL
+    assert market["p_yes"] == 0.35
+    assert "price-derived" not in json.dumps(market)
+
+
+def test_reveal_market_label_is_the_scorecard_label_rule_for_one_ref():
+    """One rule for the reveal and the scorecard: market_label_for over the single frozen ref (null ref: none)."""
+    assert market_label_for([REF]) == SYNTHETIC_QUOTE_LABEL
+    assert market_label_for(["kalshi:SYNTH-FED-H25"]) == MARKET_LABEL
+    assert market_label_for([]) == MARKET_LABEL

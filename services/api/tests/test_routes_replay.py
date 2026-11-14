@@ -39,6 +39,7 @@ from core.evaluator import OutcomeVault, build_scorecard
 from core.store import PredictionStore, record_sha256
 from core.temporal_gate import EvidenceStore
 from main import create_app
+from markets.base import MARKET_LABEL
 from routes import replay
 
 OUTCOME_LIKE = re.compile(r"outcome|resolution|resolved|settle|result|winner|final_price", re.IGNORECASE)
@@ -483,8 +484,12 @@ def test_reveal_contract_and_scores(world):
     assert body["scores"]["accuracy_at_0_5"] == 1.0
     assert set(body["baselines"]) == {"market", "naive"}
     market, naive = body["baselines"]["market"], body["baselines"]["naive"]
-    assert set(market) == {"p_yes", "brier", "log_loss"} and set(naive) == {"brier", "log_loss"}
+    assert set(market) == {"p_yes", "brier", "log_loss", "label", "ref"} and set(naive) == {"brier", "log_loss"}
     assert market["p_yes"] == 0.56  # the gate's pre-reveal baseline, not anything chosen now
+    # The ref frozen in the prediction context before reveal, and the label that ref implies (#117).
+    frozen = PredictionStore(world.db).get_record(pred["prediction_id"]).context.market_baseline_ref
+    assert market["ref"] == frozen == MARKET_REF
+    assert market["label"] == MARKET_LABEL
     assert market["brier"] == pytest.approx((0.56 - 1) ** 2) and market["log_loss"] == pytest.approx(-math.log(0.56))
     assert naive["brier"] == pytest.approx(0.25) and naive["log_loss"] == pytest.approx(math.log(2))
     assert len(PredictionStore(world.db).reveal_times(pred["prediction_id"])) == 1

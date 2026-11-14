@@ -52,10 +52,19 @@ from agents.skeptic import SkepticProblem
 from config import Settings, get_settings
 from core import provenance as prov
 from core import store as store_module
-from core.evaluator import OutcomeVault, SealedOutcome, SealedOutcomeInvalid, brier, correct_at_half, log_loss
+from core.evaluator import (
+    OutcomeVault,
+    SealedOutcome,
+    SealedOutcomeInvalid,
+    brier,
+    correct_at_half,
+    log_loss,
+    market_label_for,
+)
 from core.store import HashMismatch, PredictionExists, PredictionStore
 from core.temporal_gate import MarketNotAvailable, ModelInput
 from errors import FaultlineError
+from markets.base import MarketLabel
 from models import ApiError, ErrorCode, Identifier, Prediction, Provenance
 from routes import CodedRoute, FieldIssue, RouteError
 from routes.cases import MarketAtCutoff, coded_responses, market_at_cutoff, require_case_store
@@ -347,6 +356,13 @@ class MarketBaselineScores(BaseModel):
     p_yes: float = Field(description="Market-implied probability (price-derived) fixed by the gate before reveal.")
     brier: float
     log_loss: float
+    label: MarketLabel = Field(
+        description="Label of this baseline price, set from its frozen ref by core.evaluator.market_label_for: "
+        "SYNTHETIC_QUOTE_LABEL for a synthetic: ref, else MARKET_LABEL. Shown verbatim."
+    )
+    ref: str | None = Field(
+        description='"<venue>:<market_id>" of the baseline quote, frozen in the prediction context before reveal.'
+    )
 
 
 class NaiveBaselineScores(BaseModel):
@@ -415,6 +431,7 @@ def reveal_prediction(prediction_id: str) -> RevealResponse:
     assert rec is not None  # reveal() succeeded, so it is persisted
     p, y = rev.prediction.p_yes, rev.y
     market_p = rec.context.market_baseline_p_yes
+    market_ref = rec.context.market_baseline_ref
     return RevealResponse(
         prediction=rev.prediction,
         y=y,
@@ -430,7 +447,13 @@ def reveal_prediction(prediction_id: str) -> RevealResponse:
         baselines=Baselines(
             market=None
             if market_p is None
-            else MarketBaselineScores(p_yes=market_p, brier=brier(market_p, y), log_loss=log_loss(market_p, y)),
+            else MarketBaselineScores(
+                p_yes=market_p,
+                brier=brier(market_p, y),
+                log_loss=log_loss(market_p, y),
+                label=market_label_for([] if market_ref is None else [market_ref]),
+                ref=market_ref,
+            ),
             naive=NaiveBaselineScores(brier=brier(NAIVE_P_YES, y), log_loss=log_loss(NAIVE_P_YES, y)),
         ),
     )
