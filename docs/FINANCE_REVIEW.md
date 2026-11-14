@@ -2,7 +2,7 @@
 
 Prepared by Claude Code at the finance owner's request (2026-11-14). Every check below was done by the agent against the code, API and MATH_MODEL; Yaseen has not yet reviewed it by hand.
 
-**Sign-off:** ☐ Yaseen (finance owner) has read this review and agrees with each ✓ and each suggested fix.
+**Sign-off:** ☑ Yaseen (finance owner) has read this review and agrees with each ✓ and each suggested fix (2026-11-14).
 
 ---
 
@@ -271,8 +271,12 @@ The lead asked Yaseen to confirm each frame's levers and amounts in `services/ap
   2. Fed and CPI frames: ACT wins at every p because a purchase cut is free cash in the MVP model. Is that acceptable for
      the demo with a clearer caveat (F6), or should V net out the non-cash disruption costs c (a §8 formula change)?
   3. Supply frame: should YES mean a 3-week outage when the synthetic case's YES starts at 5 consecutive days (F8)?
-- **Status:** `decision_frames.json` still says "Proposal … Not signed off". This review does not change it; that is
-  Yaseen's call, in the separate PR the lead described.
+- **Status: signed off.** On 2026-11-14 Yaseen signed off `decision_frames.json`: every frame's levers, fees and amounts,
+  and the §8 break-even formula, plus the payroll convention (no policy cuts payroll). The file's `status` now says so (this PR). The sign-off also
+  covers the stock-out version of the frames in PR #141 (#103), whose approach Yaseen chose on #103 (stock-out cost,
+  plus a 1% demand effect in the Fed frame's YES state), with its parameters σ = 1, θ = 0.20, c_u = 0.01 and
+  restaurant σ = 0.5. If #141 merges, question 2 (F6) is answered by it: purchase cuts are no longer free cash.
+  Questions 1 (F5) and 3 (F8), and the break-even scope (F7), stay open as known, non-blocking points.
 
 ## Wording that could mislead a judge (consolidated)
 

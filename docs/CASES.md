@@ -1,11 +1,12 @@
-# Blind Replay cases (issues #20, #48)
+# Blind Replay cases (issues #20, #48, #67)
 
 Real, already-resolved yes/no events used by the Blind Replay (SPEC §4, §5; `docs/EVALUATION_PROTOCOL.md`).
 Case files: `services/api/data/demo_cases/<event_id>.json`. Sealed results: `services/api/data/sealed_outcomes/<event_id>.json`
 (read only by the evaluator). This document never states which way an included case resolved.
 
-Parts 1 and 2 cover the real cases. The one synthetic fallback case (issue #48) is not a real event; it has its
-own section at the end and is never pooled with the real cases.
+Parts 1 and 2 cover the first four real cases (#20). Part 3 (#67) extends the set with one rule to every eligible
+FOMC meeting from January 2025 to October 2026 (15 cases, the first four included). The one synthetic fallback case
+(issue #48) is not a real event; it has its own section at the end and is never pooled with the real cases.
 
 ## Part 1: Selection rule (pre-registered)
 
@@ -209,6 +210,186 @@ which cases or evidence were picked. It does not make the curator blind.
   previous meeting's statement and minutes, so the curator saw earlier cases' results before writing the sealed
   files. Selection was already fixed by then (Part 1).
 - **One event family, one central bank:** four correlated FOMC decisions are not a broad macro sample.
+
+## Part 3: Every eligible 2025-2026 FOMC meeting (issue #67)
+
+Part 1 took the four most recent meetings, so `n = 4` and the scoreboard can only say `INSUFFICIENT DATA`. Issue #67
+widens the window with one rule. It takes every meeting the rule yields and lists any meeting it drops, with the reason.
+
+### Rule
+
+1. **Event family:** the same as Part 1 rule 1 (decisions on the federal funds target range at **scheduled** FOMC
+   meetings on the Federal Reserve's FOMC calendar). Unscheduled meetings, notation votes and conference calls are
+   not cases.
+2. **Window:** every scheduled meeting whose policy statement release date is between 2025-01-01 and 2026-10-31
+   (January 2025 to October 2026), inclusive.
+3. **Eligibility: priced on both Kalshi and Polymarket 7 days before** (issue #67). A saved snapshot under
+   `services/api/data/raw/` (from #12 or #66) must hold at least one priced quote with `as_of − 24h ≤ ts ≤ as_of`
+   for **both** (a) the Kalshi "no change" leg `KXFEDDECISION-<meeting>-H0` and (b) the Polymarket "no change"
+   market of the same meeting. Both legs come from the pairing in `services/api/data/raw/candidate_plan_51.json`
+   (see `docs/CANDIDATE_MARKETS.md`). A meeting that fails this is listed as excluded: "not priced on both venues at
+   T−7".
+4. **Everything else is unchanged from Part 1:** the one binary question (rule 3, hold = YES), `as_of` (rule 4),
+   the fixed four-document evidence list and excerpt method (rule 5), the Kalshi benchmark fixed by
+   `market_quote_id` (rule 6), the only allowed exclusion reasons (rule 7), contamination (rule 8) and no tuning
+   (rule 9). In rule 6, "#12 snapshots" now means "#12 or #66 snapshots". This issue collected no new raw files.
+5. **The four Part 2 cases are reused unchanged.** They are not rebuilt or duplicated.
+
+**Order of work, stated plainly.** The window and the eligibility test are copied from issue #67, which a lead wrote
+on 2026-11-13 before this part was applied. The curator (Claude) did not choose them. The curator did write this
+part after #66 (market snapshots) and #90 (evidence drafts) were merged, and after reading the Part 2 cases. So it
+is not pre-registered in the strict sense that Part 1 is. What limits the curator's influence is that the rule takes
+every meeting in a fixed window and has a single mechanical test.
+
+### Step 1: which meetings qualify (rules 1-3, 7)
+
+The FOMC calendar (fetched 2026-11-14) lists eight scheduled meetings in 2025 (January 28-29, March 18-19, May 6-7,
+June 17-18, July 29-30, September 16-17, October 28-29, December 9-10) and eight in 2026, of which seven fall in the
+window (January 27-28, March 17-18, April 28-29, June 16-17, July 28-29, September 15-16, October 27-28). That makes
+15 meetings. The eligibility test was run on the saved snapshots with the #12/#66 parsers, `normalize_quotes` and
+`select_quote` (raw bytes taken from git, each checked against its manifest SHA-256).
+
+| Meeting | `event_id` | `as_of` (UTC) | Priced on both venues at T−7 (rule 3) | Status | Market baseline in the case file | Evidence items |
+|---|---|---|---|---|---|---|
+| Jan 28-29, 2025 | `fomc-2025-jan` | 2025-01-22T00:00:00Z | yes | included (new) | available | 4 |
+| Mar 18-19, 2025 | `fomc-2025-mar` | 2025-03-12T00:00:00Z | yes | included (new) | available | 4 |
+| May 6-7, 2025 | `fomc-2025-may` | 2025-04-30T00:00:00Z | yes | included (new) | available | 4 |
+| Jun 17-18, 2025 | `fomc-2025-jun` | 2025-06-11T00:00:00Z | yes | included (new) | available | 4 |
+| Jul 29-30, 2025 | `fomc-2025-jul` | 2025-07-23T00:00:00Z | yes | included (new) | available | 4 |
+| Sep 16-17, 2025 | `fomc-2025-sep` | 2025-09-10T00:00:00Z | yes | included (new) | available | 4 |
+| Oct 28-29, 2025 | `fomc-2025-oct` | 2025-10-22T00:00:00Z | yes | included (new) | available | 4 |
+| Dec 9-10, 2025 | `fomc-2025-dec` | 2025-12-03T00:00:00Z | yes | included (new) | available | 4 |
+| Jan 27-28, 2026 | `fomc-2026-jan` | 2026-01-21T00:00:00Z | yes | included (new) | available | 4 |
+| Mar 17-18, 2026 | `fomc-2026-mar` | 2026-03-11T00:00:00Z | yes | included (new) | available | 4 |
+| Apr 28-29, 2026 | `fomc-2026-apr` | 2026-04-22T00:00:00Z | yes | included (new) | available | 4 |
+| Jun 16-17, 2026 | `fomc-2026-jun` | 2026-06-10T00:00:00Z | yes (#66 snapshots) | included (Part 2, unchanged) | `NOT AVAILABLE` (file built before #66) | 4 |
+| Jul 28-29, 2026 | `fomc-2026-jul` | 2026-07-22T00:00:00Z | yes | included (Part 2, unchanged) | available | 4 |
+| Sep 15-16, 2026 | `fomc-2026-sep` | 2026-09-09T00:00:00Z | yes (#66 snapshots) | included (Part 2, unchanged) | `NOT AVAILABLE` (file built before #66) | 4 |
+| Oct 27-28, 2026 | `fomc-2026-oct` | 2026-10-21T00:00:00Z | yes (#66 snapshots) | included (Part 2, unchanged) | `NOT AVAILABLE` (file built before #66) | 4 |
+
+**Exclusions: none.** All 15 meetings pass rule 3, and none fails rule 7 (a), (b) or (c).
+
+**Considered, not cases:** the August 22, 2025 notation vote (rule 1: it approved the Statement on Longer-Run Goals
+and Monetary Policy Strategy and was not a scheduled rate meeting); December 8-9, 2026 (outside the window and not
+held yet); December 17-18, 2024 (outside the window; its statement and minutes are evidence for `fomc-2025-jan`).
+
+**June, September and October 2026.** #66 saved T−7 snapshots for these meetings on both venues (Kalshi
+`KXFEDDECISION-26JUN-H0`, `-26SEP-H0`, `-26OCT-H0`; Polymarket `906974`, `2252244`, `2589812`), so they pass rule 3. Their
+case files were built under Part 2 before those snapshots existed, and this issue reuses them unchanged, so they
+still have `market_quotes: []` and the gate reports their market baseline `NOT AVAILABLE` (Part 1 rule 6). Adding the
+quotes would change each file's `snapshot_hash` and `case_sha256`, so it is left as a follow-up for a lead to decide.
+
+### Market quotes in the new case files
+
+Each new file holds every saved quote with `as_of − 24h ≤ ts ≤ as_of` for both markets (Kalshi first, then
+Polymarket). The gate selects the last quote per market. The scored baseline is the Kalshi market named in
+`market_quote_id` (`kalshi:<market_id>`), fixed in the file. Prices are a **market-implied probability (price-derived;
+affected by fees, spread, liquidity), not a true probability**. Nothing was typed by hand, interpolated or estimated.
+
+| Case | Kalshi quote selected at `as_of` (benchmark) | Polymarket quote selected at `as_of` | Quotes in file (Kalshi / Polymarket) |
+|---|---|---|---|
+| `fomc-2025-jan` | `KXFEDDECISION-25JAN-H0` ("No change"): midpoint **0.985** (bid 0.9800, ask 0.9900), candle ending 2025-01-21T23:00:00Z | `512324`: price-history point **0.978** at 2025-01-21T23:00:04Z | 3 / 24 |
+| `fomc-2025-mar` | `KXFEDDECISION-25MAR-H0` ("No change"): midpoint **0.975** (bid 0.9700, ask 0.9800), candle ending 2025-03-11T17:00:00Z | `516010`: price-history point **0.9655** at 2025-03-11T23:00:05Z | 10 / 24 |
+| `fomc-2025-may` | `KXFEDDECISION-25MAY-H0` ("No change"): midpoint **0.865** (bid 0.8600, ask 0.8700), candle ending 2025-04-30T00:00:00Z | `519778`: price-history point **0.895** at 2025-04-29T23:00:06Z | 21 / 24 |
+| `fomc-2025-jun` | `KXFEDDECISION-25JUN-H0` ("No change"): midpoint **0.97** (bid 0.9600, ask 0.9800), candle ending 2025-06-11T00:00:00Z | `521836`: price-history point **0.9735** at 2025-06-10T23:00:07Z | 21 / 24 |
+| `fomc-2025-jul` | `KXFEDDECISION-25JUL-H0` ("Fed maintains rate"): midpoint **0.945** (bid 0.9400, ask 0.9500), candle ending 2025-07-23T00:00:00Z | `528974`: price-history point **0.9555** at 2025-07-22T23:00:09Z | 22 / 24 |
+| `fomc-2025-sep` | `KXFEDDECISION-25SEP-H0` ("Fed maintains rate"): midpoint **0.055** (bid 0.0500, ask 0.0600), candle ending 2025-09-10T00:00:00Z | `542539`: price-history point **0.04** at 2025-09-09T23:00:10Z | 25 / 24 |
+| `fomc-2025-oct` | `KXFEDDECISION-25OCT-H0` ("Fed maintains rate"): midpoint **0.025** (bid 0.0200, ask 0.0300), candle ending 2025-10-22T00:00:00Z | `553812`: price-history point **0.0225** at 2025-10-21T23:00:17Z | 25 / 24 |
+| `fomc-2025-dec` | `KXFEDDECISION-25DEC-H0` ("Fed maintains rate"): midpoint **0.085** (bid 0.0800, ask 0.0900), candle ending 2025-12-03T00:00:00Z | `570362`: price-history point **0.075** at 2025-12-02T23:00:28Z | 25 / 24 |
+| `fomc-2026-jan` | `KXFEDDECISION-26JAN-H0` ("Fed maintains rate"): midpoint **0.965** (bid 0.9600, ask 0.9700), candle ending 2026-01-21T00:00:00Z | `601699`: price-history point **0.972** at 2026-01-20T23:00:18Z | 25 / 24 |
+| `fomc-2026-mar` | `KXFEDDECISION-26MAR-H0` ("Fed maintains rate"): midpoint **0.985** (bid 0.9800, ask 0.9900), candle ending 2026-03-11T00:00:00Z | `654414`: price-history point **0.9885** at 2026-03-10T23:00:30Z | 25 / 24 |
+| `fomc-2026-apr` | `KXFEDDECISION-26APR-H0` ("Fed maintains rate"): midpoint **0.985** (bid 0.9800, ask 0.9900), candle ending 2026-04-22T00:00:00Z | `669662`: price-history point **0.9935** at 2026-04-21T23:00:43Z | 25 / 11 |
+
+Venue rules compared with ours: Kalshi YES means "a Hike of 0bps", and Polymarket measures the change in the upper
+bound only. Our rule needs **both** bounds unchanged. The three agree unless one bound moves alone. A cancelled meeting
+is treated differently: for the January to June 2025 Kalshi markets every strike resolves No, later Kalshi markets
+resolve "Fed maintains rate" Yes, and Polymarket resolves "No change" if no statement is released by the end of the
+next meeting (`docs/CANDIDATE_MARKETS.md`, "FOMC rule edge cases"; #66 read the rule text and it was not re-read
+here). Kalshi markets are thin in early 2025: `fomc-2025-jan` has only 3 Kalshi quotes in the 24-hour window, and the
+`fomc-2025-mar` quote is from 17:00Z the day before `as_of`. Both are inside the 24-hour staleness limit.
+
+### Step 2: evidence (rule 5, same method as Part 2)
+
+Each new case has exactly the four documents of rule 5. The excerpts were made by the same extraction code as Part 2,
+which was first checked to reproduce all 16 Part 2 excerpts byte for byte (same `content_sha256`). Release times
+are the ones printed on the documents. The Fed prints "For release at 2:00 p.m. EST" or "EDT" (19:00Z or 18:00Z).
+BLS prints "8:30 a.m. (ET)", converted with US daylight-saving dates (13:30Z or 12:30Z).
+
+| Case | Previous FOMC statement | Previous FOMC minutes | BLS CPI release | BLS Employment Situation |
+|---|---|---|---|---|
+| `fomc-2025-jan` | Dec 18 2024, 19:00Z | Jan 8 2025, 19:00Z (December 17-18, 2024 minutes) | Jan 15 2025, 13:30Z (December 2024 CPI) | Jan 10 2025, 13:30Z (December 2024) |
+| `fomc-2025-mar` | Jan 29 2025, 19:00Z | Feb 19 2025, 19:00Z (January 28-29, 2025 minutes) | Feb 12 2025, 13:30Z (January 2025 CPI) | Mar 7 2025, 13:30Z (February 2025) |
+| `fomc-2025-may` | Mar 19 2025, 18:00Z | Apr 9 2025, 18:00Z (March 18-19, 2025 minutes) | Apr 10 2025, 12:30Z (March 2025 CPI) | Apr 4 2025, 12:30Z (March 2025) |
+| `fomc-2025-jun` | May 7 2025, 18:00Z | May 28 2025, 18:00Z (May 6-7, 2025 minutes) | May 13 2025, 12:30Z (April 2025 CPI) | Jun 6 2025, 12:30Z (May 2025) |
+| `fomc-2025-jul` | Jun 18 2025, 18:00Z | Jul 9 2025, 18:00Z (June 17-18, 2025 minutes) | Jul 15 2025, 12:30Z (June 2025 CPI) | Jul 3 2025, 12:30Z (June 2025) |
+| `fomc-2025-sep` | Jul 30 2025, 18:00Z | Aug 20 2025, 18:00Z (July 29-30, 2025 minutes) | Aug 12 2025, 12:30Z (July 2025 CPI) | Sep 5 2025, 12:30Z (August 2025) |
+| `fomc-2025-oct` | Sep 17 2025, 18:00Z | Oct 8 2025, 18:00Z (September 16-17, 2025 minutes) | Sep 11 2025, 12:30Z (August 2025 CPI) | Sep 5 2025, 12:30Z (August 2025) |
+| `fomc-2025-dec` | Oct 29 2025, 18:00Z | Nov 19 2025, 19:00Z (October 28-29, 2025 minutes) | Oct 24 2025, 12:30Z (September 2025 CPI) | Nov 20 2025, 13:30Z (September 2025) |
+| `fomc-2026-jan` | Dec 10 2025, 19:00Z | Dec 30 2025, 19:00Z (December 9-10, 2025 minutes) | Jan 13 2026, 13:30Z (December 2025 CPI) | Jan 9 2026, 13:30Z (December 2025) |
+| `fomc-2026-mar` | Jan 28 2026, 19:00Z | Feb 18 2026, 19:00Z (January 27-28, 2026 minutes) | Feb 13 2026, 13:30Z (January 2026 CPI) | Mar 6 2026, 13:30Z (February 2026) |
+| `fomc-2026-apr` | Mar 18 2026, 18:00Z | Apr 8 2026, 18:00Z (March 17-18, 2026 minutes) | Apr 10 2026, 12:30Z (March 2026 CPI) | Apr 3 2026, 12:30Z (March 2026) |
+
+How each item was checked (automated; the human check is below):
+- **Federal Reserve pages** (statements, minutes, and the minutes press releases for the release time) were fetched
+  live on 2026-11-14 (`observed_at`). Each excerpt paragraph was also found word for word (after whitespace
+  normalization) in the latest Internet Archive capture of the same URL taken **before** `as_of` (`archive_url`).
+- **BLS pages refuse automated requests (HTTP 403, rechecked 2026-11-14).** BLS text therefore comes from the
+  latest pre-`as_of` capture of the permanent BLS archive URL, and each paragraph was also found in the latest
+  pre-`as_of` capture of BLS's current-release page (`cpi.nr0.htm`, `empsit.nr0.htm`). That second capture also
+  decides which release was current at `as_of`. All 22 choices match the #90 drafts.
+- **CPI excerpts with a boxed notice.** Rule 5 takes every paragraph before "Table A.". In the releases used by
+  `fomc-2025-mar`, `fomc-2025-jun` and `fomc-2025-sep`, BLS printed a boxed methodology notice (annual weight
+  update, discontinued series, data-collection changes) before Table A, so those excerpts include it verbatim,
+  dashed border lines included. Those notices are about methodology and say nothing about policy.
+- **Late-2025 shutdown period.** For `fomc-2025-oct` the last pre-`as_of` current-release captures still show the
+  August CPI (September 11) and August jobs report (September 5). Each capture names a later scheduled date that
+  had already passed, so no newer release was on the page. For `fomc-2025-dec` they show the September CPI
+  (October 24) and the September jobs report (November 20). The curator added no explanation from memory.
+- `retrospective_unverified = false` for all 44 new items. This records the automated check: each item has a
+  pre-`as_of` archive capture that contains its text.
+- **Confirmation (issue #67).** Each item's source, capture before `as_of` and no-leak status is recorded in
+  `docs/curation/VERIFY_67.md`. At the finance owner's request this was done by an independent AI re-check (a separate
+  read-only auditor agent; all 44 items passed), **not** by a manual human check. The lead decides whether that is
+  enough for admission; any row can be re-checked by hand with the steps in that file.
+- **Draft candidates not used.** The #90 drafts (`docs/curation/fomc-*.md`) also proposed up to four Board
+  speeches per meeting. Rule 5 is a fixed four-document list, the same for all 15 cases, so the speeches are not
+  part of any case. `VERIFY_67.md` lists them, and adding them would need a rule change recorded here.
+
+`snapshot_hash` was computed exactly as in Part 2 (`agent_plus_market` payload when a quote is selected) and checked
+by reloading every case through `EvidenceStore`. The four Part 2 hashes still match.
+
+### Step 3: sealed outcomes
+
+Each new `services/api/data/sealed_outcomes/<event_id>.json` was written last, from the meeting's own FOMC statement.
+Like Part 2, it compares that statement's target range with the range in the previous scheduled meeting's statement
+(rule 3). It records the statement URL, the verbatim decision sentence and the release time. As a second check
+from an independent source, the range was also read from the FOMC's directive in the Implementation Note issued with
+each of the two statements. For all 11 cases the directive's range matched its statement, and the two sources gave
+the same result. Case files, this document and `VERIFY_67.md` contain no outcome.
+
+### Contamination notes (rule 8)
+
+All 15 events (January 2025 to October 2026) come after the `llama3.1:8b` knowledge cutoff (December 2023, Meta
+model card), so `contamination_flag = "unlikely"` (never "none"). Any other replay model must be checked against its
+own card first. The **curator** (Claude, training data to about mid-2026) very likely knows the 2025 results. The
+mechanical rule keeps that knowledge from choosing which meetings or evidence go in. It does not make the curator
+blind.
+
+### Known limits of the extended set
+
+- **n = 15 real cases** (MATH_MODEL §6: at least 5, so no longer `INSUFFICIENT DATA`, but well under 30, so the
+  small-sample caveat applies, and "better" only if the bootstrap CI excludes 0). In the committed files 12 cases
+  have a market baseline, so a market comparison has n = 12 until the June, September and October 2026 files are
+  rebuilt with their #66 quotes.
+- **Correlated draws.** 15 consecutive decisions of one committee are not independent, and the market priced
+  several of them close to 0 or 1. A small CI computed on them still overstates how much they tell us.
+- **Cross-case visibility now runs through 15 meetings.** Each case's first evidence item is the previous meeting's
+  statement, which is the previous case's result (for example `fomc-2025-mar` contains the statement that settles
+  `fomc-2025-jan`, and `fomc-2026-jun` contains the one that settles `fomc-2026-apr`). Run every case in a fresh
+  model call. OFFICIAL runs forecast **all** cases before **any** reveal, and the UI must not show a later case's
+  evidence before an earlier case is revealed.
+- **The curator read earlier results while building later cases**, as in Part 2. The selection was already fixed by
+  rules 1-3.
 
 ## Synthetic fallback case (issue #48)
 
