@@ -517,7 +517,8 @@ def test_forecast_saved_after_a_reveal_flips_the_order_check(client, data_dir):
     write_case(data_dir, case_file())
     first = persist(data_dir, pid="pred_int_first")
     store = PredictionStore(store_module.DEFAULT_DB_PATH)
-    store.record_reveal(first, datetime.now(UTC))  # audit-log entry only; the sealed file is not read
+    # Audit-log entry only; the sealed file is not read.
+    store.record_reveal(first, datetime.now(UTC), sealed_provenance="SYNTHETIC")
     late = persist(data_dir, pid="pred_int_late")
     assert checks(get(client, prediction_id=first.prediction_id))["persisted_before_reveal"]["status"] == "PASS"
     check = checks(get(client, prediction_id=late.prediction_id))["persisted_before_reveal"]
@@ -619,7 +620,7 @@ def test_payroll_check_flips_when_the_solver_cuts_payroll(client, data_dir, monk
 def test_response_has_no_outcome_keys_and_never_the_sealed_canary(client, data_dir):
     write_case(data_dir, case_file())
     pred = persist(data_dir)
-    PredictionStore(store_module.DEFAULT_DB_PATH).record_reveal(pred, datetime.now(UTC))
+    PredictionStore(store_module.DEFAULT_DB_PATH).record_reveal(pred, datetime.now(UTC), sealed_provenance="SYNTHETIC")
     for params in ({}, {"case_id": EVENT}, {"prediction_id": pred.prediction_id}):
         resp = client.get("/api/integrity", params=params)
         assert resp.status_code == 200
@@ -858,3 +859,32 @@ def test_system_checks_are_cached_and_say_so(client, data_dir, tmp_path, monkeyp
     monkeypatch.setattr(integrity, "SOURCE_ROOT", API_DIR)
     again = checks(get(client))["live_web_isolated"]
     assert facts(again)["Computed at"] == facts(first)["Computed at"]  # reused, not recomputed
+
+
+def _pr73_evasions() -> list[str]:
+    from test_explore_separation import EVASIONS  # main's separation sweep (#73): its list, not a copy
+
+    return list(EVASIONS)
+
+
+@pytest.mark.parametrize("source", _pr73_evasions())
+def test_panel_scan_flags_every_evasion_the_separation_sweep_knows(source):
+    """The panel's live scan must be at least as strict as #73's sweep on every evasion that sweep lists."""
+    assert integrity.live_web_refs(ast.parse(source)), source
+
+
+def test_synthetic_venue_quotes_are_audited_like_any_quote(client, data_dir):
+    """#111: a synthetic-venue quote (provenance SYNTHETIC, own label) passes the same window and stripping checks."""
+    from test_synthetic_venue import syn_quote_dict
+
+    quotes = [
+        syn_quote_dict(AS_OF - timedelta(hours=2), "0.35", market_id="FAULTLINE-SYN-INT"),
+        syn_quote_dict(AS_OF + timedelta(hours=1), "0.91", market_id="FAULTLINE-SYN-INT"),
+    ]
+    write_case(data_dir, case_file(quotes=quotes))
+    body = get(client, case_id=EVENT)
+    by_id = checks(body)
+    assert by_id["evidence_cutoff"]["status"] == "PASS", by_id["evidence_cutoff"]
+    assert facts(by_id["evidence_cutoff"])["Market quotes the model could see"] == "1"
+    assert by_id["outcome_fields_stripped"]["status"] == "PASS", by_id["outcome_fields_stripped"]
+    assert "agent_plus_market" in facts(by_id["outcome_fields_stripped"])["Model inputs checked"]

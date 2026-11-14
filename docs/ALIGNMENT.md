@@ -1,10 +1,10 @@
 # How FAULTLINE keeps its AI honest
 
 *For judges. One page. Every claim points at the code that enforces it and the test that checks it. In the app,
-the **INTEGRITY** panel (DECISION and REVEAL screens, `GET /api/integrity`) recomputes these checks for the case and
-run the user picks in the panel (until the replay screens pass their selection in, #65). Case and run checks run on
-every request; the two code-level checks are cached for up to 60 s. A check that cannot run shows NOT AVAILABLE,
-never a tick.*
+the **INTEGRITY** panel (`GET /api/integrity`) recomputes these checks for the case and run on screen: on DECISION
+(B.8) the selected case and the run just made, on REVEAL (D.3) the forecast being revealed. With nothing selected
+the panel offers its own case and run picker. Case and run checks run on every request; the two code-level checks
+are cached for up to 60 s. A check that cannot run shows NOT AVAILABLE, never a tick.*
 
 FAULTLINE asks an AI for decisions under uncertainty, then grades it. Five design choices make sure the AI can
 neither cheat the grading nor make a decision a human did not approve.
