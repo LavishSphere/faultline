@@ -184,9 +184,27 @@ FORGERIES = {
     ),
     "official_on_synthetic_rows": (
         lambda raw: raw["scorecard"].update(
-            provenance="REAL_HISTORICAL", label="OFFICIAL: Computed from 6 historical cases", official_blockers=[]
+            provenance="REAL_HISTORICAL",
+            label="OFFICIAL: Computed from 6 historical cases",
+            official_blockers=[],
+            case_set="real",  # relabelled consistently, so only the run's rows can catch it
         ),
         "differs from the run's scored rows",
+    ),
+    "official_in_the_synthetic_case_set": (
+        lambda raw: raw["scorecard"].update(
+            provenance="REAL_HISTORICAL", label="OFFICIAL: Computed from 6 historical cases", official_blockers=[]
+        ),
+        "a synthetic case-set card is never OFFICIAL",
+    ),
+    "synthetic_case_set_relabelled_real_without_provenance": (
+        _set(("scorecard", "case_set"), "real"),
+        "a real case-set card cannot have provenance SYNTHETIC",
+    ),
+    "synthetic_market_label_on_real_refs": (
+        _set(("scorecard", "market_label"), "SYNTHETIC market price (invented for this fallback case; not a real "
+             "venue), not a true probability"),
+        "market_label does not match",
     ),
     "small_n_not_insufficient": (
         lambda raw: raw["scorecard"].update(per_event=raw["scorecard"]["per_event"][:2], n_events=2),

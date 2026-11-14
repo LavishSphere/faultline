@@ -6,12 +6,15 @@ Two routes, split by whether they can reveal an outcome (lead contract decisions
   prediction store, the configured sealed folder and ``EvidenceStore.from_dir()`` (the only setup that can earn
   the OFFICIAL label). Scoring REVEALS outcomes (each reveal is logged in ``audit_log``), so in public mode the
   route needs the admin token. The check is ``routes.replay.require_admin_in_public_mode``, the same as for run
-  and reveal, applied by ``AdminGatedRoute`` before the body is read. The resulting ``Scorecard`` is persisted,
-  unchanged, as a ``RECORDED_RUN`` snapshot with its SHA-256 under ``services/api/var/scorecards/`` and returned.
+  and reveal, applied by ``AdminGatedRoute`` before the body is read. Real and synthetic cases are scored as
+  separate case sets (issue #102; real first; a synthetic card is never OFFICIAL). Each resulting ``Scorecard`` is
+  persisted, unchanged, as a ``RECORDED_RUN`` snapshot with its SHA-256 under ``services/api/var/scorecards/`` and
+  returned.
 * ``GET /api/benchmark`` is read-only. It serves recorded snapshots: the newest COMMITTED one per variant
   (``<FAULTLINE_DATA_DIR>/recorded_runs/scorecards/``, written by ``scripts/record_runs.py``), then the newest
-  COMPUTED one per variant (``services/api/var/scorecards/``). It never builds a vault, never opens the SQLite store
-  and never touches the sealed folder, so a public visitor cannot reveal early and disqualify a later official run.
+  COMPUTED one per variant (``services/api/var/scorecards/``), for the real case set and then the synthetic one.
+  It never builds a vault, never opens the SQLite store and never touches the sealed folder, so a public visitor
+  cannot reveal early and disqualify a later official run.
 
 A snapshot is served only if it passes ``verify_snapshot``. Its hashes must recompute. Its label, verdict, caveat,
 summary and CI must be exactly what the evaluator's display rules give for its own per-event rows. No dry-run
@@ -48,6 +51,7 @@ from core import store as store_module
 from core.evaluator import (
     AGENT_BETTER,
     BOOTSTRAP_SEED,
+    CASE_SETS,
     CONFIDENCE,
     DEFAULT_RESAMPLES,
     INSUFFICIENT_DATA,
@@ -57,12 +61,16 @@ from core.evaluator import (
     MIN_EVENTS,
     NO_IMPROVEMENT,
     SMALL_SAMPLE_EVENTS,
+    CaseSet,
     OutcomeVault,
     Scorecard,
     brier,
     build_scorecard,
+    case_sets_present,
     correct_at_half,
+    event_case_sets,
     log_loss,
+    market_label_for,
     paired_bootstrap,
 )
 from core.store import PredictionStore, ScoringContext, model_prompt_problems, record_sha256
@@ -99,6 +107,10 @@ class ScorecardRecord(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     agent_variant: ScoredVariant
+    case_set: CaseSet = Field(
+        description="real: REAL HISTORICAL cases (can be OFFICIAL); synthetic: SYNTHETIC cases, scored separately "
+        "and never OFFICIAL. Real items come first."
+    )
     recorded_at: AwareDatetime = Field(description="When the scorecard was computed (UTC).")
     source: Literal["compute_route", "record_runs_script"]
     origin: Origin = Field(
@@ -120,8 +132,9 @@ class BenchmarkResponse(BaseModel):
     status: Literal["AVAILABLE", "NOT AVAILABLE"]
     provenance: Literal["RECORDED_RUN"] = "RECORDED_RUN"
     items: list[Scorecard] = Field(
-        description="Newest committed scorecard per variant, then newest computed one per variant "
-        "(agent_only before agent_plus_market). Prefer the first item for a variant."
+        description="Real case set first, then synthetic. Within a set: newest committed scorecard per variant, "
+        "then newest computed one per variant (agent_only before agent_plus_market). Prefer the first item for a "
+        "variant; a synthetic item is never OFFICIAL."
     )
     records: list[ScorecardRecord] = Field(description="Provenance of items[i], same order.")
     notes: list[str]
@@ -369,6 +382,13 @@ def scorecard_problems(card: Scorecard) -> list[str]:
         p.append("exclusions_by_reason differs from the exclusions listed")
     if (card.provenance is None) != (n == 0):
         p.append("provenance must be null exactly when no event was scored")
+    allowed = {"real": Provenance.REAL_HISTORICAL, "synthetic": Provenance.SYNTHETIC}.get(card.case_set or "")
+    if card.case_set is not None and card.provenance not in (None, allowed):
+        p.append(f"a {card.case_set} case-set card cannot have provenance {card.provenance}")
+    if card.case_set == "synthetic" and card.label.startswith("OFFICIAL"):
+        p.append("a synthetic case-set card is never OFFICIAL")
+    if card.market_label != market_label_for([ref for e in card.per_event for ref in e.market_refs]):
+        p.append("market_label does not match the per-event market refs (synthetic prices must say SYNTHETIC)")
     for e in card.per_event:
         if set(e.brier) != set(forecasters) or set(e.log_loss) != set(forecasters):
             p.append(f"{e.event_id}: per-event scores must cover exactly {forecasters}")
@@ -552,9 +572,17 @@ def _load_dir(directory: Path, origin: Origin, notes: list[str]):
     return found
 
 
+def case_set_of(card: Scorecard) -> CaseSet:
+    """The card's case set; a snapshot from before #102 (no case_set) is synthetic iff its provenance is."""
+    if card.case_set is not None:
+        return card.case_set
+    return "synthetic" if card.provenance == Provenance.SYNTHETIC else "real"
+
+
 def _record(record: RecordedScorecard, origin: Origin, name: str) -> ScorecardRecord:
     return ScorecardRecord(
         agent_variant=record.agent_variant,
+        case_set=case_set_of(record.scorecard),
         recorded_at=record.recorded_at,
         source=record.source,
         origin=origin,
@@ -567,19 +595,25 @@ def _record(record: RecordedScorecard, origin: Origin, name: str) -> ScorecardRe
 
 
 def latest_scorecards() -> BenchmarkResponse:
-    """Newest verified committed snapshot per variant, then newest verified computed one. Reads files only."""
+    """Per case set (real first): newest verified committed snapshot per variant, then newest verified computed
+    one. Reads files only."""
     notes: list[str] = []
     by_origin = {"committed": _load_dir(committed_dir(), "committed", notes)}
     by_origin["computed"] = _load_dir(computed_dir(), "computed", notes)
     items: list[Scorecard] = []
     records: list[ScorecardRecord] = []
-    for origin in ("committed", "computed"):
-        for variant in VARIANT_ORDER:
-            mine = [c for c in by_origin[origin] if c[0].agent_variant == variant]
-            if mine:
-                record, _origin, name = max(mine, key=lambda c: (c[0].recorded_at, c[2]))
-                items.append(record.scorecard)
-                records.append(_record(record, origin, name))
+    for case_set in CASE_SETS:
+        for origin in ("committed", "computed"):
+            for variant in VARIANT_ORDER:
+                mine = [
+                    c
+                    for c in by_origin[origin]
+                    if c[0].agent_variant == variant and case_set_of(c[0].scorecard) == case_set
+                ]
+                if mine:
+                    record, _origin, name = max(mine, key=lambda c: (c[0].recorded_at, c[2]))
+                    items.append(record.scorecard)
+                    records.append(_record(record, origin, name))
     if not items:
         notes.insert(
             0,
@@ -607,26 +641,35 @@ def compute_and_record(
     store: PredictionStore | None = None,
     cases: EvidenceStore | None = None,
     clock: Callable[[], datetime] = lambda: datetime.now(UTC),
-) -> tuple[Path, RecordedScorecard]:
-    """Score ``agent_variant`` on the configured store / sealed folder / committed cases and record it.
+) -> list[tuple[Path, RecordedScorecard]]:
+    """Score ``agent_variant`` on the configured store / sealed folder / committed cases and record one snapshot
+    per case set present (real first, then synthetic; ``core.evaluator.case_sets_present``). With no case at all,
+    one empty real card is recorded (INSUFFICIENT DATA). Real and synthetic cases are never pooled.
 
     This REVEALS (through ``OutcomeVault``). Callers: the admin-gated route and scripts/record_runs.py.
     """
     with _COMPUTE_LOCK:
         store = store if store is not None else PredictionStore(store_module.DEFAULT_DB_PATH)
         cases = cases if cases is not None else EvidenceStore.from_dir()
-        card = build_scorecard(OutcomeVault(store), agent_variant=agent_variant, cases=cases)
-        scored = {pid for e in card.per_event for pid in e.prediction_ids}
-        models = [r.prediction.agent_model for r in store.all_records() if r.prediction.prediction_id in scored]
-        return write_scorecard_snapshot(
-            card,
-            directory if directory is not None else computed_dir(),
-            source=source,
-            run_id=run_id,
-            recorded_at=clock(),
-            agent_models=models,
-            cases_sha256={cid: cases.case_sha256(cid) for cid in cases.case_ids()},
-        )
+        out = []
+        for case_set in case_sets_present(store, cases) or ["real"]:
+            card = build_scorecard(OutcomeVault(store), agent_variant=agent_variant, cases=cases, case_set=case_set)
+            scored = {pid for e in card.per_event for pid in e.prediction_ids}
+            recs = store.all_records()
+            models = [r.prediction.agent_model for r in recs if r.prediction.prediction_id in scored]
+            sets = event_case_sets(cases, recs)
+            out.append(
+                write_scorecard_snapshot(
+                    card,
+                    directory if directory is not None else computed_dir(),
+                    source=source,
+                    run_id=run_id,
+                    recorded_at=clock(),
+                    agent_models=models,
+                    cases_sha256={cid: cases.case_sha256(cid) for cid in cases.case_ids() if sets[cid] == case_set},
+                )
+            )
+        return out
 
 
 # ---------------------------------------------------------------- routers
@@ -657,7 +700,7 @@ def get_benchmark() -> BenchmarkResponse:
 )
 def compute_benchmark(body: BenchmarkComputeRequest) -> BenchmarkResponse:
     try:
-        path, record = compute_and_record(body.agent_variant)
+        recorded = compute_and_record(body.agent_variant)
     except (SealedDataError, ValidationError) as exc:
         raise _data_invalid(f"a committed case file was refused ({type(exc).__name__})") from None
     except ValueError as exc:
@@ -665,7 +708,10 @@ def compute_benchmark(body: BenchmarkComputeRequest) -> BenchmarkResponse:
     except (RuntimeError, OSError) as exc:
         raise _data_invalid(f"the scorecard could not be computed or recorded ({type(exc).__name__})") from None
     return BenchmarkResponse(
-        status="AVAILABLE", items=[record.scorecard], records=[_record(record, "computed", path.name)], notes=[]
+        status="AVAILABLE",
+        items=[record.scorecard for _path, record in recorded],
+        records=[_record(record, "computed", path.name) for path, record in recorded],
+        notes=[],
     )
 
 

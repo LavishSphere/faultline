@@ -15,18 +15,23 @@ liquidity and incentives. They are not "true" probabilities. See ``MARKET_LABEL`
 
 Venue ``"synthetic"`` (issue #102) exists only so a SYNTHETIC demo case can carry a hand-written
 benchmark price. Such a quote must say so in every field that could be mistaken for a real one:
-``provenance == "SYNTHETIC"``, ``quote_kind == "synthetic"``, ``raw_scale == "decimal"`` and URLs on an
-RFC 2606 ``.invalid`` host. Real venues can never carry those values. The collection path
-(``MarketMeta``, ``RawQuote``, ``EventMarketProvider``, ``raw_store``) uses ``RealVenue`` only, so nothing
-synthetic can be collected or stored under ``data/raw``. The temporal gate refuses a synthetic quote on a
-case that is not ``synthetic: true``.
+``provenance == "SYNTHETIC"``, ``quote_kind == "synthetic"``, ``label == SYNTHETIC_QUOTE_LABEL`` (filled in
+when absent), ``raw_scale == "decimal"`` and URLs on an RFC 2606 ``.invalid`` host. Real venues can never carry
+those values. Nothing was fetched, so two fields have a fixed meaning: ``collected_at`` is when the case author
+wrote the price into the case file, and ``raw_sha256`` must equal ``synthetic_quote_sha256(market_id, ts,
+raw_price)`` (SHA-256 of the canonical JSON of those three values plus the venue), never a hash of venue bytes.
+The collection path (``MarketMeta``, ``RawQuote``, ``EventMarketProvider``, ``raw_store``) uses ``RealVenue``
+only, so nothing synthetic can be collected or stored under ``data/raw``. The temporal gate refuses a synthetic
+quote on a case that is not ``synthetic: true``.
 """
 
 from __future__ import annotations
 
+import hashlib
+import json
 from datetime import UTC, datetime
 from decimal import Decimal
-from typing import Literal, Protocol, runtime_checkable
+from typing import Any, Literal, Protocol, runtime_checkable
 from urllib.parse import urlsplit
 
 from pydantic import BaseModel, ConfigDict, field_validator, model_validator
@@ -54,9 +59,14 @@ MARKET_LABEL = (
     "market-implied probability (price-derived; affected by fees, spread, liquidity), "
     "not a true probability"
 )
+# The only label a synthetic-venue quote may carry (and no real quote may carry it).
+SYNTHETIC_QUOTE_LABEL = (
+    "SYNTHETIC benchmark price written by the case author; not from any market, not a true probability"
+)
 MarketLabel = Literal[
     "market-implied probability (price-derived; affected by fees, spread, liquidity), "
-    "not a true probability"
+    "not a true probability",
+    "SYNTHETIC benchmark price written by the case author; not from any market, not a true probability",
 ]
 PROVENANCE_REAL = "REAL HISTORICAL"
 PROVENANCE_SYNTHETIC = "SYNTHETIC"
@@ -64,6 +74,19 @@ NOT_AVAILABLE = "NOT AVAILABLE"
 # Wire values of a quote's provenance; the same strings as ``models.Provenance`` (this module does not
 # import models.py). A test checks they stay a subset of it.
 QuoteProvenance = Literal["REAL_HISTORICAL", "SYNTHETIC"]
+
+
+def synthetic_quote_sha256(market_id: str, ts: datetime, raw_price: str) -> str:
+    """The required ``raw_sha256`` of a synthetic quote: SHA-256 of the canonical JSON (sorted keys, no
+    whitespace, UTF-8) of ``{"market_id", "raw_price", "ts" (UTC, ISO-8601 with Z), "venue": "synthetic"}``."""
+    payload = {
+        "market_id": market_id,
+        "raw_price": raw_price,
+        "ts": _require_utc(ts).isoformat().replace("+00:00", "Z"),
+        "venue": SYNTHETIC_VENUE,
+    }
+    text = json.dumps(payload, sort_keys=True, separators=(",", ":"), ensure_ascii=False)
+    return hashlib.sha256(text.encode("utf-8")).hexdigest()
 
 
 class MarketDataError(Exception):
@@ -185,8 +208,8 @@ class NormalizedQuote(BaseModel):
     period_seconds: int | None = None
     collected_at: datetime
     raw_sha256: str
-    # Fixed: the only allowed value is MARKET_LABEL, so no caller can relabel a quote as a
-    # "true probability".
+    # Fixed by the venue: MARKET_LABEL for a real venue, SYNTHETIC_QUOTE_LABEL for venue "synthetic" (filled in
+    # when absent). No caller can relabel a quote as a "true probability" or a synthetic price as a real one.
     label: MarketLabel = MARKET_LABEL
     # REAL_HISTORICAL for quotes from a real venue; SYNTHETIC exactly when venue == "synthetic".
     provenance: QuoteProvenance = "REAL_HISTORICAL"
@@ -196,9 +219,18 @@ class NormalizedQuote(BaseModel):
     def _utc(cls, v: datetime) -> datetime:
         return _require_utc(v)
 
+    @model_validator(mode="before")
+    @classmethod
+    def _default_synthetic_label(cls, data: Any) -> Any:
+        if isinstance(data, dict) and data.get("venue") == SYNTHETIC_VENUE and "label" not in data:
+            return {**data, "label": SYNTHETIC_QUOTE_LABEL}
+        return data
+
     @model_validator(mode="after")
     def _synthetic_is_labelled(self) -> NormalizedQuote:
         synthetic = self.venue == SYNTHETIC_VENUE
+        if self.label != (SYNTHETIC_QUOTE_LABEL if synthetic else MARKET_LABEL):
+            raise ValueError("a quote's label is fixed by its venue (SYNTHETIC_QUOTE_LABEL only for \"synthetic\")")
         if synthetic != (self.provenance == "SYNTHETIC"):
             raise ValueError('a quote has provenance "SYNTHETIC" if and only if its venue is "synthetic"')
         if synthetic != (self.quote_kind == "synthetic"):
@@ -213,6 +245,11 @@ class NormalizedQuote(BaseModel):
                         f"a synthetic quote's {field} must be on an RFC 2606 .invalid host, so it cannot "
                         "point at a real venue"
                     )
+            if self.raw_sha256 != synthetic_quote_sha256(self.market_id, self.ts, self.raw_price):
+                raise ValueError(
+                    "a synthetic quote's raw_sha256 must be synthetic_quote_sha256(market_id, ts, raw_price); "
+                    "nothing was fetched, so it is never a hash of venue bytes"
+                )
         return self
 
     @model_validator(mode="after")

@@ -155,7 +155,9 @@ def test_compute_returns_the_evaluator_scorecard_verbatim_and_records_it(world):
 
     # Same numbers as calling the evaluator directly on a fresh copy of the world is not possible (the
     # reveal is logged), so check against a second evaluator call on the same, now revealed, store instead.
-    again = build_scorecard(OutcomeVault(PredictionStore(db_path())), cases=EvidenceStore.from_dir())
+    again = build_scorecard(
+        OutcomeVault(PredictionStore(db_path())), cases=EvidenceStore.from_dir(), case_set="synthetic"
+    )
     assert again.model_dump(mode="json") == item
 
     (path,) = scorecard_files(tmp_path)

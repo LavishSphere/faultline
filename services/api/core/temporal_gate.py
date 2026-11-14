@@ -30,12 +30,13 @@ from datetime import UTC, datetime
 from pathlib import Path
 from types import MappingProxyType
 from typing import Any, Literal
+from urllib.parse import urlsplit
 
 from pydantic import BaseModel, ConfigDict
 
 from config import get_settings
 from core import provenance
-from markets.base import MARKET_LABEL, NormalizedQuote
+from markets.base import MARKET_LABEL, SYNTHETIC_QUOTE_LABEL, SYNTHETIC_VENUE, NormalizedQuote
 from markets.normalize import DEFAULT_MAX_STALENESS, select_quote
 from models import OUTCOME_FIELD_PATTERN, EvidenceItem, ReplayCase, ReplayCasePublic
 
@@ -274,7 +275,10 @@ def _project_evidence(item: EvidenceItem) -> Mapping[str, Any]:
     return MappingProxyType(strip_outcome_keys(full))
 
 
-def _project_quote(q: NormalizedQuote) -> Mapping[str, Any]:
+def _project_quote(q: NormalizedQuote, case: ReplayCase) -> Mapping[str, Any]:
+    """Prompt-safe view of a quote. ``provenance`` comes from the case as well as the quote: any quote on a
+    SYNTHETIC case (including a hand-written kalshi/polymarket one) is shown as SYNTHETIC, never REAL_HISTORICAL."""
+    synthetic = case.synthetic or case.provenance == "SYNTHETIC" or q.provenance == "SYNTHETIC"
     full = {
         "venue": q.venue,
         "market_id": q.market_id,
@@ -287,6 +291,7 @@ def _project_quote(q: NormalizedQuote) -> Mapping[str, Any]:
         "open_interest": q.open_interest,
         "period_seconds": q.period_seconds,
         "label": q.label,
+        "provenance": "SYNTHETIC" if synthetic else "REAL_HISTORICAL",
     }
     return MappingProxyType(strip_outcome_keys(full, allow_market_side=True))
 
@@ -301,6 +306,13 @@ _INSTRUCTIONS = (
 )
 _MARKET_HEADER = (
     "Market input (JSON). Each p_yes is a " + MARKET_LABEL + ", observed at `ts`, at or before the cutoff:"
+)
+# Used instead when any quote shown has provenance SYNTHETIC (every quote of a SYNTHETIC case, see _project_quote),
+# so the prompt never presents a price of a fictional case as a real market's. Real-case prompts use _MARKET_HEADER.
+_SYNTHETIC_MARKET_HEADER = (
+    "Market input (JSON). SYNTHETIC: this is a fictional case, so every quote below has provenance SYNTHETIC. "
+    'A quote with venue "synthetic" is a ' + SYNTHETIC_QUOTE_LABEL + ". Any other quote is part of the fictional "
+    "case and is labeled like a " + MARKET_LABEL + ". Each quote is dated `ts`, at or before the cutoff:"
 )
 _ANSWER_FORMAT = (
     "Answer with exactly one JSON object and nothing else:\n"
@@ -333,7 +345,8 @@ def _render(snap: GatedSnapshot, variant: PromptVariant, payload: dict[str, list
         _pretty(payload["evidence"]),
     ]
     if variant == "agent_plus_market":
-        parts += ["", _MARKET_HEADER, _pretty(payload["market_quotes"])]
+        synthetic = any(q.get("provenance") == "SYNTHETIC" for q in payload["market_quotes"])
+        parts += ["", _SYNTHETIC_MARKET_HEADER if synthetic else _MARKET_HEADER, _pretty(payload["market_quotes"])]
     parts += ["", _ANSWER_FORMAT]
     return "\n".join(parts) + "\n"
 
@@ -477,7 +490,7 @@ class EvidenceStore:
                     Exclusion(kind="market", item_id=f"{venue}:{market_id}", reason="no_quote_within_24h_before_as_of")
                 )
             else:
-                selected.append(_project_quote(chosen))
+                selected.append(_project_quote(chosen, rec.case))
 
         public = ReplayCasePublic.from_case(rec.case).model_copy(
             update={"evidence_ids": [e.evidence_id for e in kept]}
@@ -522,6 +535,18 @@ def _load_case_file(path: Path) -> CaseRecord:
     return CaseRecord(case=case, evidence=evidence, market_quotes=tuple(quotes))
 
 
+def _looks_synthetic(q: NormalizedQuote) -> bool:
+    """Any synthetic marker: venue, provenance, quote kind, label, or a URL on an RFC 2606 ``.invalid`` host."""
+    hosts = [(urlsplit(u).hostname or "").casefold() for u in (q.url, q.source_url)]
+    return (
+        q.venue == SYNTHETIC_VENUE
+        or q.provenance == "SYNTHETIC"
+        or q.quote_kind == "synthetic"
+        or q.label == SYNTHETIC_QUOTE_LABEL
+        or any(h == "invalid" or h.endswith(".invalid") for h in hosts)
+    )
+
+
 def _check_quote_provenance(name: str, case: ReplayCase, quotes: Iterable[NormalizedQuote]) -> None:
     """A synthetic quote (venue "synthetic", provenance SYNTHETIC) loads only on a ``synthetic: true`` case.
 
@@ -531,7 +556,7 @@ def _check_quote_provenance(name: str, case: ReplayCase, quotes: Iterable[Normal
     """
     if case.synthetic and case.provenance == "SYNTHETIC":
         return
-    bad = sorted({f"{q.venue}:{q.market_id}" for q in quotes if q.venue == "synthetic" or q.provenance == "SYNTHETIC"})
+    bad = sorted({f"{q.venue}:{q.market_id}" for q in quotes if _looks_synthetic(q)})
     if bad:
         raise SyntheticQuoteOnRealCase(
             f"{name}: synthetic market quotes {bad} on a case that is not synthetic (synthetic: true and "

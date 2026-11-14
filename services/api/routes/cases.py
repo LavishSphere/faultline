@@ -182,7 +182,8 @@ class MarketAtCutoff(BaseModel):
     """The market-only benchmark at the cutoff, from the gate (``GatedSnapshot.market_baseline``'s fixed rule).
 
     ``status == "NOT AVAILABLE"`` (and every quote field null) when no quote lies within 24h before the cutoff or
-    the rule picks no single market. ``p_yes`` is price-derived, never a "true probability".
+    the rule picks no single market. ``p_yes`` is price-derived, never a "true probability"; for venue
+    ``"synthetic"`` (SYNTHETIC cases only) it is an invented price and ``label`` says so (SYNTHETIC_QUOTE_LABEL).
     """
 
     model_config = ConfigDict(extra="forbid", json_schema_serialization_defaults_required=True)
@@ -225,13 +226,16 @@ def market_at_cutoff(snap: GatedSnapshot, ref: str | None, p_yes: float | None) 
         )
     return MarketAtCutoff(
         status="AVAILABLE",
+        # The selected quote's own label: SYNTHETIC_QUOTE_LABEL for venue "synthetic", else MARKET_LABEL.
+        label=quote["label"],
         ref=ref,
         venue=quote["venue"],
         market_id=quote["market_id"],
         quote_kind=quote["quote_kind"],
         ts=quote["ts"],
         p_yes=p_yes,
-        provenance=snap.case.provenance,
+        # The gate's projected quote provenance: SYNTHETIC for any quote on a SYNTHETIC case (#102).
+        provenance=quote["provenance"],
         note=None,
     )
 
@@ -305,6 +309,9 @@ class GatedQuote(BaseModel):
     open_interest: str | None
     period_seconds: int | None
     label: MarketLabel
+    provenance: Provenance = Field(
+        description="SYNTHETIC for every quote on a SYNTHETIC case (and for venue synthetic), else REAL_HISTORICAL."
+    )
 
 
 class CaseEvidenceResponse(BaseModel):
