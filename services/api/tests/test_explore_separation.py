@@ -86,7 +86,11 @@ REQUIRED_ON_MAIN = {"core.temporal_gate", "core.store", "core.evaluator", "core.
 
 # Anything that names Live Explore code, state or endpoints. Matched against every import, string constant
 # (including each piece of a concatenation, %-format or f-string), attribute, name, keyword, alias and def name.
-_LIVE_EXPLORE = re.compile(r"tavily|faultline_explore|routes\.explore|explore_search", re.IGNORECASE)
+# `explore_analy` covers agents/explore_analyst.py and the analyze route (#61); `agents.explore_` any future one.
+_LIVE_EXPLORE = re.compile(
+    r"tavily|faultline_explore|routes\.explore|explore_search|explore_analy|agents\.explore_|/api/explore",
+    re.IGNORECASE,
+)
 _EXACT_EXPLORE = {"explore"}  # e.g. getattr(routes, "explore"), import_module("routes." + "explore")
 # Key-presence plumbing (config.py boolean, /api/health notice, OptionalKeys field) may appear anywhere.
 _KEY_PRESENCE = re.compile(r"TAVILY_API_KEY|tavily_api_key(?:_set)?")
@@ -193,6 +197,12 @@ EVASIONS = [
     "import routes\nr = getattr(routes, 'explore')",
     "from routes.explore import explore_search",
     "def run(tavily_client):\n    return tavily_client",
+    "from agents import explore_analyst",
+    "import agents.explore_analyst",
+    "from agents.explore_analyst import render_prompt",
+    "import importlib\nimportlib.import_module('agents.' + 'explore_analyst')",
+    "from routes.explore import explore_analyze",
+    "import httpx\nhttpx.post('http://localhost:8000/api/explore/analyze', json={})",
 ]
 
 
@@ -238,7 +248,8 @@ def test_replay_modules_do_not_load_tavily_transitively():
         import importlib, json, sys
         for name in {present!r}:
             importlib.import_module(name)
-        print(json.dumps(sorted(m for m in sys.modules if "tavily" in m or m.startswith("routes.explore"))))
+        print(json.dumps(sorted(m for m in sys.modules
+                                if "tavily" in m or m.startswith(("routes.explore", "agents.explore_")))))
         """
     )
     env = {**os.environ, "PYTHONPATH": str(API_DIR)}
@@ -255,6 +266,20 @@ def test_tavily_client_cannot_build_replay_evidence():
     names |= {n.module or "" for n in ast.walk(tree) if isinstance(n, ast.ImportFrom)}
     forbidden = [n for n in names if n == "models" or n.startswith(("core", "routes", "markets", "models."))]
     assert forbidden == []
+
+
+def test_explore_analyst_reads_no_replay_data():
+    """#61: the analyst's evidence is the Tavily results only. It imports no gate, store, vault, case loader or
+    market code, and names no replay data directory (its one data file is the ILLUSTRATIVE shock guidance)."""
+    path = API_DIR / "agents" / "explore_analyst.py"
+    source = path.read_text(encoding="utf-8")
+    tree = ast.parse(source)
+    names = {a.name for n in ast.walk(tree) if isinstance(n, ast.Import) for a in n.names}
+    names |= {n.module or "" for n in ast.walk(tree) if isinstance(n, ast.ImportFrom)}
+    replay_side = ("core.temporal_gate", "core.store", "core.evaluator", "core.provenance", "markets", "routes")
+    assert [n for n in names if n.startswith(replay_side)] == []
+    consts = {n.value for n in ast.walk(tree) if isinstance(n, ast.Constant) and isinstance(n.value, str)}
+    assert not [c for c in consts if re.search(r"sealed_outcomes|demo_cases|recorded_runs|raw/", c)]
 
 
 # --------------------------------------------------------------------------- (b) data
