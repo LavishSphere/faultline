@@ -167,35 +167,39 @@ def test_default_output_dir_is_docs_curation(curate):
     assert (REPO_ROOT / "docs" / "curation" / ".gitkeep").is_file()
 
 
-def _case_insensitive(directory: Path) -> bool:
-    upper = directory.with_name(directory.name.upper())
-    return upper != directory and upper.exists()
-
-
-def test_refuses_case_variant_of_configured_data_dir(curate, tmp_path, monkeypatch):
+@pytest.mark.parametrize("variant", ["DATA", "Data", "dAtA"])
+def test_refuses_case_variant_of_configured_data_dir_on_every_os(curate, tmp_path, monkeypatch, variant):
+    """Refused on case-insensitive (APFS) and case-sensitive (Linux CI) file systems alike: nothing is created."""
     monkeypatch.setenv("TAVILY_API_KEY", KEY)
     data = tmp_path / "data"
     data.mkdir()
     monkeypatch.setenv("FAULTLINE_DATA_DIR", str(data))
     t_transport, t_seen = _tavily(RESULTS)
-    target = tmp_path / "DATA" / "notes"
+    target = tmp_path / variant / "notes"
     code = curate.run(_argv(target, "--no-wayback"), tavily_transport=t_transport)
-    if _case_insensitive(data):  # APFS / NTFS: tmp/DATA is tmp/data
-        assert code == curate.EXIT_USAGE and t_seen == []
-        assert list(data.iterdir()) == []
-    else:  # case-sensitive file system: tmp/DATA is a different, unrelated directory
-        assert code == 0
+    assert code == curate.EXIT_USAGE and t_seen == []
+    assert list(data.iterdir()) == []
+    assert not target.exists()
 
 
-def test_refuses_case_variant_of_services_api_data(curate, tmp_path, monkeypatch):
-    api_data = REPO_ROOT / "services" / "api" / "data"
-    if not _case_insensitive(api_data):
-        pytest.skip("case-sensitive file system: services/api/DATA is not services/api/data")
+@pytest.mark.parametrize("variant", ["DATA", "Data"])
+def test_refuses_case_variant_of_services_api_data_on_every_os(curate, monkeypatch, variant):
     monkeypatch.setenv("TAVILY_API_KEY", KEY)
     t_transport, t_seen = _tavily(RESULTS)
-    target = REPO_ROOT / "services" / "api" / "DATA" / "curation-case-variant-test"
+    target = REPO_ROOT / "services" / "api" / variant / "curation-case-variant-test"
     assert curate.run(_argv(target, "--no-wayback"), tavily_transport=t_transport) == curate.EXIT_USAGE
-    assert not (api_data / "curation-case-variant-test").exists() and t_seen == []
+    assert not target.exists() and t_seen == []
+    assert not (REPO_ROOT / "services" / "api" / "data" / "curation-case-variant-test").exists()
+
+
+def test_case_variant_guard_does_not_depend_on_the_file_system(curate, tmp_path):
+    """The case-folded compare alone refuses, even when the variant is a real, separate directory."""
+    data = tmp_path / "data"
+    data.mkdir()
+    other = tmp_path / "DATA"
+    if not other.exists():  # case-sensitive file system: make it a genuinely different directory
+        other.mkdir()
+    assert curate._within(other / "notes", data)
 
 
 def test_refuses_symlinked_directory_into_data(curate, tmp_path, monkeypatch):

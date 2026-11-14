@@ -88,13 +88,17 @@ def slugify(text: str) -> str:
 
 
 def _within(target: Path, root: Path) -> bool:
-    """True if `target` is `root` or inside it. Compared by file identity (``os.path.samefile``) on the target and
-    each existing ancestor, so case variants on case-insensitive file systems (APFS: ``services/api/DATA``),
-    symlinks and ``..`` all resolve to the same directory. Falls back to a case-folded path compare when
-    `root` does not exist."""
+    """True if `target` is `root`, inside it, or inside a case variant of it, on every OS.
+
+    Two checks, either refuses: (1) a case-folded compare of the resolved paths, so ``services/api/DATA`` is
+    refused even on a case-sensitive file system where it would be a different directory (a tool that writes
+    files should not depend on the file system to decide); (2) file identity (``os.path.samefile``) on the target
+    and each existing ancestor, which also catches symlinks, hard-to-spell aliases and ``..``."""
+    r = str(root.expanduser().resolve()).casefold()
+    if any(str(p).casefold() == r for p in (target, *target.parents)):
+        return True
     if not root.exists():
-        r = str(root.resolve()).casefold()
-        return any(str(p).casefold() == r for p in (target, *target.parents))
+        return False
     for p in (target, *target.parents):
         try:
             if p.exists() and os.path.samefile(p, root):
