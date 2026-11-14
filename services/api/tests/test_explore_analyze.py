@@ -45,7 +45,7 @@ CATEGORY_IDS = [c["id"] for c in GUIDANCE["categories"]]
 T = GUIDANCE["horizon_weeks"]
 
 KEY = "tvly-analyze-" + "z" * 40
-ADMIN = "b" * 40
+ADMIN = "b2" * 32  # `openssl rand -hex 32` shape (public mode requires it), not key-shaped
 PATH = "/api/explore/analyze"
 DECISION = "Should we open a third store this spring while our floating-rate loan resets?"
 DIGEST = "46e0c10c039e" + "1" * 52

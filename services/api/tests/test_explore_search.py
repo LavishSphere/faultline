@@ -16,7 +16,7 @@ from main import create_app
 from routes import explore
 
 KEY = "tvly-route-" + "r" * 40
-ADMIN = "a" * 40
+ADMIN = "a1" * 32  # `openssl rand -hex 32` shape (public mode requires it), not key-shaped
 PATH = "/api/explore/search"
 OUTCOME_LIKE = re.compile(r"outcome|resolution|resolved|settle|winner|final_price|available_at", re.IGNORECASE)
 

@@ -18,7 +18,7 @@ import main
 from main import ADMIN, PUBLIC, PUBLIC_MODE_ROUTES, create_app, is_admin_gated
 
 DEPLOY_MD = Path(__file__).resolve().parents[3] / "docs" / "DEPLOY.md"
-TOKEN = "public-mode-routes-test-" + "t" * 24  # not key-shaped (CI secrets scan); >= 32 characters
+TOKEN = "f6" * 32  # not key-shaped (CI secrets scan); the `openssl rand -hex 32` shape public mode requires
 ORIGIN = "https://faultline.khayrul.com"
 
 

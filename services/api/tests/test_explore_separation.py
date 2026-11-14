@@ -96,8 +96,9 @@ _LIVE_EXPLORE = re.compile(
     re.IGNORECASE,
 )
 _EXACT_EXPLORE = {"explore"}  # e.g. getattr(routes, "explore"), import_module("routes." + "explore")
-# Key-presence plumbing (config.py boolean, /api/health notice, OptionalKeys field) may appear anywhere.
-_KEY_PRESENCE = re.compile(r"TAVILY_API_KEY|tavily_api_key(?:_set)?")
+# Key-presence plumbing (config.py boolean, /api/health notice, OptionalKeys field, the public /api/health boolean
+# `tavily_configured` in routes/health.py, #172) may appear anywhere.
+_KEY_PRESENCE = re.compile(r"TAVILY_API_KEY|tavily_api_key(?:_set)?|tavily_configured")
 
 
 def _module_path(dotted: str) -> Path:
