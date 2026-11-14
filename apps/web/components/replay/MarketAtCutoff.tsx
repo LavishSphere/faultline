@@ -11,8 +11,8 @@ import {
   type ReplayRun,
 } from "@/lib/replay";
 
-const LABEL = "Market-implied (price-derived)";
-const SYNTHETIC_LABEL = "Synthetic benchmark price";
+/** Neutral kicker: what the figure is for. What the price IS comes from the API's own `label`, shown verbatim (#117). */
+const KICKER = "Market baseline · P(YES)";
 
 /** Where B.2's value comes from: the run's fixed scoring baseline when there is a run, else the evidence route. */
 export function marketSource(
@@ -41,7 +41,7 @@ export function MarketAtCutoff({
   run: ReplayRun | null;
   evidence: EvidenceState;
 }) {
-  const empty = <FinancialReadout label={LABEL} value={null} format="probability" provenance="AS-OF" />;
+  const empty = <FinancialReadout label={KICKER} value={null} format="probability" provenance="AS-OF" />;
   if (!c) return empty;
 
   const source = marketSource(run, evidence);
@@ -73,13 +73,13 @@ export function MarketAtCutoff({
     );
   }
 
-  // A synthetic benchmark price (PR #111) is never presented as a real market: SYNTHETIC badge, the server's label
-  // verbatim, and no raw payload to point to.
-  const synthetic = isSyntheticQuote(market);
+  // A synthetic benchmark price (PR #111), or any quote on a synthetic case, is never presented as a real market:
+  // SYNTHETIC badge, the server's label verbatim, and no raw payload to point to.
+  const synthetic = isSyntheticQuote(market, c);
   return (
     <div className="flex flex-col gap-3">
       <FinancialReadout
-        label={synthetic ? SYNTHETIC_LABEL : LABEL}
+        label={KICKER}
         value={market.p_yes}
         format="probability"
         provenance={synthetic ? "SYNTHETIC" : (market.provenance ?? "AS-OF")}
@@ -87,13 +87,15 @@ export function MarketAtCutoff({
       />
       {synthetic ? (
         <p className="font-mono text-[11px] uppercase tracking-[0.1em] text-risk">
-          Synthetic price written by the case author. Not a real market.
+          {market.venue === "synthetic"
+            ? "Synthetic price written by the case author. Not a real market."
+            : "Synthetic case: this quote is part of a fictional case, not a real market."}
         </p>
       ) : null}
       <dl className="grid grid-cols-[auto_1fr] gap-x-4 gap-y-1 font-mono text-[11px]">
-        <dt className="text-muted">{synthetic ? "price id" : "market"}</dt>
+        <dt className="text-muted">{market.venue === "synthetic" ? "price id" : "market"}</dt>
         <dd className="break-all text-text-2">{market.ref}</dd>
-        {synthetic ? (
+        {market.venue === "synthetic" ? (
           <>
             <dt className="text-muted">raw payload</dt>
             <dd className="text-text-2">no raw payload (synthetic)</dd>
@@ -109,7 +111,6 @@ export function MarketAtCutoff({
           {run ? " · baseline fixed when the forecast was saved" : ""}
         </dd>
       </dl>
-      <p className="text-[11px] leading-relaxed text-muted">Not a true probability.</p>
     </div>
   );
 }

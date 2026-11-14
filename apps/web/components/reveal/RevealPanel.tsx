@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState, type FormEvent } from "react";
-import { revealPrediction, revealPath, type Result, type RevealResponse } from "@/lib/benchmark";
+import { isSyntheticRef, revealPrediction, revealPath, type Result, type RevealResponse } from "@/lib/benchmark";
 import { API_BASE } from "@/lib/api";
 import { Field, Panel } from "../Panel";
 import { ProvenanceBadge } from "../ProvenanceBadge";
@@ -14,7 +14,9 @@ import { BUTTON_PRIMARY, FailureReport, Missing, Num } from "./ui";
  * sent automatically: the server logs it, and forecasts for the same event saved afterwards no longer count.
  *
  * `onPredictionId` reports the id the presenter is working with (the `?prediction_id=` prefill, then each submitted
- * id) so the screen can hand it to sibling panels (the scorecard, and #93's IntegrityPanel once merged).
+ * id) for panels that need it before a reveal (#93's IntegrityPanel once merged). `onRevealed` fires only when the
+ * API answered the reveal with a valid 2xx body; the scorecard marks "this forecast" only from that id (#117), so
+ * nothing about the forecast's event is highlighted while this panel still says SEALED.
  */
 
 type View =
@@ -30,7 +32,10 @@ function readQueryId(): string {
   }
 }
 
-export function RevealPanel({ onPredictionId }: { onPredictionId?: (id: string) => void } = {}) {
+export function RevealPanel({
+  onPredictionId,
+  onRevealed,
+}: { onPredictionId?: (id: string) => void; onRevealed?: (id: string) => void } = {}) {
   const [draft, setDraft] = useState("");
   const [view, setView] = useState<View>({ kind: "idle" });
   const abortRef = useRef<AbortController | null>(null);
@@ -68,6 +73,7 @@ export function RevealPanel({ onPredictionId }: { onPredictionId?: (id: string) 
     const res = await revealPrediction(id, controller.signal);
     if (controller.signal.aborted) return;
     setView({ kind: "done", id, result: res });
+    if (res.ok) onRevealed?.(res.data.prediction.prediction_id);
   }
 
   const shown = stale ? null : revealed;
@@ -126,7 +132,8 @@ export function RevealPanel({ onPredictionId }: { onPredictionId?: (id: string) 
           <div className="flex flex-col gap-1.5">
             <p className="font-mono text-2xl font-medium uppercase tracking-[0.08em] text-muted md:text-3xl">Sealed</p>
             <p className="text-xs leading-relaxed text-muted">
-              No outcome and no score are shown until the API returns a successful reveal for a persisted forecast.
+              This panel shows no outcome until reveal; recorded scorecards (D.2) list outcomes of events already
+              scored.
             </p>
           </div>
         ) : null}
@@ -252,9 +259,13 @@ function Revealed({ data }: { data: RevealResponse }) {
   );
 }
 
-/** Naive (p = 0.5) and market-only scores on this same event, as the API computed them. */
+/**
+ * Naive (p = 0.5) and market-only scores on this same event, as the API computed them. The market row's label is
+ * the API's, verbatim (#117); a `synthetic:` ref, or a SYNTHETIC case, also gets a SYNTHETIC badge.
+ */
 function Baselines({ data }: { data: RevealResponse }) {
   const { market, naive } = data.baselines;
+  const synthetic = !!market && (isSyntheticRef(market.ref) || data.sealed.provenance === "SYNTHETIC");
   const head = "py-2 font-mono text-[10.5px] font-normal uppercase tracking-[0.14em] text-muted";
   return (
     <div>
@@ -262,7 +273,7 @@ function Baselines({ data }: { data: RevealResponse }) {
         <p className="kicker mr-1">Baselines on this event</p>
         <ProvenanceBadge kind="REVEALED" />
       </div>
-      <div className="overflow-x-auto">
+      <div className="relative overflow-x-auto">
         <table className="w-full min-w-[300px] border-collapse text-left">
           <caption className="sr-only">Brier and log loss of this forecast and of the two baselines, from the API.</caption>
           <thead>
@@ -282,8 +293,20 @@ function Baselines({ data }: { data: RevealResponse }) {
             </tr>
             <tr className="border-b border-line/70">
               <th scope="row" className="py-2 font-medium text-text">
-                Market-only
-                <span className="block font-mono text-[10px] font-normal text-muted">market-implied (price-derived)</span>
+                <span className="flex flex-wrap items-center gap-1.5">
+                  Market-only
+                  {synthetic ? <ProvenanceBadge kind="SYNTHETIC" /> : null}
+                </span>
+                {market ? (
+                  <>
+                    <span className="block font-mono text-[10px] font-normal leading-snug text-muted" data-testid="reveal-market-label">
+                      {market.label}
+                    </span>
+                    {market.ref ? (
+                      <span className="block break-all font-mono text-[10px] font-normal text-muted">{market.ref}</span>
+                    ) : null}
+                  </>
+                ) : null}
               </th>
               {market ? (
                 <>

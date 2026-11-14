@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { EvidenceDrawer } from "../EvidenceDrawer";
 import { FinancialReadout } from "../FinancialReadout";
 import { Field, Panel } from "../Panel";
@@ -19,6 +19,7 @@ import {
   RUN_VARIANTS,
   formatInstantUtc,
   isSyntheticQuote,
+  runStore,
   savedAfterReveal,
   skepticRejected,
   type ForecastVariant,
@@ -45,7 +46,7 @@ export function DecisionScreen({ step }: { step: Step }) {
   const [variant, setVariant] = useState<ForecastVariant>("agent_only");
   // useReplayRun also returns `caseId` and `predictionId` (served ids; predictionId is null before a run). PR #93:
   // add them to this destructuring and render <IntegrityPanel caseId={caseId} predictionId={predictionId} />.
-  const { state, start, cancel } = useReplayRun(selected, variant);
+  const { state, start, cancel, busy, busyWith, priorRun } = useReplayRun(selected, variant);
   const [drawer, setDrawer] = useState<{ open: boolean; focus: string | null }>({ open: false, focus: null });
 
   const run = state.kind === "done" ? state.run : null;
@@ -87,6 +88,9 @@ export function DecisionScreen({ step }: { step: Step }) {
               variant={variant}
               onVariant={setVariant}
               state={state}
+              busy={busy}
+              busyWith={busyWith}
+              priorRun={priorRun}
               onRun={start}
               onCancel={cancel}
             />
@@ -178,8 +182,8 @@ export function DecisionScreen({ step }: { step: Step }) {
 function marketBadge(c: ReplayCasePublic | null, run: ReplayRun | null, evidence: EvidenceState) {
   const m = c ? marketSource(run, evidence)?.market : undefined;
   if (!m || m.status !== "AVAILABLE") return "NOT AVAILABLE" as const;
-  // A synthetic-venue price is always badged SYNTHETIC, whatever else is (or is not) served.
-  if (isSyntheticQuote(m)) return ["AS-OF", "SYNTHETIC"] as const;
+  // A synthetic-venue price, or any quote on a synthetic case, is always badged SYNTHETIC.
+  if (isSyntheticQuote(m, c)) return ["AS-OF", "SYNTHETIC"] as const;
   return m.provenance ? (["AS-OF", m.provenance] as const) : ("AS-OF" as const);
 }
 
@@ -244,12 +248,21 @@ function CasePicker({
   );
 }
 
+/** Shown under Cancel while a run is in flight, and after a timeout or cancel (#117 A). */
+const NO_ANSWER_NOTE =
+  "The server may still finish and save this forecast; it is not shown here. Do not re-run before checking.";
+const SECOND_FORECAST_NOTE =
+  "A second saved forecast for this case and variant excludes it from the benchmark (multiple_predictions).";
+
 function RunControls({
   c,
   routes,
   variant,
   onVariant,
   state,
+  busy,
+  busyWith,
+  priorRun,
   onRun,
   onCancel,
 }: {
@@ -258,11 +271,30 @@ function RunControls({
   variant: ForecastVariant;
   onVariant: (v: ForecastVariant) => void;
   state: RunState;
+  /** Any run in flight (any case, any variant): Run stays disabled. */
+  busy: boolean;
+  busyWith: { caseId: string; variant: ForecastVariant } | null;
+  /** A forecast for this case + variant was saved here, or a request for it got no answer. */
+  priorRun: "saved" | "unanswered" | null;
   onRun: () => void;
   onCancel: () => void;
 }) {
   const absent = routes?.replayRun === "absent";
   const running = state.kind === "running";
+  const elsewhere = busy && !running ? busyWith : null;
+  // The confirmation belongs to one case + variant; switching either drops it.
+  const key = c ? runStore.key(c.event_id, variant) : "";
+  const [confirmKey, setConfirmKey] = useState<string | null>(null);
+  const confirming = confirmKey !== null && confirmKey === key && !busy;
+  const keepRef = useRef<HTMLButtonElement | null>(null);
+  useEffect(() => {
+    if (confirming) keepRef.current?.focus();
+  }, [confirming]);
+
+  function requestRun() {
+    if (priorRun) setConfirmKey(key);
+    else onRun();
+  }
   return (
     <div className="flex flex-col gap-4">
       <fieldset className="flex flex-col gap-2">
@@ -303,16 +335,72 @@ function RunControls({
           }}
         />
       ) : (
-        <div className="flex flex-wrap items-center gap-3">
-          <TextButton variant="primary" onClick={onRun} disabled={!c || routes === null || running}>
-            {state.kind === "done" ? "Run again" : "Run sealed forecast"}
-          </TextButton>
-          {running ? <TextButton onClick={onCancel}>Cancel</TextButton> : null}
-          <p className="font-mono text-[11px] text-muted">
-            {routes === null
-              ? "Checking routes (GET /openapi.json)"
-              : `POST ${REPLAY_RUN_PATH} · persists the prediction before any reveal`}
-          </p>
+        <div className="flex flex-col gap-3">
+          <div className="flex flex-wrap items-center gap-3">
+            <TextButton
+              variant="primary"
+              onClick={requestRun}
+              disabled={!c || routes === null || busy || confirming}
+              aria-describedby={elsewhere ? "run-busy-note" : undefined}
+            >
+              {state.kind === "done" || priorRun ? "Run again" : "Run sealed forecast"}
+            </TextButton>
+            {busy ? <TextButton onClick={onCancel}>Cancel</TextButton> : null}
+            <p className="font-mono text-[11px] text-muted">
+              {routes === null
+                ? "Checking routes (GET /openapi.json)"
+                : `POST ${REPLAY_RUN_PATH} · persists the prediction before any reveal`}
+            </p>
+          </div>
+          {elsewhere ? (
+            <p id="run-busy-note" className="font-mono text-[11px] leading-relaxed text-risk">
+              A run for <span className="break-all text-text-2">{elsewhere.caseId}</span> · {elsewhere.variant} is in
+              flight. Run stays disabled until it answers or is cancelled.
+            </p>
+          ) : null}
+          {busy ? (
+            <p className="text-[11px] leading-relaxed text-muted" data-testid="cancel-note">
+              Cancel only stops waiting in this browser. {NO_ANSWER_NOTE}
+            </p>
+          ) : null}
+          {confirming ? (
+            <div
+              role="alertdialog"
+              aria-labelledby="run-confirm-title"
+              aria-describedby="run-confirm-body"
+              className="flex flex-col gap-2 rounded-md border border-risk/60 bg-risk/10 px-3 py-2.5"
+            >
+              <p id="run-confirm-title" className="font-mono text-[11px] uppercase tracking-[0.12em] text-risk">
+                Save a second forecast?
+              </p>
+              <div id="run-confirm-body" className="flex flex-col gap-1 text-xs leading-relaxed text-text-2">
+                <p>{SECOND_FORECAST_NOTE}</p>
+                {priorRun === "unanswered" ? (
+                  <p className="text-muted">
+                    The last request for this case and variant got no answer; the server may have saved it.
+                  </p>
+                ) : null}
+              </div>
+              <div className="flex flex-wrap gap-2 pt-1">
+                <TextButton
+                  onClick={() => {
+                    setConfirmKey(null);
+                    onRun();
+                  }}
+                >
+                  Run anyway
+                </TextButton>
+                <button
+                  ref={keepRef}
+                  type="button"
+                  onClick={() => setConfirmKey(null)}
+                  className="inline-flex items-center gap-2 rounded-md border border-accent bg-accent-soft px-3 py-2 font-mono text-[11px] uppercase tracking-[0.14em] text-text transition-colors hover:bg-accent hover:text-bg"
+                >
+                  Don&apos;t run
+                </button>
+              </div>
+            </div>
+          ) : null}
         </div>
       )}
 
@@ -344,9 +432,26 @@ function ChosenPath({ state, rejected }: { state: RunState; rejected: boolean })
     return <InFlight request={state.request} note="A local model can take a while. Nothing is shown until it answers." />;
   }
   if (state.kind === "failed") {
-    return (
-      <FailureNote size="lg" failure={state.failure} note={failureNote(state.failure)} />
-    );
+    const f = state.failure;
+    if (f.kind === "timeout" || f.kind === "aborted") {
+      // No answer is not "API unreachable": the request reached the server, which may still save the forecast.
+      return (
+        <FailureNote
+          size="lg"
+          failure={f}
+          headline={{
+            title: f.kind === "timeout" ? "No answer received" : "Cancelled: no answer received",
+            tone: "text-risk",
+          }}
+          note={
+            <span data-testid="no-answer-note">
+              No answer received in {state.waitedSeconds ?? "NOT AVAILABLE"} s. {NO_ANSWER_NOTE}
+            </span>
+          }
+        />
+      );
+    }
+    return <FailureNote size="lg" failure={f} note={failureNote(f)} />;
   }
   const { prediction, skeptic } = state.run;
   return (
@@ -386,7 +491,7 @@ function failureNote(f: ReplayFailure): string | undefined {
     case "conflict":
       return "Nothing was saved. Running again requests a fresh prediction id.";
     case "data_invalid":
-      return "Nothing was run or saved.";
+      return "Nothing was saved.";
     case "validation":
       if (f.code === "INSUFFICIENT_DATA") return "Agent + market needs a market quote at the cutoff. Agent only still works.";
       if (f.code === "MODEL_OUTPUT_INVALID") return "The model's answer was rejected (output check or skeptic) and not saved.";
