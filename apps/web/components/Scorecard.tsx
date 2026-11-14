@@ -1,77 +1,89 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { API_BASE } from "@/lib/api";
 import {
   BENCHMARK_PATH,
   EXCLUSION_REASON_TEXT,
   SCORABLE_VARIANTS,
+  firstPerVariant,
   getBenchmark,
-  type BenchmarkData,
+  type BenchmarkResponse,
   type ExclusionReason,
   type Result,
   type ScorableVariant,
   type Scorecard as ScorecardData,
+  type ScorecardRecord,
+  type VariantCard,
 } from "@/lib/benchmark";
 import { Field, Panel } from "./Panel";
 import type { ProvenanceInput } from "./ProvenanceBadge";
-import { BUTTON_PRIMARY, BUTTON_SECONDARY, FailureReport, Missing, Num, Tag } from "./reveal/ui";
+import { BUTTON_SECONDARY, FailureReport, Missing, Num } from "./reveal/ui";
 
 /**
- * D.1 Scorecard (SPEC §6, MATH_MODEL §6): agent vs market-only vs naive (p = 0.5) on identical (event_id, as_of)
- * pairs, from GET /api/benchmark (`evaluator.build_scorecard`).
+ * D.1 Benchmark (SPEC §6, MATH_MODEL §6): agent vs market-only vs naive (p = 0.5) on identical (event_id, as_of)
+ * pairs, from the RECORDED RUN scorecards that GET /api/benchmark serves.
  *
- * The browser computes nothing. `label` (OFFICIAL / ILLUSTRATIVE / INSUFFICIENT DATA), `verdict` and `caveat` are the
- * API's strings, rendered verbatim; the means, the ONE Δ Brier interval and every exclusion count are the API's
- * numbers. When the API sends `summary: null` / `comparison: null` (n < 5), those slots are NOT AVAILABLE and only the
- * per-event scores are listed. Each scorecard the API returns is rendered on its own; nothing is pooled or merged.
- *
- * Not requested on page load: building the scorecard reveals (and logs) every scorable persisted prediction, so it
- * runs only when the presenter clicks.
+ * GET /api/benchmark is read-only (it never computes, never reveals, never opens the prediction store), so it is
+ * requested on load. For each variant the FIRST item the API serves is shown (its order: committed agent_only,
+ * committed agent_plus_market, then computed ones), with that item's record (origin, recorded_at, run_id, model) as
+ * provenance. `label`, `verdict`, `caveat`, `official_blockers` and the exclusions are the API's strings, shown
+ * verbatim; every number is the API's. POST /api/benchmark/compute (admin only, reveals) is never called from here.
  */
 
-type View =
-  | { kind: "idle" }
-  | { kind: "loading"; variant: ScorableVariant }
-  | { kind: "done"; variant: ScorableVariant; result: Result<BenchmarkData> };
+type Load = { kind: "loading" } | { kind: "done"; result: Result<BenchmarkResponse> };
 
 const segment =
   "rounded-[5px] px-3 py-1.5 font-mono text-[11px] uppercase tracking-[0.12em] transition-colors focus-visible:outline-offset-1";
 
-export function Scorecard() {
-  const [variant, setVariant] = useState<ScorableVariant>("agent_only");
-  const [view, setView] = useState<View>({ kind: "idle" });
+export function Scorecard({ predictionId = null }: { predictionId?: string | null }) {
+  const [load, setLoad] = useState<Load>({ kind: "loading" });
+  const [picked, setPicked] = useState<ScorableVariant | null>(null);
   const abortRef = useRef<AbortController | null>(null);
 
-  useEffect(() => () => abortRef.current?.abort(), []);
-
-  async function run(v: ScorableVariant) {
+  const fetchBenchmark = useCallback(async () => {
     abortRef.current?.abort();
     const controller = new AbortController();
     abortRef.current = controller;
-    setView({ kind: "loading", variant: v });
-    const res = await getBenchmark(v, controller.signal);
+    setLoad({ kind: "loading" });
+    const res = await getBenchmark(controller.signal);
     if (controller.signal.aborted) return;
-    setView({ kind: "done", variant: v, result: res });
-  }
+    setLoad({ kind: "done", result: res });
+  }, []);
 
-  const result = view.kind === "done" ? view.result : null;
+  useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- the request's own loading state, set when it starts
+    void fetchBenchmark();
+    return () => abortRef.current?.abort();
+  }, [fetchBenchmark]);
+
+  const result = load.kind === "done" ? load.result : null;
   const data = result?.ok ? result.data : null;
   const failure = result && !result.ok ? result : null;
+  const cards = data ? firstPerVariant(data) : {};
+  // Default tab: the first variant the API served a card for (selection only).
+  const variant: ScorableVariant = picked ?? SCORABLE_VARIANTS.find((v) => cards[v]) ?? SCORABLE_VARIANTS[0];
+  const selected = cards[variant];
+
+  const headerBadges: ProvenanceInput[] = !data
+    ? ["NOT AVAILABLE"]
+    : data.status === "AVAILABLE"
+      ? [data.provenance]
+      : ["NOT AVAILABLE", "INSUFFICIENT DATA"];
 
   return (
     <div className="flex flex-col gap-6">
       <Panel
         code="D.1"
-        title="Scorecard · agent vs market-only vs naive"
-        provenance={data && data.scorecards.length ? [...new Set(data.scorecards.flatMap(cardBadges))] : "NOT AVAILABLE"}
-        provenanceDetail={view.kind === "idle" ? "not requested" : undefined}
+        title="Benchmark · recorded scorecards"
+        provenance={headerBadges}
+        provenanceDetail={load.kind === "loading" ? "requesting" : undefined}
       >
         <div className="flex flex-col gap-4">
           <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
             <div
               role="group"
-              aria-label="Agent variant to score"
+              aria-label="Agent variant"
               className="flex w-full gap-1 rounded-md border border-line bg-bg/60 p-1 sm:w-fit"
             >
               {SCORABLE_VARIANTS.map((v) => (
@@ -79,60 +91,55 @@ export function Scorecard() {
                   key={v}
                   type="button"
                   aria-pressed={variant === v}
-                  onClick={() => setVariant(v)}
-                  className={`${segment} flex-1 sm:flex-none ${variant === v ? "bg-accent-soft text-text" : "text-muted hover:bg-hover hover:text-text"}`}
+                  onClick={() => setPicked(v)}
+                  className={`${segment} flex flex-1 items-center justify-center gap-2 sm:flex-none ${variant === v ? "bg-accent-soft text-text" : "text-muted hover:bg-hover hover:text-text"}`}
                 >
-                  {v}
+                  <span>{v}</span>
+                  {data && !cards[v] ? <span className="text-[9.5px] text-muted">n/a</span> : null}
                 </button>
               ))}
             </div>
             <button
               type="button"
-              disabled={view.kind === "loading"}
-              onClick={() => void run(variant)}
-              className={BUTTON_PRIMARY}
+              disabled={load.kind === "loading"}
+              onClick={() => void fetchBenchmark()}
+              className={`w-fit ${BUTTON_SECONDARY} disabled:cursor-not-allowed disabled:text-muted`}
             >
-              {view.kind === "loading" ? "Requesting…" : "Compute scorecard"}
+              {load.kind === "loading" ? "Requesting…" : "Reload"}
             </button>
           </div>
           <p className="text-xs leading-relaxed text-muted">
-            Sends <code className="break-all text-text-2">GET {API_BASE}{BENCHMARK_PATH}?agent_variant={variant}</code>.
-            The API scores every persisted forecast made before its event&apos;s first reveal; doing so reveals (and
-            logs) them. Each agent variant is scored separately against the same baselines.
+            <code className="break-all text-text-2">GET {API_BASE}{BENCHMARK_PATH}</code> serves recorded scorecard
+            snapshots only (verified hashes); it never computes or reveals. Each agent variant is scored separately
+            against the same baselines; the first snapshot the API serves for a variant is shown.
           </p>
           <p role="status" aria-live="polite" className="sr-only">
-            {view.kind === "loading" ? "Requesting scorecard" : data ? `${data.scorecards.length} scorecard(s) received` : ""}
+            {load.kind === "loading" ? "Requesting benchmark" : data ? `Benchmark status ${data.status}` : ""}
           </p>
           {failure ? <FailureReport failure={failure} /> : null}
-          {failure && failure.kind !== "aborted" ? (
-            <button type="button" onClick={() => void run(view.kind === "done" ? view.variant : variant)} className={`w-fit ${BUTTON_SECONDARY}`}>
-              Retry request
-            </button>
-          ) : null}
           {data ? (
             <div className="flex flex-col gap-1.5">
-              {data.status ? (
-                <p className="font-mono text-[10.5px] uppercase tracking-[0.1em] text-text-2">status: {data.status}</p>
-              ) : null}
-              {data.notes.map((n, i) => (
-                <p key={i} className="text-xs leading-relaxed text-muted">
-                  {n}
-                </p>
-              ))}
-              {data.scorecards.length === 0 ? (
-                <Missing>Not available: the API returned no scorecard</Missing>
+              <p className="font-mono text-[10.5px] uppercase tracking-[0.1em] text-text-2">
+                status: {data.status} · provenance: {data.provenance}
+              </p>
+              {data.notes.length ? (
+                <ul className="flex flex-col gap-1" aria-label="Notes from the API">
+                  {data.notes.map((n, i) => (
+                    <li key={i} className="break-words text-xs leading-relaxed text-muted">
+                      {n}
+                    </li>
+                  ))}
+                </ul>
               ) : null}
             </div>
           ) : null}
         </div>
       </Panel>
 
-      {data && view.kind === "done" ? (
-        data.scorecards.map((card, i) => (
-          <ScorecardCard key={`${card.agent_variant}-${card.provenance ?? "none"}-${i}`} card={card} requested={view.variant} index={i} />
-        ))
+      {selected ? (
+        <ScorecardCard entry={selected} predictionId={predictionId} />
       ) : (
-        <EmptyScorecard />
+        <EmptyScorecard variant={variant} status={data ? data.status : null} />
       )}
     </div>
   );
@@ -140,6 +147,7 @@ export function Scorecard() {
 
 // --- one scorecard ----------------------------------------------------------------------------------------------
 
+/** Styling only, by exact match on the API's verdict string; an unknown string stays neutral. */
 const VERDICT_TONE: Record<string, string> = {
   "agent better than market": "text-viable",
   "No improvement measured": "text-text",
@@ -153,23 +161,35 @@ function forecasterName(key: string, agentVariant: string): string {
   return key;
 }
 
+function isSynthetic(card: ScorecardData): boolean {
+  return card.provenance === "SYNTHETIC" || card.case_set === "synthetic";
+}
+
 function cardBadges(card: ScorecardData): ProvenanceInput[] {
-  const out: ProvenanceInput[] = [];
+  const out: ProvenanceInput[] = ["RECORDED RUN"];
   if (card.provenance) out.push(card.provenance);
-  if (card.provenance === "SYNTHETIC") out.push("ILLUSTRATIVE");
+  if (card.case_set === "synthetic" && card.provenance !== "SYNTHETIC") out.push("SYNTHETIC");
+  if (isSynthetic(card) || card.label.startsWith("ILLUSTRATIVE")) out.push("ILLUSTRATIVE");
   if (card.verdict === "INSUFFICIENT DATA") out.push("INSUFFICIENT DATA");
-  if (out.length === 0) out.push("NOT AVAILABLE");
   return out;
 }
 
-function ScorecardCard({ card, requested, index }: { card: ScorecardData; requested: ScorableVariant; index: number }) {
+const ORIGIN_TEXT: Record<ScorecardRecord["origin"], string> = {
+  committed: "committed · data/recorded_runs in git (official run script)",
+  computed: "computed · var/scorecards on this API server (admin compute)",
+};
+
+function ScorecardCard({ entry, predictionId }: { entry: VariantCard; predictionId: string | null }) {
+  const { card, record, alsoServed } = entry;
   const agentKey = card.agent_variant;
   const cmp = card.comparison;
-  const ciLabel = `Δ Brier vs market (paired bootstrap, ${cmp ? `${+(cmp.confidence * 100).toFixed(2)}%` : "95%"} CI)`;
   const reasons = Object.entries(card.exclusions_by_reason);
+  const mine = (ids: string[]) => !!predictionId && ids.includes(predictionId);
 
   return (
-    <Panel code={`D.${2 + index}`} title={`Scorecard · ${agentKey}`} provenance={cardBadges(card)} bodyClassName="p-0">
+    <Panel code="D.2" title={`Scorecard · ${agentKey}`} provenance={cardBadges(card)} bodyClassName="p-0">
+      <RecordStrip record={record} alsoServed={alsoServed} />
+
       <div className="flex flex-col gap-3 border-b border-line px-5 py-4">
         <p className="font-mono text-[13px] tracking-[0.04em] text-text-2" data-testid="scorecard-label">
           {card.label}
@@ -181,15 +201,31 @@ function ScorecardCard({ card, requested, index }: { card: ScorecardData; reques
           {card.verdict}
         </p>
         {card.caveat ? (
-          <Tag className="w-fit border-risk/60 text-risk" title="Sample-size caveat from the API">
+          // Not a <Tag>: that uppercases, and the caveat is shown in the API's own case.
+          <p
+            className="flex w-fit max-w-full items-baseline gap-1.5 rounded-sm border border-risk/60 px-1.5 py-[3px] font-mono text-[11px] leading-snug text-risk"
+            title="Sample-size caveat from the API"
+          >
             <span aria-hidden="true">!</span>
-            <span>{card.caveat}</span>
-          </Tag>
-        ) : null}
-        {card.agent_variant !== requested ? (
-          <p className="text-xs text-risk">
-            Requested <code>{requested}</code>; the API scored <code>{card.agent_variant}</code>. Shown as the API sent it.
+            <span data-testid="scorecard-caveat">{card.caveat}</span>
           </p>
+        ) : null}
+        {isSynthetic(card) ? (
+          <p className="text-xs leading-relaxed text-risk">
+            Synthetic demo fixtures: illustrative only, not evidence about real events.
+          </p>
+        ) : null}
+        {card.official_blockers.length ? (
+          <div className="flex flex-col gap-1">
+            <p className="kicker">Not OFFICIAL because (official_blockers, from the API)</p>
+            <ul className="flex flex-col gap-1">
+              {card.official_blockers.map((b, i) => (
+                <li key={i} className="break-words font-mono text-[11px] leading-relaxed text-text-2">
+                  {b}
+                </li>
+              ))}
+            </ul>
+          </div>
         ) : null}
         <div className="flex flex-wrap gap-x-8 gap-y-2 pt-1">
           <Stat label="Events scored (n)" value={card.n_events} />
@@ -249,7 +285,7 @@ function ScorecardCard({ card, requested, index }: { card: ScorecardData; reques
 
       <dl className="border-t border-line px-5 py-2">
         <Field
-          label={ciLabel}
+          label="Δ Brier vs market (paired bootstrap CI)"
           preserveCase
           value={
             cmp ? (
@@ -261,8 +297,8 @@ function ScorecardCard({ card, requested, index }: { card: ScorecardData; reques
                   </span>
                 </span>
                 <span className="font-mono text-[10.5px] text-muted">
-                  {cmp.agent_variant} − {cmp.baseline} · B = <span className="num">{cmp.n_resamples}</span> · seed{" "}
-                  <span className="num">{cmp.seed}</span>
+                  {cmp.agent_variant} − {cmp.baseline} · confidence <span className="num">{cmp.confidence}</span> · B ={" "}
+                  <span className="num">{cmp.n_resamples}</span> · seed <span className="num">{cmp.seed}</span>
                 </span>
               </span>
             ) : undefined
@@ -271,7 +307,7 @@ function ScorecardCard({ card, requested, index }: { card: ScorecardData; reques
       </dl>
 
       <div className="border-t border-line px-5 py-4">
-        <p className="kicker mb-2">Exclusions by reason</p>
+        <p className="kicker mb-2">Exclusions by reason (exclusions_by_reason, as sent)</p>
         {reasons.length === 0 ? (
           <p className="font-mono text-xs text-muted">None reported by the API.</p>
         ) : (
@@ -279,7 +315,7 @@ function ScorecardCard({ card, requested, index }: { card: ScorecardData; reques
             {reasons.map(([reason, count]) => (
               <li key={reason} className="flex items-baseline justify-between gap-4 border-b border-line/70 pb-2 last:border-b-0">
                 <span className="min-w-0">
-                  <code className="font-mono text-xs text-text-2">{reason}</code>
+                  <code className="break-all font-mono text-xs text-text-2">{reason}</code>
                   {reason in EXCLUSION_REASON_TEXT ? (
                     <span className="block text-xs leading-relaxed text-muted">
                       {EXCLUSION_REASON_TEXT[reason as ExclusionReason]}
@@ -298,14 +334,16 @@ function ScorecardCard({ card, requested, index }: { card: ScorecardData; reques
             </summary>
             <ul className="mt-2 flex flex-col gap-1.5 font-mono text-[10.5px] text-muted">
               {card.exclusions.map((x, i) => (
-                <li key={`x-${i}`} className="break-all">
+                <li key={`x-${i}`} className={`break-all ${mine(x.prediction_ids) ? "text-accent" : ""}`}>
                   <span className="text-text-2">{x.event_id}</span> · {x.as_of} · {x.reason}
                   {x.prediction_ids.length ? <> · {x.prediction_ids.join(", ")}</> : null}
+                  {mine(x.prediction_ids) ? " · ← this forecast" : null}
                 </li>
               ))}
               {card.ignored_predictions.map((x) => (
-                <li key={`i-${x.prediction_id}`} className="break-all">
+                <li key={`i-${x.prediction_id}`} className={`break-all ${mine([x.prediction_id]) ? "text-accent" : ""}`}>
                   ignored <span className="text-text-2">{x.prediction_id}</span> · {x.event_id} · {x.as_of} · {x.reason}
+                  {mine([x.prediction_id]) ? " · ← this forecast" : null}
                 </li>
               ))}
             </ul>
@@ -313,15 +351,85 @@ function ScorecardCard({ card, requested, index }: { card: ScorecardData; reques
         ) : null}
       </div>
 
-      <PerEventTable card={card} />
+      <PerEventTable card={card} isMine={mine} />
 
       <div className="flex flex-col gap-1 border-t border-line px-5 py-3 text-xs leading-relaxed text-muted">
         <p>
           Market-only uses the {card.market_label}. Lower Brier and log loss are better; Δ &lt; 0 means the agent&apos;s
-          mean Brier was lower. Label, verdict and caveat are the API&apos;s text, shown as sent.
+          mean Brier was lower. Label, verdict, caveat and exclusions are the API&apos;s text, shown as sent.
         </p>
       </div>
     </Panel>
+  );
+}
+
+/** Where this card came from: the API's ScorecardRecord for it, verbatim. */
+function RecordStrip({ record, alsoServed }: { record: ScorecardRecord; alsoServed: ScorecardRecord[] }) {
+  const cell = "flex min-w-0 flex-col gap-0.5";
+  const key = "font-mono text-[10px] uppercase tracking-[0.12em] text-muted";
+  const val = "break-all font-mono text-xs text-text-2";
+  return (
+    <div className="flex flex-col gap-3 border-b border-line bg-bg/40 px-5 py-3">
+      <div className="grid grid-cols-1 gap-x-6 gap-y-2 sm:grid-cols-2 2xl:grid-cols-4">
+        <div className={cell}>
+          <span className={key}>Origin</span>
+          <span className={val} data-testid="scorecard-origin">
+            {ORIGIN_TEXT[record.origin]}
+          </span>
+        </div>
+        <div className={cell}>
+          <span className={key}>Recorded at</span>
+          <span className={val} data-testid="scorecard-recorded-at">
+            {record.recorded_at}
+          </span>
+        </div>
+        <div className={cell}>
+          <span className={key}>run_id</span>
+          <span className={val} data-testid="scorecard-run-id">
+            {record.run_id ?? <Missing>none (not an official run)</Missing>}
+          </span>
+        </div>
+        <div className={cell}>
+          <span className={key}>Model</span>
+          <span className={val} data-testid="scorecard-models">
+            {record.agent_models.length ? record.agent_models.join(", ") : <Missing>no scored forecast</Missing>}
+          </span>
+        </div>
+      </div>
+      <details className="rounded-md border border-line px-3 py-2">
+        <summary className="cursor-pointer font-mono text-[11px] uppercase tracking-[0.12em] text-text-2">
+          Snapshot file and hashes
+        </summary>
+        <dl className="mt-2 flex flex-col gap-1.5 font-mono text-[10.5px] text-muted">
+          <div>
+            <dt>source · file</dt>
+            <dd className="break-all text-text-2">
+              {record.source} · {record.file}
+            </dd>
+          </div>
+          <div>
+            <dt>scorecard_sha256</dt>
+            <dd className="break-all text-text-2">{record.scorecard_sha256}</dd>
+          </div>
+          <div>
+            <dt>snapshot_sha256</dt>
+            <dd className="break-all text-text-2">{record.snapshot_sha256}</dd>
+          </div>
+        </dl>
+      </details>
+      {alsoServed.length ? (
+        <div className="text-xs leading-relaxed text-muted">
+          <p>The API also served these snapshots for this variant later in its order; not shown as cards:</p>
+          <ul className="mt-1 flex flex-col gap-0.5 font-mono text-[10.5px]">
+            {alsoServed.map((r) => (
+              <li key={r.file} className="break-all">
+                {r.origin} · {r.recorded_at} · {r.file}
+              </li>
+            ))}
+          </ul>
+        </div>
+      ) : null}
+    </div>
   );
 }
 
@@ -334,7 +442,7 @@ function Stat({ label, value }: { label: string; value: number }) {
   );
 }
 
-function PerEventTable({ card }: { card: ScorecardData }) {
+function PerEventTable({ card, isMine }: { card: ScorecardData; isMine: (ids: string[]) => boolean }) {
   return (
     <div className="border-t border-line">
       <p className="kicker px-5 pt-4">Per-event Brier (averaged over each event&apos;s snapshots by the API)</p>
@@ -366,22 +474,29 @@ function PerEventTable({ card }: { card: ScorecardData }) {
               </tr>
             </thead>
             <tbody>
-              {card.per_event.map((e) => (
-                <tr key={e.event_id} className="border-b border-line/70 last:border-b-0">
-                  <th scope="row" className="px-5 py-2.5 font-mono text-xs font-normal text-text-2">
-                    {e.event_id}
-                    <span className="ml-2 text-muted">
-                      ×<span className="num">{e.n_snapshots}</span>
-                    </span>
-                  </th>
-                  <td className="num px-3 py-2.5 text-right text-sm text-text-2">{e.y}</td>
-                  {card.forecasters.map((f) => (
-                    <td key={f} className="px-5 py-2.5 text-right text-sm text-text">
-                      {typeof e.brier[f] === "number" ? <Num value={e.brier[f]} /> : <Missing />}
-                    </td>
-                  ))}
-                </tr>
-              ))}
+              {card.per_event.map((e) => {
+                const mine = isMine(e.prediction_ids);
+                return (
+                  <tr key={e.event_id} className={`border-b border-line/70 last:border-b-0 ${mine ? "bg-accent-soft" : ""}`}>
+                    <th scope="row" className="px-5 py-2.5 font-mono text-xs font-normal text-text-2">
+                      {e.event_id}
+                      <span className="ml-2 text-muted">
+                        ×<span className="num">{e.n_snapshots}</span>
+                      </span>
+                      {mine ? <span className="ml-2 text-accent">← this forecast</span> : null}
+                      {e.market_refs.length ? (
+                        <span className="block break-all text-[10px] text-muted">market: {e.market_refs.join(", ")}</span>
+                      ) : null}
+                    </th>
+                    <td className="num px-3 py-2.5 text-right text-sm text-text-2">{e.y}</td>
+                    {card.forecasters.map((f) => (
+                      <td key={f} className="px-5 py-2.5 text-right text-sm text-text">
+                        {typeof e.brier[f] === "number" ? <Num value={e.brier[f]} /> : <Missing />}
+                      </td>
+                    ))}
+                  </tr>
+                );
+              })}
             </tbody>
           </table>
         </div>
@@ -390,15 +505,31 @@ function PerEventTable({ card }: { card: ScorecardData }) {
   );
 }
 
-/** Before any request: the structure, with every value NOT AVAILABLE. */
-function EmptyScorecard() {
+/** No served card for this variant (or no response yet): the structure, every value NOT AVAILABLE. */
+function EmptyScorecard({ variant, status }: { variant: ScorableVariant; status: BenchmarkResponse["status"] | null }) {
+  const title = status === null ? "Scorecard · not loaded" : `Scorecard · ${variant}`;
   return (
-    <Panel code="D.2" title="Scorecard · not requested" provenance="NOT AVAILABLE" bodyClassName="p-0">
+    <Panel
+      code="D.2"
+      title={title}
+      provenance={status === null ? "NOT AVAILABLE" : ["NOT AVAILABLE", "INSUFFICIENT DATA"]}
+      bodyClassName="p-0"
+    >
+      <div className="flex flex-col gap-1.5 border-b border-line px-5 py-4">
+        <p className="font-mono text-2xl font-medium uppercase tracking-[0.08em] text-muted md:text-3xl">
+          {status === null ? "Not available" : "Insufficient data"}
+        </p>
+        <p className="text-xs leading-relaxed text-muted">
+          {status === null
+            ? "No benchmark response yet, so no scorecard is shown."
+            : `The API served no recorded scorecard for ${variant}. See the notes above; no number is shown in its place.`}
+        </p>
+      </div>
       <div className="overflow-x-auto">
         <table className="w-full min-w-[440px] border-collapse text-left">
           <caption className="sr-only">
-            Mean forecast scores for agent, market-only and naive baseline. No scorecard has been requested, so every
-            cell is not available.
+            Mean forecast scores for agent, market-only and naive baseline. No recorded scorecard, so every cell is not
+            available.
           </caption>
           <thead>
             <tr className="border-b border-line">
@@ -432,7 +563,7 @@ function EmptyScorecard() {
       </div>
       <dl className="border-t border-line px-5 py-2">
         <Field label="Events scored (n)" preserveCase />
-        <Field label="Δ Brier vs market (paired bootstrap, 95% CI)" preserveCase />
+        <Field label="Δ Brier vs market (paired bootstrap CI)" preserveCase />
         <Field label="Sample-size caveat (from the API)" preserveCase />
         <Field label="Exclusions by reason" preserveCase />
       </dl>

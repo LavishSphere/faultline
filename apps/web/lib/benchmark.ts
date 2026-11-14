@@ -1,17 +1,19 @@
 /**
  * REVEAL + scorecard client (issue #50): `POST /api/replay/{prediction_id}/reveal` and `GET /api/benchmark`.
  *
- * Contracts: issue #44 (routes, not built yet) and the Pydantic models in PR #29's `services/api/core/evaluator.py`
- * (`Scorecard`, `Comparison`, `ForecasterSummary`, `EventScore`, `ScoreExclusion`, `IgnoredPrediction`,
- * `RevealedOutcome`, `SealedOutcome`) and `services/api/models.py` (`Prediction`). Field names here are copied from
- * those models. Until #44 lands, both routes 404 with FastAPI's default body and the UI shows
- * NOT AVAILABLE "route pending (#44)".
+ * Types copy the Pydantic models on main field for field:
+ * - `services/api/routes/replay.py`: `RevealResponse`, `PredictionScores`, `Baselines`, `MarketBaselineScores`,
+ *   `NaiveBaselineScores` (#76);
+ * - `services/api/routes/benchmark.py`: `BenchmarkResponse`, `ScorecardRecord` (#91);
+ * - `services/api/core/evaluator.py`: `Scorecard`, `Comparison`, `ForecasterSummary`, `EventScore`,
+ *   `ScoreExclusion`, `IgnoredPrediction`, `SealedOutcome`;
+ * - `services/api/models.py`: `Prediction`, `ApiError`.
  *
- * Nothing here computes a score, a mean, an interval or a verdict. The shape checks only confirm that the fields the
- * UI renders are present and typed; a body that fails them is `malformed` → NOT AVAILABLE, never patched up.
- * Keys outside the checked set are ignored (never rendered).
+ * Nothing here computes a score, a mean, an interval or a verdict. The shape checks confirm that the fields the UI
+ * renders are present and typed, and that the API's own display rules (MATH_MODEL §6) hold for each card; a body
+ * that fails them is `malformed` → NOT AVAILABLE, never patched up. Keys outside the checked set are not rendered.
  *
- * Kept out of lib/api.ts (issue #50 scope) because reveal needs 404/409 kinds that the shared helper does not have.
+ * `POST /api/benchmark/compute` (admin only, reveals outcomes) is deliberately NOT wrapped here: the UI never calls it.
  */
 
 import { API_BASE } from "./api";
@@ -21,8 +23,9 @@ export const revealPath = (predictionId: string) => `/api/replay/${encodeURIComp
 
 // --- wire types (mirror the Pydantic models) -------------------------------------------------------------------
 
-/** models.ForecastVariant. Only the first two can be scored (`build_scorecard` refuses `hosted_comparator`). */
+/** models.ForecastVariant. */
 export type ForecastVariant = "agent_only" | "agent_plus_market" | "hosted_comparator";
+/** routes/benchmark.ScoredVariant, in the API's VARIANT_ORDER. */
 export const SCORABLE_VARIANTS = ["agent_only", "agent_plus_market"] as const;
 export type ScorableVariant = (typeof SCORABLE_VARIANTS)[number];
 
@@ -48,6 +51,13 @@ export interface Prediction {
   seed: number | null;
   recorded_at: string;
   provenance: WireProvenanceValue;
+  /** SHA-256 of the temporal gate's rendered prompt (before any repair turn). null only on non-model records. */
+  gated_prompt_sha256: string | null;
+  /** 1 = first answer validated; 2 = validated after the one schema repair. */
+  attempts: number | null;
+  transcript_sha256: string | null;
+  num_ctx: number | null;
+  num_predict: number | null;
 }
 
 /** evaluator.SealedOutcome (file format of data/sealed_outcomes/<event_id>.json). */
@@ -60,30 +70,49 @@ export interface SealedOutcome {
   notes: string | null;
 }
 
-/** Per-prediction scores, computed server-side by evaluator.brier / log_loss / correct_at_half. */
+/** replay.PredictionScores: computed server-side by evaluator.brier / log_loss / correct_at_half. */
 export interface PredictionScores {
   brier: number;
   log_loss: number;
+  /** 1.0 if p > 0.5 called it right (p = 0.5 counts as NO), else 0.0. */
   accuracy_at_0_5: number;
 }
 
-/**
- * POST /api/replay/{prediction_id}/reveal response. ASSUMED shape (issue #44 says only "the outcome + per-prediction
- * scores"): the fields of evaluator.RevealedOutcome plus `scores`. Listed as a contract question on the PR.
- */
+/** replay.MarketBaselineScores. */
+export interface MarketBaselineScores {
+  /** Market-implied probability (price-derived) fixed by the gate before reveal. */
+  p_yes: number;
+  brier: number;
+  log_loss: number;
+}
+
+/** replay.NaiveBaselineScores: scores of the constant forecast p = 0.5. */
+export interface NaiveBaselineScores {
+  brier: number;
+  log_loss: number;
+}
+
+/** replay.Baselines. `market: null` = market baseline NOT AVAILABLE at this as_of. */
+export interface Baselines {
+  market: MarketBaselineScores | null;
+  naive: NaiveBaselineScores;
+}
+
+/** replay.RevealResponse (contract fixed by the lead on #44). */
 export interface RevealResponse {
   prediction: Prediction;
   y: 0 | 1;
   sealed: SealedOutcome;
   revealed_at: string;
   persisted_at: string;
-  persist_seq?: number;
-  reveal_seq?: number;
-  event_first_revealed_at?: string;
-  event_first_reveal_seq?: number;
-  /** RevealedOutcome.persisted_before_outcome_revealed (computed by the API from audit_log order). */
+  persist_seq: number;
+  reveal_seq: number;
+  event_first_revealed_at: string;
+  event_first_reveal_seq: number;
+  /** persist_seq < event_first_reveal_seq, decided by the API. False: the benchmark ignores this forecast. */
   persisted_before_outcome_revealed: boolean;
   scores: PredictionScores;
+  baselines: Baselines;
 }
 
 /** evaluator.ExclusionReason. */
@@ -93,9 +122,12 @@ export type ExclusionReason =
   | "multiple_predictions"
   | "contamination_likely"
   | "market_not_available"
-  | "sealed_outcome_not_available";
+  | "sealed_outcome_not_available"
+  | "context_mismatch";
 
-/** Plain-language meaning of each reason (docs/EVALUATION_PROTOCOL.md §6 on PR #29). Text only, no data. */
+/**
+ * UI gloss for each reason (docs/EVALUATION_PROTOCOL.md §6). Shown under the API's reason key, never instead of it.
+ */
 export const EXCLUSION_REASON_TEXT: Record<ExclusionReason, string> = {
   no_persisted_prediction: "No forecast was persisted for this snapshot.",
   persisted_after_outcome_revealed: "Every forecast for this snapshot was saved after the event's outcome was first revealed.",
@@ -103,39 +135,47 @@ export const EXCLUSION_REASON_TEXT: Record<ExclusionReason, string> = {
   contamination_likely: "The model probably saw this event in pretraining (contamination_flag = likely).",
   market_not_available: "No market quote within 24 h before the cutoff, so there is no market baseline.",
   sealed_outcome_not_available: "No sealed outcome file exists for this event.",
+  context_mismatch: "The forecast's input could not be re-derived from the committed case data with the same hashes.",
 };
 
+/** evaluator.ScoreExclusion. */
 export interface ScoreExclusion {
   event_id: string;
   as_of: string;
-  reason: ExclusionReason | string;
+  reason: ExclusionReason;
   prediction_ids: string[];
 }
 
+/** evaluator.IgnoredPrediction. */
 export interface IgnoredPrediction {
   prediction_id: string;
   event_id: string;
   as_of: string;
-  reason: "persisted_after_outcome_revealed" | string;
+  reason: "persisted_after_outcome_revealed";
 }
 
+/** evaluator.EventScore (averaged over the event's snapshots by the API). */
 export interface EventScore {
   event_id: string;
   n_snapshots: number;
   y: number;
   prediction_ids: string[];
+  /** "venue:market_id" of the market baseline used. */
+  market_refs: string[];
   /** Keyed by forecaster ("naive", "market", agent variant). */
   brier: Record<string, number>;
   log_loss: Record<string, number>;
   accuracy_at_0_5: Record<string, number>;
 }
 
+/** evaluator.ForecasterSummary. */
 export interface ForecasterSummary {
   mean_brier: number;
   mean_log_loss: number;
   accuracy_at_0_5: number;
 }
 
+/** evaluator.Comparison. */
 export interface Comparison {
   agent_variant: ForecastVariant;
   baseline: "market";
@@ -149,13 +189,16 @@ export interface Comparison {
   seed: number;
 }
 
+/** Optional case-set tag (PR #111, not merged): present only on APIs that send it. */
+export type CaseSet = "real" | "synthetic";
+
 /** evaluator.Scorecard. `label`, `verdict` and `caveat` are display strings set by the API (MATH_MODEL §6). */
 export interface Scorecard {
   label: string;
   verdict: string;
   caveat: string | null;
   /** null when no event could be scored. */
-  provenance: "REAL_HISTORICAL" | "SYNTHETIC" | null;
+  provenance: WireProvenanceValue | null;
   agent_variant: ForecastVariant;
   forecasters: string[];
   market_label: string;
@@ -167,32 +210,74 @@ export interface Scorecard {
   per_event: EventScore[];
   summary: Record<string, ForecasterSummary> | null;
   comparison: Comparison | null;
+  /** Why a real-historical scorecard is not OFFICIAL; empty when it is. */
+  official_blockers: string[];
+  case_set?: CaseSet;
 }
 
-/**
- * GET /api/benchmark body. ASSUMED: either one `Scorecard` (as `build_scorecard` returns), or an envelope
- * `{status?, items: Scorecard[], notes?}` like the other routes when the API serves several (one per variant or per
- * dataset). Synthetic and real are never pooled server-side; each card is rendered on its own.
- */
-export interface BenchmarkData {
-  scorecards: Scorecard[];
-  status: string | null;
+/** routes/benchmark.ScorecardRecord: where items[i] came from, and its hashes. */
+export interface ScorecardRecord {
+  agent_variant: ScorableVariant;
+  recorded_at: string;
+  source: "compute_route" | "record_runs_script";
+  /** committed: data/recorded_runs/ in git (official run script); computed: var/scorecards/ on that server. */
+  origin: "committed" | "computed";
+  run_id: string | null;
+  /** Snapshot file name (no directory). */
+  file: string;
+  scorecard_sha256: string;
+  snapshot_sha256: string;
+  /** agent_model of every scored forecast. */
+  agent_models: string[];
+}
+
+/** routes/benchmark.BenchmarkResponse. `records[i]` describes `items[i]`. */
+export interface BenchmarkResponse {
+  status: "AVAILABLE" | "NOT AVAILABLE";
+  provenance: "RECORDED_RUN";
+  items: Scorecard[];
+  records: ScorecardRecord[];
   notes: string[];
+}
+
+/** One variant's card as the UI shows it: the FIRST served item for that variant (the API's own precedence). */
+export interface VariantCard {
+  variant: ScorableVariant;
+  /** Index in `items` / `records`. */
+  index: number;
+  card: Scorecard;
+  record: ScorecardRecord;
+  /** Other snapshots the API also served for this variant (later in its order); not shown as cards. */
+  alsoServed: ScorecardRecord[];
+}
+
+/** First item per variant, in the API's order. Selection only: nothing is merged, pooled or re-ranked. */
+export function firstPerVariant(data: BenchmarkResponse): Partial<Record<ScorableVariant, VariantCard>> {
+  const out: Partial<Record<ScorableVariant, VariantCard>> = {};
+  data.records.forEach((record, index) => {
+    const card = data.items[index];
+    if (!card) return;
+    const seen = out[record.agent_variant];
+    if (seen) seen.alsoServed.push(record);
+    else out[record.agent_variant] = { variant: record.agent_variant, index, card, record, alsoServed: [] };
+  });
+  return out;
 }
 
 // --- failures --------------------------------------------------------------------------------------------------
 
 /**
- * `route_pending`: the API answered 404 without a FAULTLINE error code (FastAPI's default `{detail}`), i.e. this build
- * does not serve the route (#44). `not_revealable`: 409 NOT_REVEALABLE. `outcome_not_available`: 404 with code
- * NOT_FOUND (no sealed outcome for the event). `validation`: 422. `http`: any other non-2xx (message verbatim).
- * `malformed`: a 2xx body that does not match the contract.
+ * `admin_required`: 401/403 ADMIN_TOKEN_REQUIRED (public mode). `route_missing`: 404 without a FAULTLINE error code
+ * (FastAPI's default `{detail}`), i.e. that API build does not serve the route. `not_revealable`: 409 NOT_REVEALABLE.
+ * `outcome_not_available`: 404 with code NOT_FOUND (no sealed outcome for the event). `validation`: 422.
+ * `http`: any other non-2xx (message verbatim). `malformed`: a 2xx body that does not match the contract.
  */
 export type BenchmarkErrorKind =
   | "network"
   | "timeout"
   | "aborted"
-  | "route_pending"
+  | "admin_required"
+  | "route_missing"
   | "not_revealable"
   | "outcome_not_available"
   | "validation"
@@ -218,23 +303,38 @@ const isStr = (v: unknown): v is string => typeof v === "string";
 const isStrOrNull = (v: unknown): v is string | null => v === null || typeof v === "string";
 const isNum = (v: unknown): v is number => typeof v === "number" && Number.isFinite(v);
 const isInt = (v: unknown): v is number => isNum(v) && Number.isInteger(v);
+const isIntOrNull = (v: unknown): v is number | null => v === null || isInt(v);
 const isStrArray = (v: unknown): v is string[] => Array.isArray(v) && v.every(isStr);
 const isNumRecord = (v: unknown): v is Record<string, number> => isObj(v) && Object.values(v).every(isNum);
+const isSha = (v: unknown): v is string => isStr(v) && /^[0-9a-f]{64}$/.test(v);
+const isShaOrNull = (v: unknown): v is string | null => v === null || isSha(v);
+const isScorable = (v: unknown): v is ScorableVariant => (SCORABLE_VARIANTS as readonly unknown[]).includes(v);
+
+const EXCLUSION_REASONS = Object.keys(EXCLUSION_REASON_TEXT);
+
+/**
+ * MATH_MODEL §6 display rules, as constants only for the consistency check below (the API applies them; the UI
+ * never derives a verdict, label or caveat from them).
+ */
+const MIN_EVENTS = 5;
+const SMALL_SAMPLE_EVENTS = 30;
+const INSUFFICIENT_DATA = "INSUFFICIENT DATA";
 
 function checkPrediction(p: unknown, at: string): string | null {
   if (!isObj(p)) return `${at} missing`;
-  for (const k of ["prediction_id", "event_id", "as_of", "agent_model", "variant", "decision", "rationale"]) {
+  for (const k of ["prediction_id", "event_id", "as_of", "agent_model", "variant", "decision", "rationale", "recorded_at"]) {
     if (!isStr(p[k])) return `${at}.${k} missing`;
   }
-  for (const k of ["prompt_sha256", "snapshot_sha256", "recorded_at"]) {
-    if (!isStr(p[k])) return `${at}.${k} missing`;
-  }
+  if (!isSha(p.prompt_sha256) || !isSha(p.snapshot_sha256)) return `${at} prompt/snapshot sha256 malformed`;
   if (!isNum(p.p_yes) || p.p_yes < 0 || p.p_yes > 1) return `${at}.p_yes is not a probability`;
   if (!isNum(p.temperature)) return `${at}.temperature missing`;
-  if (!(p.seed === null || p.seed === undefined || isInt(p.seed))) return `${at}.seed malformed`;
-  if (!isStrOrNull(p.model_digest ?? null)) return `${at}.model_digest malformed`;
+  if (!isIntOrNull(p.seed)) return `${at}.seed malformed`;
+  if (!isStrOrNull(p.model_digest)) return `${at}.model_digest malformed`;
   if (!isStrArray(p.evidence_ids)) return `${at}.evidence_ids malformed`;
   if (!isStr(p.provenance) || !PROVENANCE_VALUES.includes(p.provenance)) return `${at}.provenance is not a known value`;
+  if (!isShaOrNull(p.gated_prompt_sha256) || !isShaOrNull(p.transcript_sha256)) return `${at} audit sha256 malformed`;
+  if (!(p.attempts === null || p.attempts === 1 || p.attempts === 2)) return `${at}.attempts is not 1, 2 or null`;
+  if (!isIntOrNull(p.num_ctx) || !isIntOrNull(p.num_predict)) return `${at} num_ctx / num_predict malformed`;
   return null;
 }
 
@@ -242,10 +342,10 @@ function checkSealed(s: unknown, at: string): string | null {
   if (!isObj(s)) return `${at} missing`;
   if (!isStr(s.event_id)) return `${at}.event_id missing`;
   if (s.outcome !== "YES" && s.outcome !== "NO") return `${at}.outcome is not YES or NO`;
-  if (!isStrOrNull(s.resolved_at ?? null)) return `${at}.resolved_at malformed`;
+  if (!isStrOrNull(s.resolved_at)) return `${at}.resolved_at malformed`;
   if (!isStr(s.source_url)) return `${at}.source_url missing`;
-  if (!isStrOrNull(s.notes ?? null)) return `${at}.notes malformed`;
-  if (s.provenance !== "REAL_HISTORICAL" && s.provenance !== "SYNTHETIC") return `${at}.provenance is not REAL_HISTORICAL or SYNTHETIC`;
+  if (!isStrOrNull(s.notes)) return `${at}.notes malformed`;
+  if (!isStr(s.provenance) || !PROVENANCE_VALUES.includes(s.provenance)) return `${at}.provenance is not a known value`;
   return null;
 }
 
@@ -261,10 +361,24 @@ export function checkRevealResponse(body: unknown, requestedId: string): string 
   if (body.y !== 0 && body.y !== 1) return "y is not 0 or 1";
   // Consistency of two API fields, not a computation: y must encode sealed.outcome.
   if ((body.y === 1) !== (sealed.outcome === "YES")) return "y disagrees with sealed.outcome";
-  if (!isStr(body.revealed_at) || !isStr(body.persisted_at)) return "revealed_at / persisted_at missing";
+  for (const k of ["revealed_at", "persisted_at", "event_first_revealed_at"]) {
+    if (!isStr(body[k])) return `${k} missing`;
+  }
+  for (const k of ["persist_seq", "reveal_seq", "event_first_reveal_seq"]) {
+    if (!isInt(body[k])) return `${k} missing`;
+  }
   if (typeof body.persisted_before_outcome_revealed !== "boolean") return "persisted_before_outcome_revealed missing";
   const s = body.scores;
   if (!isObj(s) || !isNum(s.brier) || !isNum(s.log_loss) || !isNum(s.accuracy_at_0_5)) return "scores missing";
+  const b = body.baselines;
+  if (!isObj(b)) return "baselines missing";
+  if (!isObj(b.naive) || !isNum(b.naive.brier) || !isNum(b.naive.log_loss)) return "baselines.naive malformed";
+  if (b.market !== null) {
+    const m = b.market;
+    if (!isObj(m) || !isNum(m.p_yes) || m.p_yes < 0 || m.p_yes > 1 || !isNum(m.brier) || !isNum(m.log_loss)) {
+      return "baselines.market malformed";
+    }
+  }
   return null;
 }
 
@@ -272,9 +386,9 @@ function checkScorecard(c: unknown, at: string): string | null {
   if (!isObj(c)) return `${at} is not an object`;
   if (!isStr(c.label) || !c.label.trim()) return `${at}.label missing`;
   if (!isStr(c.verdict) || !c.verdict.trim()) return `${at}.verdict missing`;
-  if (!isStrOrNull(c.caveat ?? null)) return `${at}.caveat malformed`;
-  if (!(c.provenance === null || c.provenance === "REAL_HISTORICAL" || c.provenance === "SYNTHETIC")) {
-    return `${at}.provenance is not REAL_HISTORICAL, SYNTHETIC or null`;
+  if (!isStrOrNull(c.caveat)) return `${at}.caveat malformed`;
+  if (!(c.provenance === null || (isStr(c.provenance) && PROVENANCE_VALUES.includes(c.provenance)))) {
+    return `${at}.provenance is not a known value or null`;
   }
   if (!isStr(c.agent_variant)) return `${at}.agent_variant missing`;
   if (!isStrArray(c.forecasters) || c.forecasters.length === 0) return `${at}.forecasters missing`;
@@ -287,9 +401,10 @@ function checkScorecard(c: unknown, at: string): string | null {
   if (!Array.isArray(c.exclusions)) return `${at}.exclusions missing`;
   for (let i = 0; i < c.exclusions.length; i++) {
     const x = c.exclusions[i];
-    if (!isObj(x) || !isStr(x.event_id) || !isStr(x.as_of) || !isStr(x.reason) || !isStrArray(x.prediction_ids ?? [])) {
+    if (!isObj(x) || !isStr(x.event_id) || !isStr(x.as_of) || !EXCLUSION_REASONS.includes(x.reason as string)) {
       return `${at}.exclusions[${i}] malformed`;
     }
+    if (!isStrArray(x.prediction_ids)) return `${at}.exclusions[${i}].prediction_ids malformed`;
   }
   if (!Array.isArray(c.ignored_predictions)) return `${at}.ignored_predictions missing`;
   for (let i = 0; i < c.ignored_predictions.length; i++) {
@@ -305,7 +420,7 @@ function checkScorecard(c: unknown, at: string): string | null {
     if (!isObj(e) || !isStr(e.event_id) || !isInt(e.n_snapshots) || (e.y !== 0 && e.y !== 1)) {
       return `${at}.per_event[${i}] malformed`;
     }
-    if (!isStrArray(e.prediction_ids)) return `${at}.per_event[${i}].prediction_ids malformed`;
+    if (!isStrArray(e.prediction_ids) || !isStrArray(e.market_refs)) return `${at}.per_event[${i}] ids/refs malformed`;
     if (!isNumRecord(e.brier) || !isNumRecord(e.log_loss) || !isNumRecord(e.accuracy_at_0_5)) {
       return `${at}.per_event[${i}] scores malformed`;
     }
@@ -326,24 +441,52 @@ function checkScorecard(c: unknown, at: string): string | null {
     }
     if (!isInt(k.n_resamples) || !isInt(k.seed)) return `${at}.comparison n_resamples / seed missing`;
     if (!isStr(k.agent_variant)) return `${at}.comparison.agent_variant missing`;
+    if (k.baseline !== "market" || k.metric !== "brier") return `${at}.comparison baseline/metric not market/brier`;
+  }
+  if (!isStrArray(c.official_blockers)) return `${at}.official_blockers missing`;
+  if (c.case_set !== undefined && c.case_set !== "real" && c.case_set !== "synthetic") {
+    return `${at}.case_set is not real or synthetic`;
+  }
+  // The API's own display rules (MATH_MODEL §6), checked, never applied: a card that breaks them is not shown.
+  if (c.n_events < MIN_EVENTS && (c.verdict !== INSUFFICIENT_DATA || c.summary !== null || c.comparison !== null)) {
+    return `${at}: n = ${c.n_events} < ${MIN_EVENTS} but the card is not INSUFFICIENT DATA without summary/comparison`;
+  }
+  if (c.n_events >= MIN_EVENTS && c.n_events < SMALL_SAMPLE_EVENTS && c.caveat === null) {
+    return `${at}: n = ${c.n_events} < ${SMALL_SAMPLE_EVENTS} but no small-sample caveat`;
   }
   return null;
 }
 
-/** Accepts one Scorecard or `{items: Scorecard[]}`; returns the parsed data or a problem string. */
-export function readBenchmark(body: unknown): BenchmarkData | string {
+function checkRecord(r: unknown, at: string): string | null {
+  if (!isObj(r)) return `${at} is not an object`;
+  if (!isScorable(r.agent_variant)) return `${at}.agent_variant is not a scored variant`;
+  if (!isStr(r.recorded_at)) return `${at}.recorded_at missing`;
+  if (r.source !== "compute_route" && r.source !== "record_runs_script") return `${at}.source is not a known value`;
+  if (r.origin !== "committed" && r.origin !== "computed") return `${at}.origin is not committed or computed`;
+  if (!isStrOrNull(r.run_id)) return `${at}.run_id malformed`;
+  if (!isStr(r.file) || !r.file) return `${at}.file missing`;
+  if (!isSha(r.scorecard_sha256) || !isSha(r.snapshot_sha256)) return `${at} sha256 malformed`;
+  if (!isStrArray(r.agent_models)) return `${at}.agent_models malformed`;
+  return null;
+}
+
+/** Validates a GET /api/benchmark body; returns it typed, or a problem string. */
+export function readBenchmark(body: unknown): BenchmarkResponse | string {
   if (!isObj(body)) return "body is not an object";
-  if ("label" in body && "verdict" in body) {
-    const problem = checkScorecard(body, "scorecard");
-    return problem ?? { scorecards: [body as unknown as Scorecard], status: null, notes: [] };
-  }
-  if (!Array.isArray(body.items)) return "body is neither a Scorecard nor {items: Scorecard[]}";
+  if (body.status !== "AVAILABLE" && body.status !== "NOT AVAILABLE") return "status is not AVAILABLE or NOT AVAILABLE";
+  if (body.provenance !== "RECORDED_RUN") return "provenance is not RECORDED_RUN";
+  if (!Array.isArray(body.items) || !Array.isArray(body.records)) return "items / records missing";
+  if (!isStrArray(body.notes)) return "notes missing";
+  if (body.items.length !== body.records.length) return "records do not pair one-to-one with items";
+  if ((body.status === "AVAILABLE") !== body.items.length > 0) return "status disagrees with the number of items";
   for (let i = 0; i < body.items.length; i++) {
-    const problem = checkScorecard(body.items[i], `items[${i}]`);
+    const problem = checkScorecard(body.items[i], `items[${i}]`) ?? checkRecord(body.records[i], `records[${i}]`);
     if (problem) return problem;
+    const item = body.items[i] as Record<string, unknown>;
+    const rec = body.records[i] as Record<string, unknown>;
+    if (item.agent_variant !== rec.agent_variant) return `records[${i}].agent_variant differs from items[${i}]`;
   }
-  const notes = Array.isArray(body.notes) ? body.notes.filter(isStr) : [];
-  return { scorecards: body.items as Scorecard[], status: isStr(body.status) ? body.status : null, notes };
+  return body as unknown as BenchmarkResponse;
 }
 
 // --- requests ----------------------------------------------------------------------------------------------------
@@ -381,8 +524,9 @@ async function request(
     if (!res.ok) {
       const { message, code } = readErrorBody(body);
       let kind: BenchmarkErrorKind = "http";
-      if (res.status === 409) kind = "not_revealable";
-      else if (res.status === 404) kind = code === undefined ? "route_pending" : "outcome_not_available";
+      if ((res.status === 401 || res.status === 403) && code === "ADMIN_TOKEN_REQUIRED") kind = "admin_required";
+      else if (res.status === 409) kind = "not_revealable";
+      else if (res.status === 404) kind = code === undefined ? "route_missing" : "outcome_not_available";
       else if (res.status === 422) kind = "validation";
       return { ok: false, kind, message: message ?? `HTTP ${res.status}`, status: res.status, code, request: label };
     }
@@ -403,8 +547,9 @@ async function request(
 }
 
 /**
- * POST /api/replay/{prediction_id}/reveal. This is a logged, state-changing call: the server records the reveal, and
- * any forecast for the same event persisted afterwards is excluded from scoring. Call it only on an explicit click.
+ * POST /api/replay/{prediction_id}/reveal. A logged, state-changing call: the server records the reveal, and any
+ * forecast for the same event persisted afterwards is excluded from scoring. Call it only on an explicit click.
+ * In public mode the API refuses it (401/403 ADMIN_TOKEN_REQUIRED); the browser never holds the admin token.
  * Never throws.
  */
 export async function revealPrediction(predictionId: string, signal?: AbortSignal): Promise<Result<RevealResponse>> {
@@ -419,12 +564,11 @@ export async function revealPrediction(predictionId: string, signal?: AbortSigna
 }
 
 /**
- * GET /api/benchmark?agent_variant=… . `build_scorecard` reveals (and logs) every scorable persisted prediction, so
- * this is also called only on an explicit click. The query parameter name is ASSUMED (it mirrors
- * `build_scorecard(agent_variant=…)`); the UI shows the variant the API reports, not the one requested.
+ * GET /api/benchmark: recorded scorecard snapshots only. Read-only on the server (never reveals, never opens the
+ * prediction store or the sealed folder), so it is safe to request on page load. Never throws.
  */
-export async function getBenchmark(variant: ScorableVariant, signal?: AbortSignal): Promise<Result<BenchmarkData>> {
-  const res = await request("GET", `${BENCHMARK_PATH}?agent_variant=${encodeURIComponent(variant)}`, 20_000, signal);
+export async function getBenchmark(signal?: AbortSignal): Promise<Result<BenchmarkResponse>> {
+  const res = await request("GET", BENCHMARK_PATH, 15_000, signal);
   if (!res.ok) return res;
   if (!res.parsed) return { ok: false, kind: "malformed", message: "response was not JSON", status: res.status, request: res.request };
   const data = readBenchmark(res.body);

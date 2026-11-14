@@ -125,3 +125,45 @@ test.describe("RESEARCH LENS", () => {
     await expect(page.getByText(/^API as_of/)).toHaveText(`API as_of ${api.as_of} · ${api.items.length} shown`);
   });
 });
+
+test.describe("REVEAL", () => {
+  const BENCHMARK_URL = `${E2E_API_BASE}/api/benchmark`;
+
+  test("loads the recorded benchmark read-only and shows what the API served; never reveals or computes", async ({ page }) => {
+    const apiCalls: string[] = [];
+    page.on("request", (r) => {
+      if (r.url().startsWith(E2E_API_BASE)) apiCalls.push(`${r.method()} ${new URL(r.url()).pathname}`);
+    });
+
+    const loaded = page.waitForResponse((r) => r.url() === BENCHMARK_URL);
+    await page.goto("/reveal/");
+    expect((await loaded).status()).toBe(200);
+
+    const direct = await page.request.get(BENCHMARK_URL);
+    expect(direct.status(), "direct GET /api/benchmark").toBe(200);
+    const api = (await direct.json()) as {
+      status: string;
+      provenance: string;
+      notes: string[];
+      items: { label: string; verdict: string }[];
+    };
+
+    await expect(page.getByText(`status: ${api.status} · provenance: ${api.provenance}`, { exact: true })).toBeVisible();
+    for (const note of api.notes) await expect(page.getByText(note, { exact: true })).toBeVisible();
+
+    const first = api.items[0];
+    if (first) {
+      // The default tab is the first variant the API served; its first item's strings are shown verbatim.
+      await expect(page.getByTestId("scorecard-label")).toHaveText(first.label);
+      await expect(page.getByTestId("scorecard-verdict")).toHaveText(first.verdict);
+    } else {
+      await expect(page.getByTestId("scorecard-label")).toHaveCount(0);
+      await expect(page.getByText("Insufficient data", { exact: true })).toBeVisible();
+    }
+    // The outcome stays sealed until an explicit click.
+    await expect(page.getByText("Sealed", { exact: true })).toBeVisible();
+
+    await page.waitForTimeout(500);
+    expect(apiCalls.filter((c) => c.startsWith("POST")), "no POST (reveal / compute) on page load").toEqual([]);
+  });
+});

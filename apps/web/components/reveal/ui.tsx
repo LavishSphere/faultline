@@ -47,7 +47,9 @@ export const BUTTON_SECONDARY =
   "rounded-md border border-line px-3 py-1.5 font-mono text-[11px] uppercase tracking-[0.12em] text-text-2 transition-colors hover:border-line-strong hover:bg-hover";
 
 const FAILURE_HEADLINE: Record<BenchmarkFailure["kind"], string> = {
-  route_pending: "Not available: route pending (#44)",
+  // Only the reveal route is admin-gated among the routes this screen calls (GET /api/benchmark never is).
+  admin_required: "Reveal is disabled on the public demo; run locally",
+  route_missing: "Not available: this API build does not serve the route",
   not_revealable: "Not revealable",
   outcome_not_available: "Outcome not available",
   validation: "Request rejected",
@@ -59,7 +61,9 @@ const FAILURE_HEADLINE: Record<BenchmarkFailure["kind"], string> = {
 };
 
 const FAILURE_NOTE: Partial<Record<BenchmarkFailure["kind"], string>> = {
-  route_pending: "This API build does not serve the route yet. Nothing is shown in its place.",
+  admin_required:
+    "The public API refuses to reveal without the admin token, and this page never holds one. Nothing was revealed. Run the app locally (make dev) to reveal a forecast.",
+  route_missing: "The API answered 404 without a FAULTLINE error code. Nothing is shown in its place.",
   not_revealable:
     "The API refuses to unseal this outcome: the prediction is not persisted, or its stored prompt, snapshot or record hash no longer matches.",
   outcome_not_available: "The API has no sealed outcome file for this event, so there is nothing to reveal or score.",
