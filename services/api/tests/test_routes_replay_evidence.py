@@ -16,6 +16,7 @@ from core.temporal_gate import EVIDENCE_PROMPT_FIELDS, EvidenceStore
 ITEM_KEYS = set(EVIDENCE_PROMPT_FIELDS)
 QUOTE_KEYS = {
     "venue", "market_id", "p_yes", "quote_kind", "ts", "spread", "volume", "open_interest", "period_seconds", "label",
+    "provenance",
 }
 BODY_KEYS = {
     "status", "event_id", "as_of", "case_as_of", "items", "market_quotes", "market_at_cutoff", "excluded_by_reason",
@@ -53,6 +54,7 @@ def test_default_as_of_is_the_case_cutoff_and_only_admitted_items_are_served(wor
     assert "evid_future" not in resp.text and "evid_unverified" not in resp.text
     [quote] = body["market_quotes"]
     assert set(quote) == QUOTE_KEYS and quote["p_yes"] == 0.56 and "price-derived" in quote["label"]
+    assert quote["provenance"] == "SYNTHETIC"  # every quote on a SYNTHETIC case is labeled SYNTHETIC (#102)
     assert _instant(quote["ts"]) == AS_OF - timedelta(hours=2)
     m = body["market_at_cutoff"]
     assert m["status"] == "AVAILABLE" and m["ref"] == MARKET_REF and m["p_yes"] == 0.56

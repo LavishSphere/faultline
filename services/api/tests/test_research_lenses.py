@@ -71,9 +71,14 @@ def test_quote_kinds_are_classified(lenses):
     assert kinds and set(kinds) <= set(QUOTE_KINDS)
 
 
-def test_every_thesis_is_pending_finance_review(lenses):
-    # Thesis summaries are curator paraphrases; they stay flagged until Yaseen signs off.
-    assert all(item["thesis_review"].startswith("PENDING FINANCE REVIEW") for item in lenses)
+FINANCE_REVIEW_PREFIX = re.compile(r"^(PENDING FINANCE REVIEW|Reviewed by Yaseen \(\d{4}-\d{2}-\d{2}\):)")
+
+
+def test_every_thesis_is_pending_or_reviewed_by_finance_owner(lenses):
+    # Thesis summaries are curator paraphrases: each stays flagged PENDING FINANCE REVIEW until the
+    # finance owner signs off, then carries "Reviewed by Yaseen (YYYY-MM-DD):" (issue #21).
+    for item in lenses:
+        assert FINANCE_REVIEW_PREFIX.match(item["thesis_review"]), item["id"]
 
 
 def test_portfolio_pages_carry_the_not_a_returns_record_caveat(lenses):

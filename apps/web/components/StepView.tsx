@@ -1,5 +1,6 @@
 import type { ReactNode } from "react";
 import { StepPager } from "./StepPager";
+import { ExploreScreen } from "./explore/ExploreScreen";
 import { CascadeScreen } from "./screens/CascadeScreen";
 import { DecisionScreen } from "./screens/DecisionScreen";
 import { ResearchScreen } from "./screens/ResearchScreen";
@@ -13,6 +14,7 @@ const SCREENS: Record<StepSlug, (props: { step: Step }) => ReactNode> = {
   cascade: CascadeScreen,
   reveal: RevealScreen,
   research: ResearchScreen,
+  explore: ExploreScreen,
 };
 
 /** One presenter screen plus the bottom pager. Shared by `/` (Rewind) and `/[step]`. */

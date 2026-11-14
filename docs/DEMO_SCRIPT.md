@@ -1,14 +1,14 @@
 # FAULTLINE: 2-minute demo script and finance Q&A prep
 
-**Presenter (finance voice):** Yaseen. **Length:** 276 spoken words on the main path (the **Say** lines of steps 0–7), about 110 s at 150 words a minute, inside the 90–120 s target (SPEC §2). **Measured with a stopwatch:** NOT YET TIMED. Write the time of the first full run-through here.
-**Status of this script:** written 2026-11-13 against `main` at commit `1190671` and updated against `9b23331` (after #76, the run/reveal routes, merged). Every number below came from the API running locally (calls listed in [Where the numbers come from](#where-the-numbers-come-from)).
+**Presenter (finance voice):** Yaseen. **Length:** 280 spoken words on the main path (the **Say** lines of steps 0–7), about 112 s at 150 words a minute, inside the 90–120 s target (SPEC §2). **Measured with a stopwatch:** NOT YET TIMED. Write the time of the first full run-through here.
+**Status of this script:** written 2026-11-13 against `main` at commit `1190671` and updated on 2026-11-14 against `4a1f2c2` (after the DECISION screen #134, the optimizer endpoint and Protect payroll switch #127, and the LIVE EXPLORE screen #135 merged). Every number below came from the API running locally (calls listed in [Where the numbers come from](#where-the-numbers-come-from)).
 The web app itself was **not** run while writing this (Node.js was not installed on the writing machine), so the
 click paths and on-screen labels were read from the `apps/web` code. Do the [dry-run checklist](#dry-run-checklist)
 before going on stage.
 
-Steps marked **PENDING: #N** depend on work that was not merged into `main` when this was written. If it is still not
-merged on demo day, the screen shows `NOT AVAILABLE`, and you say the "if still pending" line instead. Never fill a
-gap with a number from memory. Everything else that a judge might ask about is in the [hard questions](#hard-questions-plain-language-answers).
+Every step below is on `main` at `4a1f2c2`; nothing in the flow is still PENDING. Steps 2 and 6 need a running local
+model, and step 6 also needs `TAVILY_API_KEY`. If one is missing, the screen shows `NOT AVAILABLE` (or `Local model
+unavailable`), and you say the "Say instead" line. Never fill a gap with a number from memory. Everything else that a judge might ask about is in the [hard questions](#hard-questions-plain-language-answers).
 
 ---
 
@@ -24,23 +24,23 @@ gap with a number from memory. Everything else that a judge might ask about is i
 
 ## Click-by-click flow
 
-Navigation: the **→ / ←** arrow keys (or the buttons in the bottom bar) move between the five screens
-`/rewind → /decision → /cascade → /reveal → /research`. The timeline at the top groups them as THEN / DECISION / REVEAL.
-The LIVE EXPLORE beat is a sixth screen (`/explore`) that only exists once #61 is merged.
+Navigation: the **→ / ←** arrow keys (or the buttons in the bottom bar) move between the six screens
+`/rewind → /decision → /cascade → /reveal → /research → /explore`. The timeline at the top groups them as
+THEN / DECISION / REVEAL / NOW; LIVE EXPLORE (`/explore`) is the NOW screen.
 
 ### Summary table
 
 | # | Step | What to click | Label on screen | Words (≈ s) | Status |
 |---|---|---|---|---|---|
 | 0 | Open | Nothing; app is on `/rewind` | (title only) | 17 (≈ 7 s) | works on main |
-| 1 | REWIND | Pick the real case in panel **A.1 Replay cases** | `REAL HISTORICAL`, `AS-OF`, `SEALED` | 32 (≈ 13 s) | **PENDING: #54 (#20), #49** |
-| 2 | DECISION | **→** to `/decision` | `RECORDED RUN`, `FORECAST`, market `AS-OF` "Market-implied (price-derived)" | 30 (≈ 12 s) | **PENDING: #49, #71 (#45), #55** |
-| 3 | CASCADE | **→** to `/cascade`; **Preset** dropdown → "Bad quarter…"; then **Protect payroll** | `SIMULATED` + `SYNTHETIC` | 74 (≈ 30 s) | preset **works on main**; Protect payroll **PENDING: #69 (#17), #47, #56** |
-| 4 | REVEAL | **→** to `/reveal`; **Reveal outcome** | Scorecard `INSUFFICIENT DATA: No valid comparison`; outcome `REVEALED` | 37 (≈ 15 s) | reveal route **on main (#76)**; computed scorecard **PENDING: #50, #91**; real cases **PENDING: #54** |
+| 1 | REWIND | Pick the real case in panel **A.1 Replay cases** | `REAL HISTORICAL`, `AS-OF`, `SEALED` | 32 (≈ 13 s) | **works on main** (4 real cases, #54) |
+| 2 | DECISION | **→** to `/decision` | `RECORDED RUN` or a fresh run, `FORECAST`, market `AS-OF` "market-implied probability (price-derived…)" | 30 (≈ 12 s) | **on main** (#55, #71); needs the local model running |
+| 3 | CASCADE | **→** to `/cascade`; **Preset** dropdown → "Bad quarter…"; then **Protect payroll** | `SIMULATED` + `SYNTHETIC` | 74 (≈ 30 s) | preset and Protect payroll **work on main** (#69, #127) |
+| 4 | REVEAL | **→** to `/reveal`; **Reveal outcome** | Benchmark and both scorecards `NOT AVAILABLE`; outcome `REVEALED` | 41 (≈ 16 s) | **on main** (#76, #64, #91); no recorded scorecard yet |
 | 5 | RESEARCH LENS | **→** to `/research`; type cutoff `2026-07-01T00:00:00Z`; **Apply cutoff** | `REAL HISTORICAL`, `RESEARCH CONTEXT`, `AS-OF: UTC instant` | 26 (≈ 10 s) | **works on main** |
-| 6 | LIVE EXPLORE | Open `/explore`; type a decision; confirm the suggested scenario | `LIVE EXPLORE`, `MODEL-SUGGESTED, HUMAN TO CONFIRM`, then `SIMULATED` + `SYNTHETIC` | 29 (≈ 12 s) | **PENDING: #60, #61** |
+| 6 | LIVE EXPLORE | **→** to `/explore`; type a decision; **Research and analyze**; confirm the suggested inputs | `LIVE EXPLORE`, `MODEL-SUGGESTED, HUMAN TO CONFIRM`, then `SIMULATED` + `SYNTHETIC` | 29 (≈ 12 s) | **on main** (#135); needs `TAVILY_API_KEY` and the local model |
 | 7 | Close | Nothing | (none) | 31 (≈ 12 s) | n/a |
-| | | | **Total** | **276 (≈ 110 s)** | |
+| | | | **Total** | **280 (≈ 112 s)** | |
 
 Seconds are estimates at 150 spoken words a minute, plus pauses for clicks. If you are running long, use step 6's
 5-second line instead of the full one (saves 11 words) and drop the second sentence of step 5 (saves 17 words).
@@ -53,65 +53,77 @@ Seconds are estimates at 150 spoken words a minute, plus pauses for clicks. If y
 - **Say:** "Test the decision before you live with it. FAULTLINE stress-tests a small business's cash against real shocks."
 - **On screen:** the REWIND title and the THEN / DECISION / REVEAL timeline. No data label yet.
 
-### Step 1. REWIND: **PENDING: #54 (issue #20), #49**
+### Step 1. REWIND: **works on main** (#54)
 
-- **Click:** in panel **A.1 Replay cases**, pick the real FOMC case. Point at **A.3 Knowledge cutoff** and the
+- **Click:** in panel **A.1 Replay cases**, pick one of the four real FOMC cases (2026 meetings). Point at **A.3 Knowledge cutoff** and the
   hatched **Sealed future** strip.
 - **Say:** "We rewind to a real Federal Reserve decision. This is the knowledge cutoff. On the left, only evidence public by then. On the right, the answer is sealed away from the model."
 - **On screen:** `REAL HISTORICAL` on the evidence, `AS-OF` on the cutoff, `SEALED` on the future.
-- **If only the synthetic case is listed (#92):** say instead: "This is an invented case whose answer was fixed by a
-  committed random draw, so no model can know it." Its screens are labeled `SYNTHETIC`, never `REAL HISTORICAL`.
+- **The list also holds one `SYNTHETIC` case (#128).** Don't pick it on the main path. If you do, say instead: "This
+  is an invented case whose answer was fixed by a committed random draw, so no model can know it." Its screens are
+  labeled `SYNTHETIC`, never `REAL HISTORICAL`.
 - **If no case is listed:** the screen shows `NOT AVAILABLE` on every panel and `Case: NOT AVAILABLE: No case loaded`
-  in the header. When this script was written (2026-11-13), `GET /api/cases` returned `"Replay cases NOT AVAILABLE:
-  demo_cases/ has not been added yet (issue #20)."`
-  **Say instead:** "The real replay cases are in review, so this screen honestly says NOT AVAILABLE." Then go straight
+  in the header. On 2026-11-14 `GET /api/cases` returned 5 cases (4 `REAL_HISTORICAL` FOMC meetings of June, July,
+  September and October 2026, plus 1 `SYNTHETIC`), so this means the API did not load its data.
+  **Say instead:** "The replay cases didn't load, so this screen honestly says NOT AVAILABLE." Then go straight
   to step 3.
 
-### Step 2. DECISION: **PENDING: #49, #71 (issue #45), #55** (and a local model)
+### Step 2. DECISION: **on main** (#55, #71); needs a local model
 
 - **Click:** **→**. Point at **B.1 Agent probability**, then **B.2 Market at cutoff**, then the ACT / WAIT / HEDGE cards.
 - **Say:** "A local model, offline, read only that evidence and gave a probability. Beside it, the market price at the cutoff. Below: act, wait or hedge, each costed by the engine."
 - **On screen:** `RECORDED RUN` (a saved, reproducible run with its prompt and data hashes) or a fresh local run;
-  `FORECAST` on the probability; `AS-OF` and the label "Market-implied (price-derived)" on the market figure.
+  `FORECAST` on the probability; on **B.2** (kicker "Market baseline · P(YES)") `AS-OF` and the API's own label,
+  which starts "market-implied probability (price-derived…".
 - **Not every real case has a market price at its cutoff.** Where it doesn't, panel B.2 must read `NOT AVAILABLE`. Do
   not say a market number unless it is on screen.
-- **If still pending, the screen shows:** `NOT AVAILABLE` on B.0–B.6, and **B.0** reads `Local model unavailable` when
-  Ollama isn't running (it was not running when this was written: `/api/health` returned `"model_ready": false`).
+- **If the local model isn't running:** **B.0** reads `Local model unavailable` and the run panels read
+  `NOT AVAILABLE` (Ollama was not running when this was written: `/api/health` returned `"model_ready": false`).
+  No recorded run is committed on `main` yet (`services/api/data/recorded_runs/` holds only a README), so there is
+  no saved run to fall back on.
   **Say instead:** "When the model isn't running, this screen says so. It never makes up an answer."
 
-### Step 3. CASCADE: preset **works on main**; Protect payroll **PENDING: #69 (issue #17), #47, #56**
+### Step 3. CASCADE: preset and Protect payroll **work on main** (#69, #127)
 
 - **Click:** **→** to `/cascade`. In panel **C.1 Scenario inputs**, open the **Preset** dropdown and choose
   **"Bad quarter: rate shock + demand drop + supplier outage"**. Wait for the readout strip **C.2** to turn solid
   (the status line reads `POST /api/simulate · 200`).
 - **Say (numbers are from the running API on `main`, see below):** "A fictional three-store grocer, labeled synthetic. No shock: it ends the half-year at 63,000. A bad quarter: rates up two points, demand down a fifth, main supplier out three weeks. Cash falls below our 25,000 floor in week 20 and ends at 13,950: 49,050 worse."
-- **Then (PENDING #69 / #47 / #56) click:** the **Protect payroll** switch.
+- **Then click:** the **Protect payroll** switch in C.1 (off by default).
   **Say:** "Now, Protect payroll. The optimizer must keep cash above the floor without cutting wages, or say NO FEASIBLE PLAN. Protecting people's jobs is a hard limit in the maths."
-  Then read the plan **only from panel C.3 Recovery plan**, for example cutting purchases or switching to the backup
-  supplier, whatever C.3 lists. (Capex is 0 in the demo business and the revolver must be repaid by week 26, so neither
-  fixes the bad quarter on its own.) This script gives no optimizer numbers, because the optimizer was not on `main`
-  when it was written.
+  Then read the plan **only from panel C.3 Recovery plan**. On 2026-11-14 the API gave, for the bad quarter with
+  Protect payroll on: **Chosen actions (6)**, all purchase cuts in weeks 18–24, together $11,050; **Min cash after
+  plan $25,000 · week 20** (exactly the floor); objective 550; no payroll cut (see
+  [Where the numbers come from](#where-the-numbers-come-from)). With the switch off, the plan costs the same (7
+  purchase cuts, the same $11,050, objective 550): payroll is the costliest lever, so the optimizer doesn't use it
+  here anyway. So don't say the switch changed this plan; its point is the guarantee. (Capex is 0 in the demo
+  business and the revolver must be repaid by week 26, so neither fixes the bad quarter on its own.)
 - **On screen:** `SIMULATED` (computed by the deterministic engine) and `SYNTHETIC` (fictional business) on C.0 and C.2.
   The dependency network shows Δ = scenario − baseline at each node's peak week.
-- **If Protect payroll is still pending, the screen shows:** the switch greyed out with "Optimizer not wired yet (#17)"
-  and C.3 reads `NOT AVAILABLE`.
-  **Say instead:** "The recovery optimizer is in review. When it's merged, this switch forces payroll cuts to zero
-  inside the solver, not through a prompt."
+- **If C.3 reads `NOT AVAILABLE` or shows an error** (the API did not answer `POST /api/optimize`):
+  **Say instead:** "The solver didn't answer, so this panel says NOT AVAILABLE instead of guessing."
 - **Moved to Q&A** (don't say on the main path): the week-7 low of 25,523, the 48,000 of lost sales, and why the three
   shocks don't add up (question 16).
 
-### Step 4. REVEAL: reveal route **on main (#76)**; computed scorecard **PENDING: #50, #91**; real cases **PENDING: #54**
+### Step 4. REVEAL: **on main** (#76, #64, #91); no recorded scorecard yet
 
-- **Click:** **→** to `/reveal`. Click **Reveal outcome** (enabled only after the prediction was saved).
-- **Say:** "The outcome unseals only after the answer is saved, then is scored against the market and a coin flip. No case has been scored yet, so the scorecard reads INSUFFICIENT DATA; our rule needs at least five."
-- **On screen:** panel **D.1 Scorecard** with `INSUFFICIENT DATA: No valid comparison`. On `main` today this is a fixed
-  empty state, not a computed result; the computed scorecard arrives with #50 and #91. After a reveal, the outcome
-  panel would read `REVEALED`.
-- **If #50 and #91 are merged and the scorecard shows a computed result:** read only what is on screen, and drop "No
-  case has been scored yet".
+- **Click:** **→** to `/reveal`. In panel **D.0 Historical outcome**, click **Reveal outcome** (it needs the
+  `prediction_id` of the saved DECISION run).
+- **Say:** "The outcome unseals only after the answer is saved, then is scored against the market and a coin flip. Nothing has been officially scored yet, so the benchmark says NOT AVAILABLE; with fewer than five cases our rule shows INSUFFICIENT DATA."
+- **On screen:** panel **D.1 Benchmark · recorded scorecards** badged `NOT AVAILABLE` (on 2026-11-14 `GET
+  /api/benchmark` said "Benchmark NOT AVAILABLE: no recorded scorecard yet."), and both **D.2** scorecards
+  (`agent_only`, `agent_plus_market`) read `NOT AVAILABLE`. `INSUFFICIENT DATA` appears only on a recorded scorecard
+  with fewer than five cases. After a reveal, D.0 reads `REVEALED`.
+- **If a recorded scorecard is shown:** read only what is on screen, and drop "Nothing has been officially scored
+  yet".
 - **Do not** read out any per-case score or any outcome from memory. Say only what is on screen.
-- **If the reveal is still pending:** the button is disabled with "Disabled: no persisted prediction."
+- **If there is no saved prediction:** the button is disabled and the line under it reads "Disabled: no prediction
+  id. The outcome stays sealed server-side until a persisted forecast is named."
   **Say instead:** "The reveal stays locked until a prediction has been saved. That lock is the point."
+- **Optional, for the +2 AI-alignment criterion (not counted in the timing):** point at panel **D.3 Integrity · what
+  the AI could not see** (also **B.8** on DECISION, #93) and say: "This panel re-checks, live, what the AI was not
+  allowed to see." Read only the ✓ / ✗ / NOT AVAILABLE marks it shows (on 2026-11-14 `GET /api/integrity` with no
+  case selected: 3 passed, 0 failed, 6 NOT AVAILABLE).
 
 ### Step 5. RESEARCH LENS: **works on main**
 
@@ -121,19 +133,22 @@ Seconds are estimates at 150 spoken words a minute, plus pauses for clicks. If y
 - **On screen:** `AS-OF: UTC instant` on E.0; each firm panel `REAL HISTORICAL` with a `RESEARCH CONTEXT` tag; Sequoia's
   panel shows no source at this cutoff (its July 23rd article was not public yet).
 
-### Step 6. LIVE EXPLORE: **PENDING: #60, #61** (Tavily, our sponsor)
+### Step 6. LIVE EXPLORE: **on main** (#135) (Tavily, our sponsor); needs `TAVILY_API_KEY` and the local model
 
-- **Click:** open `/explore`. Type a real decision, for example "Should a three-store grocer lock in a fixed rate on its
-  term loan this month?". Read the cited evidence cards, then confirm (or edit) the suggested scenario.
+- **Click:** **→** to `/explore`. In panel **X.1**, type a real decision, for example "Should a three-store grocer lock
+  in a fixed rate on its term loan this month?", and click **Research and analyze**. Read the cited evidence cards in
+  **X.2**, check (or edit) the suggested inputs in **X.3**, and click **Confirm inputs and run the engine**.
 - **Say:** "Live Explore is for today. Tavily finds current news, with sources; the model suggests a scenario, I confirm it, the same engine runs. The replay never touches the web."
-- **On screen:** `LIVE EXPLORE` on the search results, `MODEL-SUGGESTED, HUMAN TO CONFIRM` on the scenario, "Search
-  powered by Tavily", then `SIMULATED` + `SYNTHETIC` on the cascade.
+- **On screen:** `LIVE EXPLORE` on X.1 and X.2, "Search powered by Tavily", `MODEL-SUGGESTED, HUMAN TO CONFIRM` on X.3
+  when the model supplied numbers (if it gave none, X.3 shows `ILLUSTRATIVE` guidance defaults and says so), then
+  `SIMULATED` + `SYNTHETIC` on **X.4 Cascade · deterministic engine**.
 - **Optional extra line, not counted in the timing (say it only if it is true for the merged cases; ask the lead):**
   "We also used Tavily to *find* candidate sources for the real replay cases, and then a person verified each one
   against an archived copy from before the cutoff. Tavily helped us search; it never decided what the model was
   allowed to see."
-- **If still pending:** there is no `/explore` screen. `/api/health` also reports `"TAVILY_API_KEY not set: Live Explore
-  web search is disabled."` on a machine without the key. **Say instead (5 s):** "Next is Live Explore with Tavily: the
+- **If Live Explore can't run:** without the key `/api/health` reports `"TAVILY_API_KEY not set: Live Explore web
+  search is disabled."` (true on the writing machine on 2026-11-14), and without the local model the screen says
+  `Local model unavailable`. **Say instead (5 s):** "Next is Live Explore with Tavily: the
   same engine on today's news, kept completely separate from the replay."
 
 ### Step 7. Close
@@ -147,7 +162,9 @@ Seconds are estimates at 150 spoken words a minute, plus pauses for clicks. If y
 All figures were produced by `POST /api/simulate` on `main` at `1190671`, run locally on 2026-11-13
 (`uvicorn main:app --host 127.0.0.1 --port 8046` from `services/api`). The response carries
 `"provenance": "SIMULATED"` and `"business_provenance": "SYNTHETIC"`. Dollar figures are rounded to the nearest dollar
-for speaking. The API returns e.g. `13949.999999999944`, which the screen shows as `$13,950`.
+for speaking. The API returns e.g. `13949.999999999944`, which the screen shows as `$13,950`. Re-checked on 2026-11-14
+against `38c595a` (port 8072; `main` then moved to `4a1f2c2` with docs-only changes): baseline 63,000, bad quarter
+13,950 (week 26), `min_cash_delta` −49,050, and the research-lens counts below are unchanged.
 
 | Request | Field | Value from the API |
 |---|---|---|
@@ -172,13 +189,28 @@ The other three named scenarios, each sent the same way (`scenario_id` + the ser
 | `supplier-outage-3wk` | 42,000 (26) | −21,000 |
 | `bad-quarter` | 13,950 (26) | −49,050 |
 
+The recovery plan (step 3), from `POST /api/optimize` on 2026-11-14 at `38c595a`, body `{"scenario_id": "bad-quarter",
+"shock": <the served bad-quarter shock>, "protect_payroll": true | false}`. Both answers have `"status": "OPTIMAL"`,
+`"provenance": "SIMULATED"`, `"business_provenance": "SYNTHETIC"`:
+
+| Field | `protect_payroll: true` | `protect_payroll: false` |
+|---|---|---|
+| `actions` | 6 purchase cuts: weeks 18 (1,126.92), 19, 20 (1,653.85 each), 21 (3,307.69), 23, 24 (1,653.85 each) | 7 purchase cuts: week 18 (1,126.92), weeks 19–24 (1,653.85 each) |
+| sum of purchase cuts | 11,050 | 11,050 |
+| payroll cut, revolver draw, backup supplier, capex, expansion | none | none |
+| `min_cash` / `min_cash_week` | 25,000 / week 20 | 25,000 / week 20 |
+| `objective` (`disruption_cost`) | 550 (552.50) | 550 (552.50) |
+| `binding_constraints` | liquidity floor, weeks 20, 21, 22, 24, 25, 26 | liquidity floor, weeks 20–26 |
+
 Other calls used in this script:
 
 - `GET /api/scenarios` → `status: AVAILABLE`, 4 scenarios: `rate-plus-200bp`, `demand-drop-20pct-6wk`,
   `supplier-outage-3wk`, `bad-quarter`.
 - `GET /api/vc-lenses?as_of=2026-07-01T00:00:00Z` → `point_in_time`, 4 items (Link Ventures 1, a16z 2, Bessemer 1),
   `excluded_not_yet_public: 2`. With no `as_of` (Live Explore mode): 6 items.
-- `GET /api/cases` → `status: NOT AVAILABLE` ("demo_cases/ has not been added yet (issue #20)").
+- `GET /api/cases` (2026-11-14) → `status: AVAILABLE`, 5 cases: 4 `REAL_HISTORICAL` FOMC meetings (June, July,
+  September, October 2026) and 1 `SYNTHETIC`.
+- `GET /api/benchmark` (2026-11-14) → `status: NOT AVAILABLE`, "no recorded scorecard yet".
 - `GET /api/health` → `model_ready: false` (Ollama not running on the writing machine), `tavily_api_key: false`.
 
 **Hand check (MATH_MODEL §10), useful if a judge asks:**
@@ -212,8 +244,9 @@ a supplier outage shows up within weeks, not years. Our business already loses a
 business everyone in the room understands without a glossary.
 
 **3. "Did your model beat the market?"**
-No, and we don't claim it did. The scorecard reads `INSUFFICIENT DATA`. Our own rule (MATH_MODEL §6) says that with fewer
-than five real scored cases we show no comparison at all, and even with more, we only say "better than the market" if a
+No, and we don't claim it did. Nothing has been officially scored yet, so the benchmark reads `NOT AVAILABLE`. Our own
+rule (MATH_MODEL §6) says that with fewer than five real scored cases the scorecard shows `INSUFFICIENT DATA` and no
+comparison at all, and even with more, we only say "better than the market" if a
 95% confidence interval on the score difference is entirely below zero. Otherwise the screen says `No improvement
 measured`. Not every real case has a market price at its cutoff; where one doesn't, the screen says `NOT AVAILABLE`. What we built is the
 honest measuring instrument, not a victory lap.
@@ -231,7 +264,7 @@ carries a contamination flag, and we have extra controls: a version of the model
 (so we can see whether it is just copying the market), and a deliberately planted "future fact" in the sealed data that
 tests check never reaches the model (the canary test is on `main`).
 
-**6. "What does the optimizer do, and what doesn't it do?"** (PENDING: #69, #47, #56)
+**6. "What does the optimizer do, and what doesn't it do?"**
 It chooses the least harmful combination of a short, fixed list of actions (draw on the approved credit line, cut
 inventory purchases, defer non-critical capex, switch to the backup supplier, delay the expansion, or, only when allowed,
 trim payroll hours by up to 10%) so that cash stays above the 25k floor every week, the credit line is within its 150k limit and
@@ -245,7 +278,7 @@ Then it says `NO FEASIBLE PLAN`, and the screen keeps saying it. No language mod
 something reassuring. The useful follow-up is "how low would the floor have to be for a plan to exist", which tells a CFO
 how big the hole really is.
 
-**8. "Does 'Protect payroll' actually protect payroll?"** (PENDING: #69, #47, #56)
+**8. "Does 'Protect payroll' actually protect payroll?"**
 Yes, mechanically. The switch sets the payroll-cut variable's upper limit to zero inside the solver, so no plan can cut
 hours. It is a hard constraint in the maths, not an instruction in a prompt. There are no layoffs in the action list at
 all.
@@ -269,12 +302,12 @@ there isn't one, the screen says `NOT AVAILABLE`, never an estimate.
 Every item carries the time it became publicly available, and the replay only accepts items available at or before the
 cutoff, to the minute. Pages that might have been edited later are checked against archived copies. If we can't prove a
 date, the item is excluded. This point-in-time gate is on `main` and tested today, for the research lenses and the replay
-evidence; the real cases it will gate are PENDING: #54.
+evidence, including the four real cases (#54).
 
-**13. "How is live search (Tavily) kept away from the blind replay?"** (PENDING: #60, #61)
+**13. "How is live search (Tavily) kept away from the blind replay?"**
 They are separate modes with a wall between them. Tavily is only used in Live Explore, for decisions today, and its
 results are labeled `LIVE EXPLORE: current, not point-in-time`. The replay model has no web search, no internet and no
-Tavily; the planned tests check that replay code can't even import the search client and that a search result can't
+Tavily; tests on `main` (`services/api/tests/test_explore_separation.py`) check that replay code can't even import the search client and that a search result can't
 pass the point-in-time gate. For building cases, Tavily can help us *find* candidate historical sources, but a person
 must verify each one against an archived copy dated before the cutoff, and the tool can't write into the replay data.
 That separation is the point: live search for exploring, sealed evidence for scoring.
@@ -299,12 +332,12 @@ smaller sales base: 48,000 of lost sales instead of 60,000. At a 35% margin that
 **17. "Is anything here live?"**
 The cascade really recomputes: move a slider and the engine reruns on the spot (`SIMULATED`). A model answer is either a
 fresh local run or a `RECORDED RUN` with its prompt and data hashes, and it's labeled as such. We never show a fake
-"thinking…" animation. "Live" in the internet sense means only Live Explore with Tavily (PENDING #60, #61).
+"thinking…" animation. "Live" in the internet sense means only Live Explore with Tavily (`/explore`).
 
 **18. "Who pays for this?"**
 The people who carry a small business's cash decisions: owner-operators who run weekly cash, the fractional CFOs who
 serve several such businesses at once, and the advisors who help them plan. Pricing and unit economics are hypotheses,
-not results (PENDING: #99, the investability brief).
+not results (`docs/INVESTABILITY.md` §3, labeled `ESTIMATE / HYPOTHESIS`).
 
 ---
 
@@ -318,13 +351,13 @@ Do this on the demo laptop before going on stage (the script author could not ru
       "-$49,050 vs baseline $63,000", **Ending cash $13,950**, runway still more than 26 weeks. If any figure differs,
       say the on-screen figure and tell the lead (the engine or data changed after this script).
 - [ ] Badges on C.0 and C.2 read `SIMULATED` and `SYNTHETIC`.
-- [ ] Protect payroll: is the switch enabled (#56 merged)? If yes, toggle it and note what C.3 says. If no, use the
-      "if still pending" line.
+- [ ] Protect payroll: toggle it. C.3 should list 6 purchase cuts (weeks 18–24, together $11,050) and **Min cash after
+      plan $25,000 · week 20**; with the switch off, 7 cuts, same total. If C.3 differs, read the screen and tell the lead.
 - [ ] `/research`: cutoff `2026-07-01T00:00:00Z` → Apply cutoff → 4 sources shown, 2 not yet public; Sequoia shows no source.
-- [ ] `/rewind`, `/decision`, `/reveal`: is a real case listed? Is a recorded run shown? Is the Reveal button enabled?
+- [ ] `/rewind`, `/decision`, `/reveal`: are the 4 real cases listed? Does the DECISION run complete? Is the Reveal button enabled?
       For each that isn't, rehearse the "if still pending" line.
-- [ ] `/reveal`: the scorecard reads `INSUFFICIENT DATA`. Never read a score that isn't on screen.
-- [ ] `/explore`: does the screen exist (#61)? Is `TAVILY_API_KEY` set in `.env`? If not, use the 5-second line.
+- [ ] `/reveal`: the benchmark and both scorecards read `NOT AVAILABLE` (nothing officially scored yet). Never read a score that isn't on screen.
+- [ ] `/explore`: is `TAVILY_API_KEY` set in `.env` and the local model running? If not, use the 5-second line.
 - [ ] Is Ollama running with `llama3.1:8b` (`/api/health` shows `model_ready: true`)? If not, the DECISION screen must
       show a recorded run or `Local model unavailable`, never a made-up answer.
 - [ ] Time a full run-through with a stopwatch: aim for 100–115 s, and write the measured time on line 3.
