@@ -136,14 +136,17 @@ def test_every_case_and_variant_is_forecast_and_saved_before_any_reveal(world):
         assert record.agent_models == [f"ollama/{MODEL}"]
 
 
-def test_refuses_to_run_when_the_store_already_has_a_reveal(world):
-    tmp_path, store, cases = world
-    first, _model = run(world)
+def test_refuses_to_run_when_the_store_already_has_a_reveal(tmp_path, monkeypatch):
+    # Real cases: logged-SYNTHETIC reveals of committed synthetic cases are exempt (#118, tests/test_case_relabel.py).
+    _vault, cases = scored_world(tmp_path, rows_for(6), synthetic=False, official=monkeypatch, save=set())
+    store = PredictionStore(store_module.DEFAULT_DB_PATH, clock=Clock(AS_OF + timedelta(days=60)))
+    real_world = (tmp_path, store, cases)
+    first, _model = run(real_world)
     rr.score_run(first.run_dir, store=store, cases=cases, out_root=tmp_path / "out")
     assert reveals(store)
     model = FakeModel(store.path)
-    with pytest.raises(rr.Refused, match="reveal"):
-        run(world, model, clock=Clock(datetime(2026, 11, 14, tzinfo=UTC)))
+    with pytest.raises(rr.Refused, match="already has a reveal"):
+        run(real_world, model, clock=Clock(datetime(2026, 11, 14, tzinfo=UTC)))
     assert model.calls == []
 
 

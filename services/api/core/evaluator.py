@@ -41,7 +41,7 @@ from pydantic import AwareDatetime, BaseModel, ConfigDict, ValidationError
 
 from config import get_settings
 from core import store as store_module
-from core.store import PredictionStore, StoredPrediction
+from core.store import PredictionStore, RevealMark, StoredPrediction
 from core.temporal_gate import PROMPT_VARIANTS, EvidenceStore, MarketNotAvailable
 from errors import FaultlineError
 from markets.base import MARKET_LABEL, SYNTHETIC_QUOTE_LABEL, SYNTHETIC_VENUE
@@ -459,30 +459,54 @@ def _context_mismatch(cases: EvidenceStore, event_id: str, as_of: datetime, vari
     )
 
 
+def committed_synthetic_events(cases: EvidenceStore | None, all_recs: Sequence[StoredPrediction]) -> set[str]:
+    """Committed cases that count as SYNTHETIC (issues #102, #118). The one rule behind the case sets, the
+    operator-blocker and ``peeked`` exemptions, and (with the configured case directory) the ``late`` exemption.
+
+    A case in ``cases`` qualifies iff it says ``synthetic: true`` with provenance SYNTHETIC AND no forecast
+    persisted for that event froze ``synthetic=False`` in its gate context (every stored forecast froze True, or
+    there is none). A case file edited to say synthetic after a real-context forecast was saved therefore stays
+    real, where its forecast is ``context_mismatch`` and blocks OFFICIAL.
+    """
+    if cases is None:
+        return set()
+    froze_real = {r.prediction.event_id for r in all_recs if not r.context.synthetic}
+    out = set()
+    for cid in cases.case_ids():
+        case = cases.public_case(cid)
+        if case.synthetic and case.provenance == Provenance.SYNTHETIC and cid not in froze_real:
+            out.add(cid)
+    return out
+
+
 def _synthetic_exempt_events(cases: EvidenceStore | None, all_recs: Sequence[StoredPrediction]) -> set[str]:
     """Events whose reveals do not count for the cross-event ``late`` check (issue #102).
 
     Only a committed SYNTHETIC case qualifies: ``cases`` was loaded by ``EvidenceStore.from_dir()`` from the
-    configured case directory, the case says ``synthetic: true`` with provenance SYNTHETIC, and EVERY forecast
-    persisted for that event froze ``synthetic=True`` in its gate context. Its sealed answer is a fictional draw,
-    so revealing it on stage tells nothing about any real event. Anything else (no case list, an in-memory list,
-    a real or uncommitted case, a mixed context) is not exempt, so the check stays as strict as before. Even for
-    an exempt event, only reveals LOGGED with sealed provenance SYNTHETIC are skipped (``_first_reveal_not_exempt``).
+    configured case directory, the case is in ``committed_synthetic_events`` (``synthetic: true``, provenance
+    SYNTHETIC, and EVERY forecast persisted for that event froze ``synthetic=True``), and it has at least one
+    stored forecast. Its sealed answer is a fictional draw, so revealing it on stage tells nothing about any real
+    event. Anything else (no case list, an in-memory list, a real, relabelled or uncommitted case) is not exempt,
+    so the check stays as strict as before. Even for an exempt event, only reveals LOGGED with sealed provenance
+    SYNTHETIC are skipped (``first_counted_reveal``).
     """
     if cases is None or cases.source_dir is None or not _same_path(cases.source_dir, configured_cases_dir()):
         return set()
-    committed = set(cases.case_ids())
-    frozen: dict[str, set[bool]] = {}
-    for r in all_recs:
-        frozen.setdefault(r.prediction.event_id, set()).add(bool(r.context.synthetic))
-    exempt = set()
-    for event_id, flags in frozen.items():
-        if event_id not in committed or flags != {True}:
-            continue
-        case = cases.public_case(event_id)
-        if case.synthetic and case.provenance == Provenance.SYNTHETIC:
-            exempt.add(event_id)
-    return exempt
+    forecast = {r.prediction.event_id for r in all_recs}
+    return committed_synthetic_events(cases, all_recs) & forecast
+
+
+def first_counted_reveal(
+    store: PredictionStore,
+    cases: EvidenceStore | None,
+    all_recs: Sequence[StoredPrediction] | None = None,
+) -> RevealMark | None:
+    """The earliest reveal in ``store`` that counts as "an outcome is known" (``late`` check; the official-run
+    pre-flight in scripts/record_runs.py uses this same function). Only reveals LOGGED with sealed provenance
+    SYNTHETIC of a ``_synthetic_exempt_events`` event are skipped (``PredictionStore.first_counted_reveal``);
+    reveals logged REAL_HISTORICAL, or before #102 (NULL), always count. None = no counted reveal."""
+    recs = store.all_records() if all_recs is None else all_recs
+    return store.first_counted_reveal(_synthetic_exempt_events(cases, recs))
 
 
 def market_label_for(market_refs: Sequence[str]) -> str:
@@ -494,17 +518,18 @@ def market_label_for(market_refs: Sequence[str]) -> str:
 
 
 def event_case_sets(cases: EvidenceStore | None, all_recs: Sequence[StoredPrediction]) -> dict[str, CaseSet]:
-    """The case set of every event in ``cases`` or the store (issue #102). One rule, used for every scorecard:
+    """The case set of every event in ``cases`` or the store (issues #102, #118). One rule, used for every card:
 
-    * an event in ``cases`` is ``synthetic`` iff that case says ``synthetic: true`` with provenance SYNTHETIC
-      (reviewed, committed data), else ``real``;
+    * an event in ``cases`` is ``synthetic`` iff it is in ``committed_synthetic_events``: the case says
+      ``synthetic: true`` with provenance SYNTHETIC (reviewed, committed data) AND no stored forecast for it froze
+      ``synthetic=False``; else ``real`` (a case relabelled synthetic after a real forecast stays real);
     * an event only in the store is ``synthetic`` iff EVERY forecast persisted for it froze ``synthetic=True``,
       else ``real`` (so an unknown or mixed event stays in the real set, where it blocks OFFICIAL as before).
     """
     out: dict[str, CaseSet] = {}
+    synthetic = committed_synthetic_events(cases, all_recs)
     for cid in cases.case_ids() if cases is not None else ():
-        case = cases.public_case(cid)
-        out[cid] = "synthetic" if case.synthetic and case.provenance == Provenance.SYNTHETIC else "real"
+        out[cid] = "synthetic" if cid in synthetic else "real"
     frozen: dict[str, set[bool]] = {}
     for r in all_recs:
         frozen.setdefault(r.prediction.event_id, set()).add(bool(r.context.synthetic))
@@ -517,12 +542,6 @@ def case_sets_present(store: PredictionStore, cases: EvidenceStore | None) -> li
     """The case sets that have at least one scorecard key, in ``CASE_SETS`` order (real first)."""
     present = set(event_case_sets(cases, store.all_records()).values())
     return [c for c in CASE_SETS if c in present]
-
-
-def _first_reveal_not_exempt(store: PredictionStore, exempt: set[str]):
-    """Earliest reveal that counts for ``late``: only reveals of an ``exempt`` event that were LOGGED with sealed
-    provenance SYNTHETIC are skipped (``PredictionStore.first_counted_reveal``). Pre-#102 reveals always count."""
-    return store.first_counted_reveal(exempt)
 
 
 def _gate_has_no_market(cases: EvidenceStore, event_id: str, as_of: datetime, variant: str) -> bool:
@@ -571,8 +590,9 @@ def build_scorecard(
     The OFFICIAL label additionally requires (else ``official_blockers`` says why and the label is ILLUSTRATIVE):
     ``cases`` loaded by ``EvidenceStore.from_dir()`` from the configured case directory; the vault on the
     configured sealed folder (hence the configured store); no ``OPERATOR_REASONS`` exclusion on any real or
-    uncommitted case; and every scored forecast persisted before the FIRST reveal anywhere in the store, where
-    reveals of committed SYNTHETIC cases (``_synthetic_exempt_events``) do not count.
+    uncommitted case (only ``committed_synthetic_events`` are exempt); and every scored forecast persisted before
+    the FIRST counted reveal anywhere in the store (``first_counted_reveal``: logged-SYNTHETIC reveals of
+    committed SYNTHETIC cases do not count).
     """
     if not isinstance(vault, OutcomeVault):
         raise TypeError("build_scorecard needs the OutcomeVault; predictions are read from its store")
@@ -593,7 +613,9 @@ def build_scorecard(
         keys = {k for k in keys if sets[k[0]] == case_set}
     # First reveal per event and in the whole store, read once before this scorecard reveals anything.
     first_reveal = {event_id: store.first_reveal(event_id) for event_id, _ in keys}
-    first_reveal_any = _first_reveal_not_exempt(store, _synthetic_exempt_events(cases, all_recs))
+    first_reveal_any = first_counted_reveal(store, cases, all_recs)
+    # Committed SYNTHETIC cases (every stored forecast froze synthetic=True) never block OFFICIAL (#118).
+    exempt_synthetic = committed_synthetic_events(cases, all_recs)
 
     exclusions: list[ScoreExclusion] = []
     ignored: list[IgnoredPrediction] = []
@@ -715,22 +737,11 @@ def build_scorecard(
         blockers.append(f"cases were not loaded by EvidenceStore.from_dir() from {configured_cases_dir()}")
     if not _same_path(vault.sealed_dir, configured_sealed_dir()):
         blockers.append(f"the vault does not use the configured sealed-outcome folder {configured_sealed_dir()}")
-    committed = set(cases.case_ids()) if cases is not None else set()
-    operator = [
-        x
-        for x in exclusions
-        if x.reason in OPERATOR_REASONS and not (x.event_id in committed and cases.public_case(x.event_id).synthetic)
-    ]
+    operator = [x for x in exclusions if x.reason in OPERATOR_REASONS and x.event_id not in exempt_synthetic]
     for reason in sorted({x.reason for x in operator}):
         hit = sorted({x.event_id for x in operator if x.reason == reason})
         blockers.append(f"{reason}: {len(hit)} event(s) {hit}")
-    peeked = sorted(
-        {
-            p.event_id
-            for p in ignored
-            if not (p.event_id in committed and cases.public_case(p.event_id).synthetic)
-        }
-    )
+    peeked = sorted({p.event_id for p in ignored if p.event_id not in exempt_synthetic})
     if peeked:
         blockers.append(f"persisted_after_outcome_revealed (ignored forecasts): {len(peeked)} event(s) {peeked}")
     late = [seq for seq in scored_seqs if first_reveal_any is not None and seq >= first_reveal_any.seq]
