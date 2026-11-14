@@ -6,8 +6,10 @@ import {
   BENCHMARK_PATH,
   EXCLUSION_REASON_TEXT,
   SCORABLE_VARIANTS,
+  VARIANT_PLAIN,
   firstPerVariant,
   getBenchmark,
+  notesForVariant,
   type BenchmarkResponse,
   type ExclusionReason,
   type Result,
@@ -25,7 +27,9 @@ import { BUTTON_SECONDARY, FailureReport, Missing, Num } from "./reveal/ui";
  * pairs, from the RECORDED RUN scorecards that GET /api/benchmark serves.
  *
  * GET /api/benchmark is read-only (it never computes, never reveals, never opens the prediction store), so it is
- * requested on load. For each variant the FIRST item the API serves is shown (its order: committed agent_only,
+ * requested on load. Both variants are shown side by side (#124; stacked below xl), each with a plain-words line
+ * saying what its model saw; a variant with no served card is NOT AVAILABLE with the API's note that names it.
+ * For each variant the FIRST item the API serves is shown (its order: committed agent_only,
  * committed agent_plus_market, then computed ones), with that item's record (origin, recorded_at, run_id, model) as
  * provenance. `label`, `verdict`, `caveat`, `official_blockers` and the exclusions are the API's strings, shown
  * verbatim; every number is the API's. POST /api/benchmark/compute (admin only, reveals) is never called from here.
@@ -37,12 +41,8 @@ import { BUTTON_SECONDARY, FailureReport, Missing, Num } from "./reveal/ui";
 
 type Load = { kind: "loading" } | { kind: "done"; result: Result<BenchmarkResponse> };
 
-const segment =
-  "rounded-[5px] px-3 py-1.5 font-mono text-[11px] uppercase tracking-[0.12em] transition-colors focus-visible:outline-offset-1";
-
 export function Scorecard({ revealedPredictionId = null }: { revealedPredictionId?: string | null }) {
   const [load, setLoad] = useState<Load>({ kind: "loading" });
-  const [picked, setPicked] = useState<ScorableVariant | null>(null);
   const abortRef = useRef<AbortController | null>(null);
 
   const fetchBenchmark = useCallback(async () => {
@@ -65,9 +65,6 @@ export function Scorecard({ revealedPredictionId = null }: { revealedPredictionI
   const data = result?.ok ? result.data : null;
   const failure = result && !result.ok ? result : null;
   const cards = data ? firstPerVariant(data) : {};
-  // Default tab: the first variant the API served a card for (selection only).
-  const variant: ScorableVariant = picked ?? SCORABLE_VARIANTS.find((v) => cards[v]) ?? SCORABLE_VARIANTS[0];
-  const selected = cards[variant];
 
   // While the request is in flight nothing is known yet: no badge claims NOT AVAILABLE (or anything else).
   const headerBadges: ProvenanceInput[] =
@@ -81,39 +78,22 @@ export function Scorecard({ revealedPredictionId = null }: { revealedPredictionI
         provenance={headerBadges}
       >
         <div className="flex flex-col gap-4">
-          <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
-            <div
-              role="group"
-              aria-label="Agent variant"
-              className="flex w-full flex-wrap gap-1 rounded-md border border-line bg-bg/60 p-1 sm:w-fit"
-            >
-              {SCORABLE_VARIANTS.map((v) => (
-                <button
-                  key={v}
-                  type="button"
-                  aria-pressed={variant === v}
-                  onClick={() => setPicked(v)}
-                  className={`${segment} flex flex-1 items-center justify-center gap-2 sm:flex-none ${variant === v ? "bg-accent-soft text-text" : "text-muted hover:bg-hover hover:text-text"}`}
-                >
-                  <span>{v}</span>
-                  {data && !cards[v] ? <span className="text-[9.5px] text-muted">n/a</span> : null}
-                </button>
-              ))}
-            </div>
+          <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
+            <p className="max-w-[80ch] text-xs leading-relaxed text-muted">
+              <code className="break-all text-text-2">GET {API_BASE}{BENCHMARK_PATH}</code> serves recorded scorecard
+              snapshots only (verified hashes); it never computes or reveals. Each agent variant is scored separately
+              against the same baselines, so both cards are shown side by side; for each variant the first snapshot the
+              API serves is shown.
+            </p>
             <button
               type="button"
               disabled={load.kind === "loading"}
               onClick={() => void fetchBenchmark()}
-              className={`w-fit ${BUTTON_SECONDARY} disabled:cursor-not-allowed disabled:text-muted`}
+              className={`w-fit shrink-0 ${BUTTON_SECONDARY} disabled:cursor-not-allowed disabled:text-muted`}
             >
               {load.kind === "loading" ? "Requesting…" : "Reload"}
             </button>
           </div>
-          <p className="text-xs leading-relaxed text-muted">
-            <code className="break-all text-text-2">GET {API_BASE}{BENCHMARK_PATH}</code> serves recorded scorecard
-            snapshots only (verified hashes); it never computes or reveals. Each agent variant is scored separately
-            against the same baselines; the first snapshot the API serves for a variant is shown.
-          </p>
           <p role="status" aria-live="polite" className="sr-only">
             {load.kind === "loading" ? "Requesting benchmark" : data ? `Benchmark status ${data.status}` : ""}
           </p>
@@ -137,12 +117,37 @@ export function Scorecard({ revealedPredictionId = null }: { revealedPredictionI
         </div>
       </Panel>
 
-      {selected ? (
-        <ScorecardCard entry={selected} revealedPredictionId={revealedPredictionId} />
-      ) : (
-        <EmptyScorecard variant={variant} status={data ? data.status : null} loading={load.kind === "loading"} />
-      )}
+      {/* #124: both variants at once. Two columns from xl up, stacked below; min-w-0 keeps wide tables scrolling
+          inside their own card instead of widening the page. */}
+      <div className="grid grid-cols-1 items-start gap-6 xl:grid-cols-2" data-testid="scorecard-variants">
+        {SCORABLE_VARIANTS.map((v) => {
+          const entry = cards[v];
+          return (
+            <div key={v} className="min-w-0" data-testid={`scorecard-${v}`}>
+              {entry ? (
+                <ScorecardCard entry={entry} revealedPredictionId={revealedPredictionId} />
+              ) : (
+                <EmptyScorecard
+                  variant={v}
+                  status={data ? data.status : null}
+                  notes={data ? notesForVariant(data.notes, v) : []}
+                  loading={load.kind === "loading"}
+                />
+              )}
+            </div>
+          );
+        })}
+      </div>
     </div>
+  );
+}
+
+/** The plain-words line naming what this variant's model saw (#124). */
+function VariantLine({ variant }: { variant: ScorableVariant }) {
+  return (
+    <p className="text-sm leading-relaxed text-text-2" data-testid="scorecard-variant-line">
+      {VARIANT_PLAIN[variant]}
+    </p>
   );
 }
 
@@ -193,6 +198,7 @@ function ScorecardCard({ entry, revealedPredictionId }: { entry: VariantCard; re
       <RecordStrip record={record} alsoServed={alsoServed} />
 
       <div className="flex flex-col gap-3 border-b border-line px-5 py-4">
+        <VariantLine variant={entry.variant} />
         <p className="font-mono text-[13px] tracking-[0.04em] text-text-2" data-testid="scorecard-label">
           {card.label}
         </p>
@@ -377,7 +383,7 @@ function RecordStrip({ record, alsoServed }: { record: ScorecardRecord; alsoServ
   const val = "break-all font-mono text-xs text-text-2";
   return (
     <div className="flex flex-col gap-3 border-b border-line bg-bg/40 px-5 py-3">
-      <div className="grid grid-cols-1 gap-x-6 gap-y-2 sm:grid-cols-2 2xl:grid-cols-5">
+      <div className="grid grid-cols-1 gap-x-6 gap-y-2 sm:grid-cols-2">
         <div className={cell}>
           <span className={key}>Origin</span>
           <span className={val} data-testid="scorecard-origin">
@@ -532,16 +538,24 @@ function PerEventTable({ card, isMine }: { card: ScorecardData; isMine: (ids: st
 function EmptyScorecard({
   variant,
   status,
+  notes,
   loading,
 }: {
   variant: ScorableVariant;
   status: BenchmarkResponse["status"] | null;
+  /** The API's notes naming this variant, verbatim. */
+  notes: string[];
   loading: boolean;
 }) {
-  const title = loading ? "Scorecard · requesting" : status === null ? "Scorecard · not loaded" : `Scorecard · ${variant}`;
+  const title = loading
+    ? `Scorecard · ${variant} · requesting`
+    : status === null
+      ? `Scorecard · ${variant} · not loaded`
+      : `Scorecard · ${variant}`;
   return (
     <Panel code="D.2" title={title} provenance={loading ? [] : "NOT AVAILABLE"} bodyClassName="p-0">
       <div className="flex flex-col gap-1.5 border-b border-line px-5 py-4">
+        <VariantLine variant={variant} />
         <p
           className="font-mono text-2xl font-medium uppercase tracking-[0.08em] text-muted md:text-3xl"
           data-testid="scorecard-empty"
@@ -553,8 +567,17 @@ function EmptyScorecard({
             ? `Waiting for GET ${BENCHMARK_PATH}; nothing is shown until it answers.`
             : status === null
               ? "No benchmark response, so no scorecard is shown."
-              : `The API served no recorded scorecard for ${variant}. See the notes above; no number is shown in its place.`}
+              : `The API served no recorded scorecard for ${variant}; no number is shown in its place.`}
         </p>
+        {notes.length ? (
+          <ul className="flex flex-col gap-1" aria-label={`API notes for ${variant}`}>
+            {notes.map((n, i) => (
+              <li key={i} className="break-words font-mono text-[11px] leading-relaxed text-text-2" data-testid="scorecard-empty-note">
+                {n}
+              </li>
+            ))}
+          </ul>
+        ) : null}
       </div>
       <div className="relative overflow-x-auto">
         <table className="w-full min-w-[440px] border-collapse text-left">
