@@ -16,6 +16,8 @@ export const PROVENANCE_KINDS = [
   "ILLUSTRATIVE",
   "NOT AVAILABLE",
   "INSUFFICIENT DATA",
+  "LIVE EXPLORE",
+  "MODEL-SUGGESTED",
 ] as const;
 
 export type ProvenanceKind = (typeof PROVENANCE_KINDS)[number];
@@ -107,6 +109,16 @@ const STYLES: Record<ProvenanceKind, BadgeStyle> = {
     glyph: "∅",
     className: "border-risk/50 border-dashed text-risk",
     description: "Not enough valid cases for a comparison",
+  },
+  "LIVE EXPLORE": {
+    glyph: "◎",
+    className: "border-risk/60 text-risk bg-risk/10",
+    description: "Current web content retrieved now via Tavily. Not point-in-time; never used by the Blind Replay",
+  },
+  "MODEL-SUGGESTED": {
+    glyph: "◇",
+    className: "border-info/60 border-dashed text-info",
+    description: "Proposed by the local model as an input for a human to confirm or edit; not a forecast or a fact",
   },
 };
 

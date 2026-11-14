@@ -62,12 +62,22 @@ PRE_REVEAL = {
     ("get", "/api/integrity"),
 }
 POST_REVEAL = {("post", "/api/replay/{prediction_id}/reveal")}
-# /api/explore/search is LIVE EXPLORE (#60): current web search, walled off from the replay by
-# tests/test_explore_separation.py (no replay module may reference it, and it serves no case or outcome data).
+# /api/explore/search and /api/explore/analyze are LIVE EXPLORE (#60, #61): current web search and a local-model
+# reading of it, walled off from the replay by tests/test_explore_separation.py (no replay module may reference
+# them, and they serve no case or outcome data).
+# /api/judge-challenges (#123) serves ILLUSTRATIVE shocks for the demo business; no case or outcome data.
 NOT_REPLAY = {
-    "/api/health", "/api/simulate", "/api/optimize", "/api/scenarios", "/api/vc-lenses", "/api/explore/search",
+    "/api/health",
+    "/api/simulate",
+    "/api/optimize",
+    "/api/scenarios",
+    "/api/vc-lenses",
     # routes/decision.py (#55): SYNTHETIC business payoffs from decision_frames.json; never reads cases or outcomes.
-    "/api/decision", "/api/decision/frames",
+    "/api/decision",
+    "/api/decision/frames",
+    "/api/explore/search",
+    "/api/explore/analyze",
+    "/api/judge-challenges",
 }
 # routes/benchmark.py (tests/test_routes_benchmark*.py): GET serves recorded post-reveal scorecards, read-only (it
 # never reveals and never opens the store or sealed folder); compute reveals and is admin-only in public mode.
