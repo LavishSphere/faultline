@@ -19,6 +19,10 @@ export type RunState =
 /**
  * POST /api/replay/run for one case + variant, only on an explicit `start()`. A successful run is kept in the
  * page-session run store so navigating away and back shows the run that was actually made.
+ *
+ * Also returns `caseId` (the selected case's event_id) and `predictionId` (the served `prediction.prediction_id` of
+ * the run shown, persisted server-side; null until a run succeeds), so a panel that needs them (e.g. PR #93's
+ * `<IntegrityPanel caseId predictionId />`) is one line on DECISION. Both are served ids, never derived.
  */
 export function useReplayRun(c: ReplayCasePublic | null, variant: ForecastVariant) {
   const caseId = c?.event_id ?? null;
@@ -59,5 +63,6 @@ export function useReplayRun(c: ReplayCasePublic | null, variant: ForecastVarian
     const stored = runStore.get(caseId, variant);
     if (stored) state = { kind: "done", run: stored };
   }
-  return { state, start, cancel };
+  const predictionId = state.kind === "done" ? state.run.prediction.prediction_id : null;
+  return { state, start, cancel, caseId, predictionId };
 }

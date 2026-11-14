@@ -195,7 +195,8 @@ export async function getHealth(signal?: AbortSignal): Promise<ApiResult<HealthS
  * (`simulate` stays listed for the DECISION screen's ACT/WAIT/HEDGE branches, which are not wired to it yet.)
  */
 export const PENDING_ENDPOINTS = {
-  evidence: "GET /api/cases/{id}/evidence?as_of=",
+  // REWIND / DECISION call GET /api/cases/{case_id}/evidence and POST /api/replay/run through lib/replay.ts.
+  // `replayRun` stays for ThesisCourt, which is not wired to a run.
   replayRun: "POST /api/replay/run",
   reveal: "POST /api/replay/{prediction_id}/reveal",
   simulate: "POST /api/simulate",

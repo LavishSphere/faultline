@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useState, useSyncExternalStore } from "react";
 import {
+  EVIDENCE_PATH_TEMPLATE,
   getCaseEvidence,
   getCases,
   getReplayRoutes,
@@ -75,8 +76,8 @@ export type EvidenceState =
   | { kind: "done"; result: ReplayResult<CaseEvidenceResponse> };
 
 /**
- * GET /api/cases/{id}/evidence?as_of=<cutoff> for the selected case. Not requested when /openapi.json says the
- * route is not registered; when route presence is unknown the request itself reports what happened.
+ * GET /api/cases/{case_id}/evidence for the selected case (the gate's view at the case cutoff). Not requested when
+ * /openapi.json says the route is not registered; when route presence is unknown the request itself reports it.
  */
 export function useCaseEvidence(c: ReplayCasePublic | null, routes: ReplayRoutes | null): EvidenceState {
   const [state, setState] = useState<{ key: string; result: ReplayResult<CaseEvidenceResponse> } | null>(null);
@@ -104,7 +105,7 @@ export function useCaseEvidence(c: ReplayCasePublic | null, routes: ReplayRoutes
         ok: false,
         kind: "route_missing",
         message: "This API build does not register the evidence route (checked /openapi.json).",
-        request: `GET /api/cases/{id}/evidence?as_of=`,
+        request: `GET ${EVIDENCE_PATH_TEMPLATE}`,
       },
     };
   }

@@ -31,6 +31,15 @@ export function CutoffLine({ asOf, className = "" }: { asOf: string; className?:
   );
 }
 
+/** 422 headlines by `models.ErrorCode`: each one means there is no forecast and nothing was saved. */
+const VALIDATION_HEADLINES: Record<string, string> = {
+  VALIDATION_ERROR: "Request rejected",
+  INSUFFICIENT_DATA: "Insufficient data",
+  PROMPT_TOO_LONG: "Prompt too long: refused",
+  PROMPT_NOT_VERIFIED: "Prompt not verified: answer discarded",
+  MODEL_OUTPUT_INVALID: "No valid forecast",
+};
+
 /** What the presenter should read for each failure. `pendingIssue` names the issue that adds a missing route. */
 export function failureHeadline(f: ReplayFailure, pendingIssue?: string): { title: string; tone: string } {
   switch (f.kind) {
@@ -43,14 +52,18 @@ export function failureHeadline(f: ReplayFailure, pendingIssue?: string): { titl
       return { title: "API unreachable", tone: "text-fail" };
     case "aborted":
       return { title: "Request cancelled", tone: "text-muted" };
-    case "forbidden":
-      return { title: "Runs disabled on this deployment", tone: "text-risk" };
+    case "admin_required":
+      return { title: "Disabled on the public demo", tone: "text-risk" };
     case "model_unavailable":
       return { title: "Local model unavailable", tone: "text-risk" };
     case "not_found":
       return { title: "Not found", tone: "text-risk" };
+    case "conflict":
+      return { title: "Not saved: prediction exists", tone: "text-risk" };
+    case "data_invalid":
+      return { title: "Case data failed a check", tone: "text-fail" };
     case "validation":
-      return { title: "Request rejected", tone: "text-risk" };
+      return { title: (f.code && VALIDATION_HEADLINES[f.code]) || "Request rejected", tone: "text-risk" };
     case "leak":
       return { title: "Refused: outcome-like data pre-reveal", tone: "text-fail" };
     case "malformed":

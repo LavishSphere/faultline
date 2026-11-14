@@ -6,7 +6,7 @@ import { EvidenceDrawer } from "../EvidenceDrawer";
 import { FinancialReadout } from "../FinancialReadout";
 import { Field, Panel } from "../Panel";
 import { DecisionFrames } from "../replay/DecisionFrames";
-import { MarketAtCutoff } from "../replay/MarketAtCutoff";
+import { MarketAtCutoff, marketSource } from "../replay/MarketAtCutoff";
 import { ModelReadiness } from "../replay/ModelReadiness";
 import { CaseBadges, CutoffLine, FailureNote, Hash, InFlight, TextButton } from "../replay/ReplayParts";
 import { useCaseEvidence, useReplayCases, useReplayRoutes, useSelectedCase, type EvidenceState } from "../replay/hooks";
@@ -18,9 +18,12 @@ import {
   REPLAY_RUN_PATH,
   RUN_VARIANTS,
   formatInstantUtc,
+  isSyntheticQuote,
+  savedAfterReveal,
   skepticRejected,
   type ForecastVariant,
   type ReplayCasePublic,
+  type ReplayFailure,
   type ReplayRoutes,
   type ReplayRun,
 } from "@/lib/replay";
@@ -28,10 +31,11 @@ import type { Step } from "@/lib/steps";
 
 /**
  * Screen B: THE DECISION (SPEC §2). The local model's forecast for the selected case via POST /api/replay/run
- * (issue #44), its cited point-in-time evidence, and the market-implied probability at the same cutoff.
+ * (routes/replay.py), its cited point-in-time evidence, and the market-implied probability at the same cutoff.
  *
- * A run happens only when the presenter clicks Run. Until the route exists this screen says "route pending (#44)";
- * it never shows a canned forecast. ACT / WAIT / HEDGE payoffs are #45's and are NOT AVAILABLE here.
+ * A run happens only when the presenter clicks Run; every failure (public-mode admin gate, model down, refused
+ * prompt, rejected answer) is shown as what it is, never as a canned forecast. A run the server flags as saved after a
+ * reveal carries a visible "not blind" caveat. ACT / WAIT / HEDGE payoffs are #45's and are NOT AVAILABLE here.
  */
 export function DecisionScreen({ step }: { step: Step }) {
   const { load, retry } = useReplayCases();
@@ -39,11 +43,13 @@ export function DecisionScreen({ step }: { step: Step }) {
   const routes = useReplayRoutes();
   const evidence = useCaseEvidence(selected, routes);
   const [variant, setVariant] = useState<ForecastVariant>("agent_only");
+  // useReplayRun also returns `caseId` and `predictionId` (served ids; predictionId is null before a run). PR #93:
+  // add them to this destructuring and render <IntegrityPanel caseId={caseId} predictionId={predictionId} />.
   const { state, start, cancel } = useReplayRun(selected, variant);
   const [drawer, setDrawer] = useState<{ open: boolean; focus: string | null }>({ open: false, focus: null });
 
   const run = state.kind === "done" ? state.run : null;
-  const rejected = run ? skepticRejected(run.skeptic) : false;
+  const rejected = run ? skepticRejected(run.skeptic.problems) : false;
   const valid = run && !rejected ? run : null;
   const forecastBadges = valid ? (["FORECAST", valid.prediction.provenance] as const) : ("NOT AVAILABLE" as const);
 
@@ -102,6 +108,11 @@ export function DecisionScreen({ step }: { step: Step }) {
               provenance="FORECAST"
               sublabel={valid ? `${valid.prediction.agent_model} · ${valid.prediction.variant}` : undefined}
             />
+            {valid && savedAfterReveal(valid) ? (
+              <p className="mt-3 font-mono text-[11px] uppercase tracking-[0.1em] text-risk">
+                Saved after a reveal: not blind
+              </p>
+            ) : null}
             {!valid ? (
               <p className="mt-3 font-mono text-[11px] text-muted">
                 {rejected
@@ -114,9 +125,9 @@ export function DecisionScreen({ step }: { step: Step }) {
           <Panel
             code="B.2"
             title="Market at cutoff"
-            provenance={marketBadge(selected, evidence)}
+            provenance={marketBadge(selected, run, evidence)}
           >
-            <MarketAtCutoff c={selected} evidence={evidence} />
+            <MarketAtCutoff c={selected} run={run} evidence={evidence} />
           </Panel>
 
           <Panel
@@ -164,10 +175,12 @@ export function DecisionScreen({ step }: { step: Step }) {
   );
 }
 
-function marketBadge(c: ReplayCasePublic | null, evidence: EvidenceState) {
-  if (!c || c.market_quote_id === null || evidence.kind !== "done" || !evidence.result.ok) return "NOT AVAILABLE" as const;
-  const q = evidence.result.data.market_quotes.find((x) => x.quote_id === c.market_quote_id);
-  return q ? (["AS-OF", q.provenance] as const) : ("NOT AVAILABLE" as const);
+function marketBadge(c: ReplayCasePublic | null, run: ReplayRun | null, evidence: EvidenceState) {
+  const m = c ? marketSource(run, evidence)?.market : undefined;
+  if (!m || m.status !== "AVAILABLE") return "NOT AVAILABLE" as const;
+  // A synthetic-venue price is always badged SYNTHETIC, whatever else is (or is not) served.
+  if (isSyntheticQuote(m)) return ["AS-OF", "SYNTHETIC"] as const;
+  return m.provenance ? (["AS-OF", m.provenance] as const) : ("AS-OF" as const);
 }
 
 function CasePicker({
@@ -288,7 +301,6 @@ function RunControls({
             message: "This API build does not register the replay-run route (checked /openapi.json). No forecast is shown.",
             request: `POST ${REPLAY_RUN_PATH}`,
           }}
-          pendingIssue="#44"
         />
       ) : (
         <div className="flex flex-wrap items-center gap-3">
@@ -333,23 +345,13 @@ function ChosenPath({ state, rejected }: { state: RunState; rejected: boolean })
   }
   if (state.kind === "failed") {
     return (
-      <FailureNote
-        size="lg"
-        failure={state.failure}
-        pendingIssue="#44"
-        note={
-          state.failure.kind === "forbidden"
-            ? "Public deployments gate replay runs (admin only). Run locally with `make api`."
-            : state.failure.kind === "model_unavailable"
-              ? "The simulator and optimizer on CASCADE still work without the model."
-              : undefined
-        }
-      />
+      <FailureNote size="lg" failure={state.failure} note={failureNote(state.failure)} />
     );
   }
   const { prediction, skeptic } = state.run;
   return (
     <div className="flex flex-col gap-4">
+      <RevealCaveat run={state.run} />
       {rejected ? (
         <div className="flex flex-col gap-1.5" role="alert">
           <p className="font-mono text-2xl font-medium uppercase tracking-[0.06em] text-fail md:text-3xl">
@@ -369,17 +371,58 @@ function ChosenPath({ state, rejected }: { state: RunState; rejected: boolean })
         <p className="kicker">Rationale</p>
         <p className="mt-1.5 whitespace-pre-line text-sm leading-relaxed text-text-2">{prediction.rationale}</p>
       </div>
-      <SkepticList problems={skeptic} />
+      <SkepticList problems={skeptic.problems} />
     </div>
   );
 }
 
-function SkepticList({ problems }: { problems: ReplayRun["skeptic"] }) {
-  if (problems === null) {
-    return (
-      <p className="font-mono text-[11px] uppercase tracking-[0.1em] text-muted">Skeptic report: not available</p>
-    );
+/** What to tell the presenter for each failed run. Every case means: no forecast, nothing shown in its place. */
+function failureNote(f: ReplayFailure): string | undefined {
+  switch (f.kind) {
+    case "admin_required":
+      return "Running a forecast is disabled on the public demo; run it locally (make api, with the local model).";
+    case "model_unavailable":
+      return "Nothing was saved and no substitute answer is shown. The simulator and optimizer on CASCADE still work without the model.";
+    case "conflict":
+      return "Nothing was saved. Running again requests a fresh prediction id.";
+    case "data_invalid":
+      return "Nothing was run or saved.";
+    case "validation":
+      if (f.code === "INSUFFICIENT_DATA") return "Agent + market needs a market quote at the cutoff. Agent only still works.";
+      if (f.code === "MODEL_OUTPUT_INVALID") return "The model's answer was rejected (output check or skeptic) and not saved.";
+      if (f.code === "PROMPT_TOO_LONG" || f.code === "PROMPT_NOT_VERIFIED") return "No answer was kept and nothing was saved.";
+      return undefined;
+    default:
+      return undefined;
   }
+}
+
+/**
+ * The server's own audit flags: a forecast saved after a reveal (this event's, or any in the store) is not blind and
+ * can never count toward an OFFICIAL scorecard. Shown whenever either flag is true, with the server's note verbatim.
+ */
+function RevealCaveat({ run }: { run: ReplayRun }) {
+  if (!savedAfterReveal(run)) return null;
+  return (
+    <div role="alert" className="flex flex-col gap-1.5 rounded-md border border-risk/60 bg-risk/10 px-3 py-2.5">
+      <p className="font-mono text-[11px] uppercase tracking-[0.12em] text-risk">
+        Saved after a reveal: not blind, can&apos;t count as OFFICIAL
+      </p>
+      {run.audit_note ? <p className="text-xs leading-relaxed text-text-2">{run.audit_note}</p> : null}
+      <p className="num font-mono text-[11px] text-muted">
+        persist_seq {run.persist_seq}
+        {run.persisted_after_event_reveal
+          ? ` · this event first revealed at seq ${run.event_first_reveal_seq ?? "NOT AVAILABLE"}`
+          : ""}
+        {run.persisted_after_any_reveal
+          ? ` · store first reveal at seq ${run.store_first_reveal_seq ?? "NOT AVAILABLE"}`
+          : ""}
+      </p>
+    </div>
+  );
+}
+
+function SkepticList({ problems }: { problems: ReplayRun["skeptic"]["problems"] }) {
   if (problems.length === 0) {
     return <p className="font-mono text-[11px] uppercase tracking-[0.1em] text-viable">Skeptic: no problems reported</p>;
   }
@@ -391,7 +434,7 @@ function SkepticList({ problems }: { problems: ReplayRun["skeptic"] }) {
           <li key={`${p.code}-${i}`} className="text-xs leading-relaxed">
             <span
               className={`mr-2 font-mono text-[10px] uppercase tracking-[0.1em] ${
-                p.severity.toLowerCase() === "error" ? "text-fail" : "text-risk"
+                p.severity === "error" ? "text-fail" : "text-risk"
               }`}
             >
               {p.severity} · {p.code}
@@ -491,12 +534,35 @@ function RunRecord({ run }: { run: ReplayRun | null }) {
       <Field label="Model" value={<span className="break-all">{p.agent_model}</span>} />
       <Field label="Model digest" value={p.model_digest ? <Hash value={p.model_digest} /> : undefined} />
       <Field label="Variant" value={p.variant} />
-      <Field label="Prompt sha256" value={<Hash value={p.prompt_sha256} />} />
+      <Field label="Prompt sha256 (as answered)" value={<Hash value={p.prompt_sha256} />} />
+      <Field
+        label="Gated prompt sha256"
+        value={p.gated_prompt_sha256 ? <Hash value={p.gated_prompt_sha256} /> : undefined}
+      />
       <Field label="Snapshot sha256" value={<Hash value={p.snapshot_sha256} />} />
+      <Field label="Transcript sha256" value={p.transcript_sha256 ? <Hash value={p.transcript_sha256} /> : undefined} />
+      <Field label="Attempts" value={p.attempts === null ? undefined : String(p.attempts)} />
       <Field label="Temperature" value={String(p.temperature)} />
       <Field label="Seed" value={p.seed === null ? undefined : String(p.seed)} />
+      <Field
+        label="Context / answer tokens"
+        value={p.num_ctx === null || p.num_predict === null ? undefined : `${p.num_ctx} / ${p.num_predict}`}
+      />
       <Field label="As-of" value={formatInstantUtc(p.as_of) ?? undefined} />
       <Field label="Recorded at" value={formatInstantUtc(p.recorded_at) ?? undefined} />
+      <Field label="Persisted at" value={formatInstantUtc(run.persisted_at) ?? undefined} />
+      <Field label="Persist seq (audit log)" value={String(run.persist_seq)} />
+      <Field label="Record sha256" value={<Hash value={run.record_sha256} />} />
+      <Field
+        label="Saved after a reveal"
+        value={
+          savedAfterReveal(run) ? (
+            <span className="text-risk">yes: not blind, not OFFICIAL</span>
+          ) : (
+            "no (before any reveal in this store)"
+          )
+        }
+      />
     </dl>
   );
 }

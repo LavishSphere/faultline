@@ -9,7 +9,7 @@ import { CaseList } from "../replay/CaseList";
 import { CaseBadges, CutoffLine, FailureNote, Hash, InFlight, TextButton, caseProvenance } from "../replay/ReplayParts";
 import { useCaseEvidence, useReplayCases, useReplayRoutes, useSelectedCase, type EvidenceState } from "../replay/hooks";
 import { ScreenHeader } from "./ScreenHeader";
-import { formatCutoffUtc, type ReplayCasePublic } from "@/lib/replay";
+import { EVIDENCE_PATH_TEMPLATE, formatCutoffUtc, type ReplayCasePublic } from "@/lib/replay";
 import type { Step } from "@/lib/steps";
 
 /**
@@ -204,16 +204,15 @@ function KnownByCutoff({
     <div className="flex flex-col gap-4">
       <CutoffLine asOf={c.as_of} className="text-sm" />
       {evidence.kind === "checking" || evidence.kind === "loading" ? (
-        <InFlight request={evidence.kind === "checking" ? "GET /openapi.json" : "GET /api/cases/{id}/evidence"} />
+        <InFlight request={evidence.kind === "checking" ? "GET /openapi.json" : `GET ${EVIDENCE_PATH_TEMPLATE}`} />
       ) : evidence.kind === "absent" ? (
         <FailureNote
           size="sm"
           failure={evidence.failure}
-          pendingIssue="SPEC §8; no issue yet"
-          note="Documents (title, source, available_at, text) need GET /api/cases/{id}/evidence?as_of=. The ids below are the case record's."
+          note="Documents (title, source, available_at, text) need GET /api/cases/{case_id}/evidence. The ids below are the case record's."
         />
       ) : evidence.kind === "done" && !evidence.result.ok ? (
-        <FailureNote size="sm" failure={evidence.result} pendingIssue="SPEC §8; no issue yet" />
+        <FailureNote size="sm" failure={evidence.result} />
       ) : null}
 
       {c.evidence_ids.length === 0 ? (
@@ -239,8 +238,8 @@ function KnownByCutoff({
       )}
 
       <p className="font-mono text-[10px] leading-relaxed text-muted">
-        Ids as served by GET /api/cases. The admissible-at-cutoff filter for this list moves to the temporal gate
-        with #44 (EvidenceStore.public_case).
+        Ids as served by GET /api/cases: only the items the temporal gate admits at the cutoff
+        (EvidenceStore.public_case). Titles from GET /api/cases/{"{case_id}"}/evidence.
       </p>
       <div>
         <TextButton onClick={onOpen} aria-haspopup="dialog">

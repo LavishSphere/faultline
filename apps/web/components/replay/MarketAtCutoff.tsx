@@ -1,81 +1,112 @@
 import { FinancialReadout } from "../FinancialReadout";
-import { FailureNote, Hash, InFlight } from "./ReplayParts";
+import { FailureNote, InFlight } from "./ReplayParts";
 import type { EvidenceState } from "./hooks";
-import { formatInstantUtc, type ReplayCasePublic } from "@/lib/replay";
+import {
+  EVIDENCE_PATH_TEMPLATE,
+  REPLAY_RUN_PATH,
+  formatInstantUtc,
+  isSyntheticQuote,
+  type MarketAtCutoff as MarketAtCutoffBody,
+  type ReplayCasePublic,
+  type ReplayRun,
+} from "@/lib/replay";
+
+const LABEL = "Market-implied (price-derived)";
+const SYNTHETIC_LABEL = "Synthetic benchmark price";
+
+/** Where B.2's value comes from: the run's fixed scoring baseline when there is a run, else the evidence route. */
+export function marketSource(
+  run: ReplayRun | null,
+  evidence: EvidenceState,
+): { market: MarketAtCutoffBody; from: string } | null {
+  if (run) return { market: run.market_at_cutoff, from: `POST ${REPLAY_RUN_PATH}` };
+  if (evidence.kind === "done" && evidence.result.ok) {
+    return { market: evidence.result.data.market_at_cutoff, from: evidence.result.request };
+  }
+  return null;
+}
 
 /**
- * B.2: the market-implied probability at the cutoff (SPEC §2 Screen B, MATH_MODEL §7). Shown only when the API
- * serves the case's as-of quote (`MarketQuoteRef`, stamped at or before the cutoff). It is price-derived and affected
- * by fees, spread and liquidity: never presented as a "true probability".
+ * B.2: the market-implied probability at the cutoff (SPEC §2 Screen B, MATH_MODEL §7), exactly as the API's
+ * `market_at_cutoff` serves it (routes/cases.py `MarketAtCutoff`, the gate's fixed rule). After a run it is the run's
+ * own baseline, fixed when the forecast was saved. Price-derived and affected by fees, spread and liquidity: never
+ * presented as a "true probability". NOT AVAILABLE shows the server's note verbatim.
  */
-export function MarketAtCutoff({ c, evidence }: { c: ReplayCasePublic | null; evidence: EvidenceState }) {
-  if (!c) {
-    return <FinancialReadout label="Market-implied (price-derived)" value={null} format="probability" provenance="AS-OF" />;
-  }
-  if (c.market_quote_id === null) {
+export function MarketAtCutoff({
+  c,
+  run,
+  evidence,
+}: {
+  c: ReplayCasePublic | null;
+  run: ReplayRun | null;
+  evidence: EvidenceState;
+}) {
+  const empty = <FinancialReadout label={LABEL} value={null} format="probability" provenance="AS-OF" />;
+  if (!c) return empty;
+
+  const source = marketSource(run, evidence);
+  if (!source) {
     return (
       <div className="flex flex-col gap-3">
-        <FinancialReadout label="Market-implied (price-derived)" value={null} format="probability" provenance="AS-OF" />
-        <p className="text-xs leading-relaxed text-muted">
-          This case has no market quote demonstrably available at the cutoff (<code>market_quote_id</code> is null),
-          so none is shown.
-        </p>
-      </div>
-    );
-  }
-
-  const quote =
-    evidence.kind === "done" && evidence.result.ok
-      ? (evidence.result.data.market_quotes.find((q) => q.quote_id === c.market_quote_id) ?? null)
-      : null;
-
-  if (!quote) {
-    return (
-      <div className="flex flex-col gap-3">
-        <FinancialReadout label="Market-implied (price-derived)" value={null} format="probability" provenance="AS-OF" />
-        <p className="num break-all text-[11px] text-text-2">
-          <span className="text-muted">Quote id </span>
-          {c.market_quote_id}
-        </p>
+        {empty}
         {evidence.kind === "checking" || evidence.kind === "loading" ? (
-          <InFlight request="GET /api/cases/{id}/evidence" />
+          <InFlight request={evidence.kind === "checking" ? "GET /openapi.json" : `GET ${EVIDENCE_PATH_TEMPLATE}`} />
         ) : evidence.kind === "absent" ? (
-          <FailureNote
-            size="sm"
-            failure={evidence.failure}
-            pendingIssue="SPEC §8; no issue yet"
-            note="The quote value is not in GET /api/cases; it needs the evidence route's market_quotes."
-          />
+          <FailureNote size="sm" failure={evidence.failure} note="The market value comes from the evidence route." />
         ) : evidence.kind === "done" && !evidence.result.ok ? (
-          <FailureNote size="sm" failure={evidence.result} pendingIssue="SPEC §8; no issue yet" />
-        ) : (
-          <p className="text-xs text-muted">The evidence route did not include this quote id.</p>
-        )}
+          <FailureNote size="sm" failure={evidence.result} />
+        ) : null}
       </div>
     );
   }
 
+  const { market, from } = source;
+  if (market.status !== "AVAILABLE" || market.p_yes === null) {
+    return (
+      <div className="flex flex-col gap-3">
+        {empty}
+        {market.note ? <p className="text-xs leading-relaxed text-text-2">{market.note}</p> : null}
+        <p className="font-mono text-[11px] text-muted">
+          <code className="text-text-2">{from}</code> · market_at_cutoff.status = NOT AVAILABLE
+        </p>
+      </div>
+    );
+  }
+
+  // A synthetic benchmark price (PR #111) is never presented as a real market: SYNTHETIC badge, the server's label
+  // verbatim, and no raw payload to point to.
+  const synthetic = isSyntheticQuote(market);
   return (
     <div className="flex flex-col gap-3">
       <FinancialReadout
-        label="Market-implied (price-derived)"
-        value={quote.p_yes}
+        label={synthetic ? SYNTHETIC_LABEL : LABEL}
+        value={market.p_yes}
         format="probability"
-        provenance={quote.provenance}
-        sublabel={quote.label}
+        provenance={synthetic ? "SYNTHETIC" : (market.provenance ?? "AS-OF")}
+        sublabel={market.label}
       />
+      {synthetic ? (
+        <p className="font-mono text-[11px] uppercase tracking-[0.1em] text-risk">
+          Synthetic price written by the case author. Not a real market.
+        </p>
+      ) : null}
       <dl className="grid grid-cols-[auto_1fr] gap-x-4 gap-y-1 font-mono text-[11px]">
-        <dt className="text-muted">venue</dt>
-        <dd className="text-text-2">
-          {quote.venue} · {quote.market_id}
-        </dd>
+        <dt className="text-muted">{synthetic ? "price id" : "market"}</dt>
+        <dd className="break-all text-text-2">{market.ref}</dd>
+        {synthetic ? (
+          <>
+            <dt className="text-muted">raw payload</dt>
+            <dd className="text-text-2">no raw payload (synthetic)</dd>
+          </>
+        ) : null}
         <dt className="text-muted">quote</dt>
         <dd className="num text-text-2">
-          {quote.quote_kind} · {formatInstantUtc(quote.ts)}
+          {market.quote_kind} · {market.ts ? formatInstantUtc(market.ts) : "NOT AVAILABLE"}
         </dd>
-        <dt className="text-muted">raw sha256</dt>
-        <dd>
-          <Hash value={quote.raw_payload_sha256} />
+        <dt className="text-muted">source</dt>
+        <dd className="break-all text-text-2">
+          {from}
+          {run ? " · baseline fixed when the forecast was saved" : ""}
         </dd>
       </dl>
       <p className="text-[11px] leading-relaxed text-muted">Not a true probability.</p>

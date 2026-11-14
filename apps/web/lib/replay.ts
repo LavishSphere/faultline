@@ -1,9 +1,11 @@
 /**
- * Blind Replay client: GET /api/cases (issue #25, merged), POST /api/replay/run (issue #44, contract only),
- * and GET /api/cases/{id}/evidence?as_of= (SPEC §8; no route and no issue yet).
+ * Blind Replay client: GET /api/cases, GET /api/cases/{case_id}/evidence and POST /api/replay/run (all on main).
  *
- * Types mirror services/api/models.py field for field (`ReplayCasePublic`, `Prediction`, `EvidenceItem`,
- * `MarketQuoteRef`) and routes/cases.py `CasesResponse`; keep them in sync.
+ * Types mirror the server field for field; keep them in sync:
+ * - services/api/models.py: `ReplayCasePublic`, `Prediction`, `ErrorCode`;
+ * - services/api/routes/cases.py: `CasesResponse`, `CaseEvidenceResponse`, `GatedEvidence`, `GatedQuote`,
+ *   `MarketAtCutoff`;
+ * - services/api/routes/replay.py: `ReplayRunResponse`, `SkepticReview`; agents/skeptic.py `SkepticProblem`.
  *
  * Rules (AGENTS.md §4, SPEC §5):
  * - Nothing here computes a forecast, a probability or a verdict. Responses are shape-checked and rendered as-is.
@@ -11,7 +13,7 @@
  *   `leak`, never displayed. The only exception mirrors the server's: `outcome: "YES"` directly on a market quote.
  * - Evidence or a quote stamped after the case cutoff is refused as `malformed`; the browser never filters it out
  *   and shows the rest, because the gate (core/temporal_gate.py) is the only thing allowed to decide admissibility.
- * - A route this API build does not serve is `route_missing` and renders NOT AVAILABLE naming the pending issue.
+ * - Every key set is strict: a key the contract does not name makes the body `malformed` (NOT AVAILABLE).
  */
 
 import { API_BASE } from "./api";
@@ -28,16 +30,45 @@ const WIRE_PROVENANCES: readonly WireProvenance[] = [
 ];
 
 export type ContaminationFlag = "unknown" | "likely" | "unlikely";
+/** The run route's `ReplayRunRequest.variant`. `hosted_comparator` exists on `Prediction` but is never run here. */
 export type ForecastVariant = "agent_only" | "agent_plus_market";
 export type Decision = "act" | "wait" | "hedge";
+/**
+ * markets/base.py `Venue`. `synthetic` (PR #111, issue #102; accepted ahead of its merge) is a fictional price written
+ * by a case author for a SYNTHETIC case: never a real market, never collected, no raw payload.
+ */
+export type Venue = "kalshi" | "polymarket" | "synthetic";
+const VENUES: readonly Venue[] = ["kalshi", "polymarket", "synthetic"];
+const isVenue = (v: unknown): v is Venue => VENUES.includes(v as Venue);
+/** markets/base.py `QuoteKind` (the gate projects quotes from the normalizer, which adds `price_history_point`). */
+/** `synthetic` is the only kind a synthetic-venue quote may have, and no real quote may have it (PR #111). */
+export type QuoteKind = "midpoint" | "candle_close" | "last_trade" | "price_history_point" | "synthetic";
+const QUOTE_KINDS: readonly QuoteKind[] = ["midpoint", "candle_close", "last_trade", "price_history_point", "synthetic"];
 
-/** The two variants `PredictionStore.save` accepts (PR #29). `hosted_comparator` is never run from this screen. */
+/** models.py `ErrorCode`, every value. */
+export type ErrorCode =
+  | "MODEL_UNAVAILABLE"
+  | "NO_FEASIBLE_PLAN"
+  | "NOT_REVEALABLE"
+  | "INSUFFICIENT_DATA"
+  | "NOT_FOUND"
+  | "VALIDATION_ERROR"
+  | "INFEASIBLE_INPUT"
+  | "DATA_UNAVAILABLE"
+  | "DATA_INVALID"
+  | "MODEL_OUTPUT_INVALID"
+  | "PROMPT_TOO_LONG"
+  | "PROMPT_NOT_VERIFIED"
+  | "ADMIN_TOKEN_REQUIRED"
+  | "PREDICTION_EXISTS";
+
+/** The two variants `ReplayRunRequest` accepts. */
 export const RUN_VARIANTS: readonly { id: ForecastVariant; label: string; detail: string }[] = [
   { id: "agent_only", label: "Agent only", detail: "Point-in-time evidence; no market price in the prompt." },
   {
     id: "agent_plus_market",
     label: "Agent + market",
-    detail: "Same evidence plus the as-of market quote, when the case has one.",
+    detail: "Same evidence plus the as-of market quote. Refused (INSUFFICIENT_DATA) when the case has none.",
   },
 ];
 
@@ -50,6 +81,7 @@ export interface ReplayCasePublic {
   horizon_days: number;
   /** The settlement RULE text (never the result). */
   question_criteria: string;
+  /** Only the items the temporal gate admits at the case cutoff. */
   evidence_ids: string[];
   market_quote_id: string | null;
   snapshot_hash: string;
@@ -65,7 +97,7 @@ export interface CasesResponse {
   notes: string[];
 }
 
-/** models.py `Prediction`, as #44's run response is expected to carry it (persisted before any reveal). */
+/** models.py `Prediction`, as persisted before any reveal (the run route sets the audit fields on every run). */
 export interface Prediction {
   prediction_id: string;
   event_id: string;
@@ -77,81 +109,155 @@ export interface Prediction {
   decision: Decision;
   rationale: string;
   evidence_ids: string[];
+  /** sha256 of the exact prompt the model answered (incl. a repair turn when attempts = 2). */
   prompt_sha256: string;
   snapshot_sha256: string;
   temperature: number;
   seed: number | null;
   recorded_at: string;
   provenance: WireProvenance;
+  /** sha256 of the temporal gate's rendered prompt, before any repair turn. */
+  gated_prompt_sha256: string | null;
+  /** 1 = first answer validated; 2 = validated after the one schema repair. */
+  attempts: 1 | 2 | null;
+  transcript_sha256: string | null;
+  num_ctx: number | null;
+  num_predict: number | null;
 }
 
-/** agents/skeptic.py `SkepticProblem` (PR #40). */
+/** agents/skeptic.py `ProblemCode`. */
+export type SkepticProblemCode =
+  | "UNKNOWN_EVIDENCE_ID"
+  | "UNKNOWN_CITED_ID"
+  | "POSSIBLE_UNKNOWN_ID"
+  | "P_YES_OUT_OF_RANGE"
+  | "INVALID_DECISION"
+  | "RATIONALE_LENGTH"
+  | "UNCITED_CLAIM"
+  | "CITATION_NOT_LISTED"
+  | "DUPLICATE_EVIDENCE_ID"
+  | "NO_EVIDENCE_CITED";
+
+/** agents/skeptic.py `SkepticProblem`. */
 export interface SkepticProblem {
-  code: string;
-  severity: string;
+  code: SkepticProblemCode;
+  severity: "error" | "warning";
   message: string;
-  evidence_id?: string | null;
-  sentence?: string | null;
+  evidence_id: string | null;
+  sentence: string | null;
 }
 
 /**
- * POST /api/replay/run, normalized. #44 does not fix the envelope, so both a bare `Prediction` and
- * `{prediction, skeptic?: {problems}}` are accepted. Anything else is malformed.
+ * routes/cases.py `MarketAtCutoff`: the market-only baseline at the cutoff, chosen by the gate's fixed rule.
+ * `status === "NOT AVAILABLE"` means every quote field is null and `note` says why. `p_yes` is price-derived.
  */
-export interface ReplayRun {
-  prediction: Prediction;
-  /** null when the response did not include a skeptic report (NOT AVAILABLE, not "no problems"). */
-  skeptic: SkepticProblem[] | null;
+export interface MarketAtCutoff {
+  status: "AVAILABLE" | "NOT AVAILABLE";
+  /** Server label text, shown verbatim. Optional here while PR #111 may change it. */
+  label?: string;
+  /** `"<venue>:<market_id>"`. */
+  ref: string | null;
+  venue: Venue | null;
+  market_id: string | null;
+  quote_kind: QuoteKind | null;
+  ts: string | null;
+  p_yes: number | null;
+  /** The case file's provenance (REAL_HISTORICAL or SYNTHETIC). Optional here while PR #111 is open. */
+  provenance?: WireProvenance | null;
+  note: string | null;
 }
 
-/** models.py `EvidenceItem`. */
+/** routes/replay.py `ReplayRunResponse` (pre-reveal; no outcome-like field). */
+export interface ReplayRunResponse {
+  prediction: Prediction;
+  /** Warnings only: an error-level problem is a 422 and nothing is saved. */
+  skeptic: { problems: SkepticProblem[] };
+  market_at_cutoff: MarketAtCutoff;
+  persisted_at: string;
+  persist_seq: number;
+  record_sha256: string;
+  event_first_reveal_seq: number | null;
+  /** Saved after this event's result was revealed in this store: not blind; the benchmark ignores it. */
+  persisted_after_event_reveal: boolean;
+  store_first_reveal_seq: number | null;
+  /** Saved after some reveal in this store: cannot be OFFICIAL. */
+  persisted_after_any_reveal: boolean;
+  /** Server's plain-language warning when either flag is true; null otherwise. */
+  audit_note: string | null;
+}
+
+/** The run as the screen keeps it: exactly the served body. */
+export type ReplayRun = ReplayRunResponse;
+
+/** routes/cases.py `GatedEvidence`: one admitted item exactly as the prompt shows it. */
 export interface EvidenceItem {
   evidence_id: string;
-  event_id: string;
   title: string;
-  source_url: string;
-  archive_url: string | null;
   published_at: string;
-  observed_at: string;
   available_at: string;
-  content_sha256: string;
+  source_url: string;
   content: string;
-  retrospective_unverified: boolean;
   provenance: WireProvenance;
 }
 
-/** models.py `MarketQuoteRef`. `p_yes` is price-derived, never a "true probability". */
-export interface MarketQuoteRef {
-  quote_id: string;
-  venue: "kalshi" | "polymarket";
+/** routes/cases.py `GatedQuote`: per market, the last quote within 24h before as_of. */
+export interface GatedQuote {
+  venue: Venue;
   market_id: string;
-  ts: string;
   p_yes: number;
-  quote_kind: "midpoint" | "candle_close" | "last_trade";
-  raw_payload_sha256: string;
-  provenance: WireProvenance;
-  label: string;
+  quote_kind: QuoteKind;
+  ts: string;
+  spread: number | null;
+  volume: string | null;
+  open_interest: string | null;
+  period_seconds: number | null;
+  /** Server label text, shown verbatim. Optional while PR #111 is open. */
+  label?: string;
+  /** Not served on main; PR #111's quotes carry it (SYNTHETIC exactly when venue is synthetic). */
+  provenance?: WireProvenance;
 }
 
 /**
- * Proposed body of GET /api/cases/{id}/evidence?as_of= (not served yet; described in the PR so the backend can
- * match it): the gate's admitted evidence plus the as-of quote(s), shaped like `CasesResponse`.
+ * A synthetic benchmark price (venue `synthetic` or provenance SYNTHETIC): always shown with a SYNTHETIC badge and
+ * the server's label, never as a real market, and with no raw payload. Read from served fields only.
  */
+export function isSyntheticQuote(q: { venue: Venue | null; provenance?: WireProvenance | null }): boolean {
+  return q.venue === "synthetic" || q.provenance === "SYNTHETIC";
+}
+
+/** Venue/kind/provenance must agree (PR #111's rule); a mismatch would mislabel a price, so it is refused. */
+function syntheticMismatch(q: Record<string, unknown>, at: string): string | null {
+  const venue = q.venue === "synthetic";
+  if (venue !== (q.quote_kind === "synthetic")) return `${at}: quote_kind "synthetic" and venue "synthetic" disagree`;
+  if (venue && q.provenance !== undefined && q.provenance !== null && q.provenance !== "SYNTHETIC") {
+    return `${at}: a synthetic-venue quote is labelled ${String(q.provenance)} (refused)`;
+  }
+  return null;
+}
+
+/** routes/cases.py `CaseEvidenceResponse` (GET /api/cases/{case_id}/evidence). */
 export interface CaseEvidenceResponse {
   status: "AVAILABLE" | "NOT AVAILABLE";
+  event_id: string;
+  /** The cutoff applied (this client never asks for an earlier one, so it equals `case_as_of`). */
   as_of: string;
+  case_as_of: string;
   items: EvidenceItem[];
-  market_quotes: MarketQuoteRef[];
+  market_quotes: GatedQuote[];
+  market_at_cutoff: MarketAtCutoff;
+  /** Counts of excluded items by reason; their ids and content are never served. */
+  excluded_by_reason: Record<string, number>;
   notes: string[];
 }
 
 // --------------------------------------------------------------------------------------------- results
 
 /**
- * `route_missing`: this API build has no such route (FastAPI's bare 404). `not_found`: the route answered with a
- * coded 404 (e.g. unknown case). `forbidden`: 401/403 (public mode admin gate, #28). `model_unavailable`: 503
- * MODEL_UNAVAILABLE. `leak`: a pre-reveal body carried an outcome-like key and was refused. `malformed`: a 2xx body
- * that did not match the contract.
+ * `route_missing`: this API build has no such route (FastAPI's bare 404). `not_found`: a coded 404 (unknown case).
+ * `admin_required`: 401/403 (public mode: run and reveal need the admin token). `model_unavailable`: 503.
+ * `conflict`: 409 PREDICTION_EXISTS. `data_invalid`: 500 DATA_INVALID. `validation`: 422 (VALIDATION_ERROR,
+ * INSUFFICIENT_DATA, PROMPT_TOO_LONG, PROMPT_NOT_VERIFIED, MODEL_OUTPUT_INVALID incl. skeptic rejection).
+ * `leak`: a pre-reveal body carried an outcome-like key and was refused. `malformed`: a 2xx body off contract.
  */
 export type ReplayErrorKind =
   | "network"
@@ -159,8 +265,10 @@ export type ReplayErrorKind =
   | "aborted"
   | "route_missing"
   | "not_found"
-  | "forbidden"
+  | "admin_required"
   | "validation"
+  | "conflict"
+  | "data_invalid"
   | "model_unavailable"
   | "http"
   | "malformed"
@@ -186,8 +294,12 @@ const isStrArray = (v: unknown): v is string[] => Array.isArray(v) && v.every(is
 const isObj = (v: unknown): v is Record<string, unknown> => !!v && typeof v === "object" && !Array.isArray(v);
 const isProb = (v: unknown): v is number => typeof v === "number" && Number.isFinite(v) && v >= 0 && v <= 1;
 const isInstant = (v: unknown): v is string => isStr(v) && Number.isFinite(Date.parse(v));
+const isInt = (v: unknown): v is number => typeof v === "number" && Number.isInteger(v);
+const isPosInt = (v: unknown): v is number => isInt(v) && v > 0;
+const isNullOr = <T>(v: unknown, ok: (x: unknown) => x is T): v is T | null => v === null || ok(v);
 const isWireProvenance = (v: unknown): v is WireProvenance => WIRE_PROVENANCES.includes(v as WireProvenance);
 const SHA256 = /^[0-9a-f]{64}$/;
+const isSha = (v: unknown): v is string => isStr(v) && SHA256.test(v);
 
 /** Mirrors models.OUTCOME_FIELD_PATTERN. */
 const OUTCOME_KEY = /outcome|resolution|resolved|settle|result|winner|final_price/i;
@@ -214,29 +326,34 @@ export function outcomeKeyPaths(body: unknown): string[] {
   return found;
 }
 
-const CASE_KEYS = new Set([
+/** Every key in `keys` must be present, and nothing outside `keys` + `optional` may be: otherwise off contract. */
+function exactKeys(
+  obj: Record<string, unknown>,
+  keys: readonly string[],
+  at: string,
+  optional: readonly string[] = [],
+): string | null {
+  const allowed = new Set([...keys, ...optional]);
+  const extra = Object.keys(obj).find((k) => !allowed.has(k));
+  if (extra !== undefined) return `${at} has non-contract key "${extra}"`;
+  const missing = keys.find((k) => !(k in obj));
+  return missing === undefined ? null : `${at} is missing "${missing}"`;
+}
+
+const CASE_KEYS = [
   "event_id", "title", "as_of", "horizon_days", "question_criteria", "evidence_ids", "market_quote_id",
   "snapshot_hash", "synthetic", "contamination_flag", "provenance",
-]);
-
-function extraKey(obj: Record<string, unknown>, allowed: Set<string>, at: string): string | null {
-  const extra = Object.keys(obj).find((k) => !allowed.has(k));
-  return extra === undefined ? null : `${at} has non-contract key "${extra}"`;
-}
+] as const;
 
 function checkCase(c: unknown, at: string): string | null {
   if (!isObj(c)) return `${at} is not an object`;
-  const extra = extraKey(c, CASE_KEYS, at);
-  if (extra) return extra;
+  const keys = exactKeys(c, CASE_KEYS, at);
+  if (keys) return keys;
   for (const k of ["event_id", "title", "question_criteria"]) if (!isStr(c[k])) return `${at}.${k} missing`;
   if (!isInstant(c.as_of)) return `${at}.as_of is not an ISO instant`;
-  if (typeof c.horizon_days !== "number" || !Number.isInteger(c.horizon_days) || c.horizon_days <= 0) {
-    return `${at}.horizon_days malformed`;
-  }
+  if (!isPosInt(c.horizon_days)) return `${at}.horizon_days malformed`;
   if (!isStrArray(c.evidence_ids)) return `${at}.evidence_ids malformed`;
-  if (!(c.market_quote_id === null || c.market_quote_id === undefined || isStr(c.market_quote_id))) {
-    return `${at}.market_quote_id malformed`;
-  }
+  if (!isNullOr(c.market_quote_id, isStr)) return `${at}.market_quote_id malformed`;
   if (!isStr(c.snapshot_hash) || !/^sha256:[0-9a-f]{64}$/.test(c.snapshot_hash)) return `${at}.snapshot_hash malformed`;
   if (typeof c.synthetic !== "boolean") return `${at}.synthetic malformed`;
   if (!["unknown", "likely", "unlikely"].includes(c.contamination_flag as string)) {
@@ -248,8 +365,8 @@ function checkCase(c: unknown, at: string): string | null {
 
 export function checkCasesResponse(body: unknown): string | null {
   if (!isObj(body)) return "body is not an object";
-  const extra = extraKey(body, new Set(["status", "items", "notes"]), "body");
-  if (extra) return extra;
+  const keys = exactKeys(body, ["status", "items", "notes"], "body");
+  if (keys) return keys;
   if (body.status !== "AVAILABLE" && body.status !== "NOT AVAILABLE") return "status malformed";
   if (!Array.isArray(body.items)) return "items missing";
   if (!isStrArray(body.notes)) return "notes malformed";
@@ -260,15 +377,16 @@ export function checkCasesResponse(body: unknown): string | null {
   return null;
 }
 
-const PREDICTION_KEYS = new Set([
+const PREDICTION_KEYS = [
   "prediction_id", "event_id", "as_of", "agent_model", "model_digest", "variant", "p_yes", "decision", "rationale",
   "evidence_ids", "prompt_sha256", "snapshot_sha256", "temperature", "seed", "recorded_at", "provenance",
-]);
+  "gated_prompt_sha256", "attempts", "transcript_sha256", "num_ctx", "num_predict",
+] as const;
 
 function checkPrediction(p: unknown, at: string): string | null {
   if (!isObj(p)) return `${at} is not an object`;
-  const extra = extraKey(p, PREDICTION_KEYS, at);
-  if (extra) return extra;
+  const keys = exactKeys(p, PREDICTION_KEYS, at);
+  if (keys) return keys;
   for (const k of ["prediction_id", "event_id", "agent_model", "rationale"]) if (!isStr(p[k])) return `${at}.${k} missing`;
   if (!isInstant(p.as_of) || !isInstant(p.recorded_at)) return `${at} timestamps malformed`;
   if (!isProb(p.p_yes)) return `${at}.p_yes is not a probability in [0, 1]`;
@@ -277,112 +395,180 @@ function checkPrediction(p: unknown, at: string): string | null {
     return `${at}.variant malformed`;
   }
   if (!isStrArray(p.evidence_ids)) return `${at}.evidence_ids malformed`;
-  if (!isStr(p.prompt_sha256) || !SHA256.test(p.prompt_sha256)) return `${at}.prompt_sha256 malformed`;
-  if (!isStr(p.snapshot_sha256) || !SHA256.test(p.snapshot_sha256)) return `${at}.snapshot_sha256 malformed`;
-  if (!(p.model_digest === null || p.model_digest === undefined || isStr(p.model_digest))) {
-    return `${at}.model_digest malformed`;
+  if (!isSha(p.prompt_sha256)) return `${at}.prompt_sha256 malformed`;
+  if (!isSha(p.snapshot_sha256)) return `${at}.snapshot_sha256 malformed`;
+  if (!isNullOr(p.model_digest, isStr)) return `${at}.model_digest malformed`;
+  if (typeof p.temperature !== "number" || !Number.isFinite(p.temperature) || p.temperature < 0) {
+    return `${at}.temperature malformed`;
   }
-  if (typeof p.temperature !== "number" || !Number.isFinite(p.temperature)) return `${at}.temperature malformed`;
-  if (!(p.seed === null || p.seed === undefined || Number.isInteger(p.seed))) return `${at}.seed malformed`;
+  if (!isNullOr(p.seed, isInt)) return `${at}.seed malformed`;
   if (!isWireProvenance(p.provenance)) return `${at}.provenance is not a known wire label`;
+  if (!isNullOr(p.gated_prompt_sha256, isSha)) return `${at}.gated_prompt_sha256 malformed`;
+  if (!(p.attempts === null || p.attempts === 1 || p.attempts === 2)) return `${at}.attempts is not 1, 2 or null`;
+  if (!isNullOr(p.transcript_sha256, isSha)) return `${at}.transcript_sha256 malformed`;
+  if (!isNullOr(p.num_ctx, isPosInt)) return `${at}.num_ctx malformed`;
+  if (!isNullOr(p.num_predict, isPosInt)) return `${at}.num_predict malformed`;
   return null;
 }
 
-function readSkeptic(v: unknown): SkepticProblem[] | null | "malformed" {
-  if (v === undefined || v === null) return null;
-  if (!isObj(v) || !Array.isArray(v.problems)) return "malformed";
-  const out: SkepticProblem[] = [];
-  for (const p of v.problems) {
-    if (!isObj(p) || !isStr(p.code) || !isStr(p.severity) || !isStr(p.message)) return "malformed";
-    out.push({
-      code: p.code,
-      severity: p.severity,
-      message: p.message,
-      evidence_id: isStr(p.evidence_id) ? p.evidence_id : null,
-      sentence: isStr(p.sentence) ? p.sentence : null,
-    });
+const SKEPTIC_CODES: readonly SkepticProblemCode[] = [
+  "UNKNOWN_EVIDENCE_ID", "UNKNOWN_CITED_ID", "POSSIBLE_UNKNOWN_ID", "P_YES_OUT_OF_RANGE", "INVALID_DECISION",
+  "RATIONALE_LENGTH", "UNCITED_CLAIM", "CITATION_NOT_LISTED", "DUPLICATE_EVIDENCE_ID", "NO_EVIDENCE_CITED",
+];
+
+function checkSkeptic(v: unknown): string | null {
+  if (!isObj(v)) return "skeptic is not an object";
+  const keys = exactKeys(v, ["problems"], "skeptic");
+  if (keys) return keys;
+  if (!Array.isArray(v.problems)) return "skeptic.problems missing";
+  for (let i = 0; i < v.problems.length; i++) {
+    const p: unknown = v.problems[i];
+    const at = `skeptic.problems[${i}]`;
+    if (!isObj(p)) return `${at} is not an object`;
+    const allowed = new Set(["code", "severity", "message", "evidence_id", "sentence"]);
+    const extra = Object.keys(p).find((k) => !allowed.has(k));
+    if (extra !== undefined) return `${at} has non-contract key "${extra}"`;
+    if (!SKEPTIC_CODES.includes(p.code as SkepticProblemCode)) return `${at}.code is not a known skeptic code`;
+    if (p.severity !== "error" && p.severity !== "warning") return `${at}.severity malformed`;
+    if (!isStr(p.message)) return `${at}.message missing`;
+    if (!(p.evidence_id === undefined || isNullOr(p.evidence_id, isStr))) return `${at}.evidence_id malformed`;
+    if (!(p.sentence === undefined || isNullOr(p.sentence, isStr))) return `${at}.sentence malformed`;
   }
-  return out;
+  return null;
 }
 
-/** Normalizes the run body to `ReplayRun`, or returns a problem description. */
+const MARKET_KEYS = ["status", "ref", "venue", "market_id", "quote_kind", "ts", "p_yes", "note"] as const;
+/** On main both are always served; kept optional so PR #111 cannot turn the panel into "malformed". */
+const MARKET_OPTIONAL_KEYS = ["label", "provenance"] as const;
+
+/** `MarketAtCutoff`, including the server's invariant that NOT AVAILABLE carries no quote value. */
+function checkMarketAtCutoff(m: unknown, at: string, asOf: string): string | null {
+  if (!isObj(m)) return `${at} is not an object`;
+  const keys = exactKeys(m, MARKET_KEYS, at, MARKET_OPTIONAL_KEYS);
+  if (keys) return keys;
+  if (m.label !== undefined && !isStr(m.label)) return `${at}.label malformed`;
+  if (!isNullOr(m.note, isStr)) return `${at}.note malformed`;
+  if (m.status === "NOT AVAILABLE") {
+    const quoteFields = ["ref", "venue", "market_id", "quote_kind", "ts", "p_yes", "provenance"];
+    const filled = quoteFields.find((k) => m[k] !== null && m[k] !== undefined);
+    return filled ? `${at} is NOT AVAILABLE but carries "${filled}"` : null;
+  }
+  if (m.status !== "AVAILABLE") return `${at}.status malformed`;
+  if (!isStr(m.ref) || !isStr(m.market_id)) return `${at} ids missing`;
+  if (!isVenue(m.venue)) return `${at}.venue malformed`;
+  if (!QUOTE_KINDS.includes(m.quote_kind as QuoteKind)) return `${at}.quote_kind malformed`;
+  if (!isInstant(m.ts)) return `${at}.ts malformed`;
+  if (Date.parse(m.ts) > Date.parse(asOf)) return `${at} is stamped after the cutoff (refused)`;
+  if (!isProb(m.p_yes)) return `${at}.p_yes is not in [0, 1]`;
+  if (!(m.provenance === undefined || isNullOr(m.provenance, isWireProvenance))) {
+    return `${at}.provenance is not a known wire label`;
+  }
+  return syntheticMismatch(m, at);
+}
+
+const RUN_KEYS = [
+  "prediction", "skeptic", "market_at_cutoff", "persisted_at", "persist_seq", "record_sha256",
+  "event_first_reveal_seq", "persisted_after_event_reveal", "store_first_reveal_seq", "persisted_after_any_reveal",
+  "audit_note",
+] as const;
+
+/** Checks a POST /api/replay/run body against `ReplayRunResponse`; returns it typed, or a problem description. */
 export function readReplayRun(body: unknown): ReplayRun | string {
   if (!isObj(body)) return "body is not an object";
-  const wrapped = isObj(body.prediction);
-  if (wrapped) {
-    const extra = extraKey(body, new Set(["prediction", "skeptic"]), "body");
-    if (extra) return extra;
-  }
-  const raw = wrapped ? body.prediction : body;
-  const problem = checkPrediction(raw, wrapped ? "prediction" : "body");
+  const keys = exactKeys(body, RUN_KEYS, "body");
+  if (keys) return keys;
+  const problem = checkPrediction(body.prediction, "prediction") ?? checkSkeptic(body.skeptic);
   if (problem) return problem;
-  const skeptic = wrapped ? readSkeptic(body.skeptic) : null;
-  if (skeptic === "malformed") return "skeptic report malformed";
-  const p = raw as unknown as Prediction;
-  return {
-    prediction: { ...p, model_digest: p.model_digest ?? null, seed: p.seed ?? null },
-    skeptic,
-  };
+  const asOf = (body.prediction as Prediction).as_of;
+  const market = checkMarketAtCutoff(body.market_at_cutoff, "market_at_cutoff", asOf);
+  if (market) return market;
+  if (!isInstant(body.persisted_at)) return "persisted_at malformed";
+  if (!isInt(body.persist_seq)) return "persist_seq malformed";
+  if (!isSha(body.record_sha256)) return "record_sha256 malformed";
+  if (!isNullOr(body.event_first_reveal_seq, isInt)) return "event_first_reveal_seq malformed";
+  if (!isNullOr(body.store_first_reveal_seq, isInt)) return "store_first_reveal_seq malformed";
+  if (typeof body.persisted_after_event_reveal !== "boolean") return "persisted_after_event_reveal malformed";
+  if (typeof body.persisted_after_any_reveal !== "boolean") return "persisted_after_any_reveal malformed";
+  if (!isNullOr(body.audit_note, isStr)) return "audit_note malformed";
+  return body as unknown as ReplayRun;
 }
 
-/** True when a skeptic report has an error-level problem: such a forecast must not be displayed as valid. */
+/**
+ * True when the server says this forecast was saved after a reveal (this event's, or any in the store). Such a run
+ * is not blind and can never count toward an OFFICIAL scorecard. Read straight from the served flags.
+ */
+export function savedAfterReveal(run: ReplayRun): boolean {
+  return run.persisted_after_event_reveal || run.persisted_after_any_reveal;
+}
+
+/** True when a skeptic report has an error-level problem. The server answers 422 for those; kept as a backstop. */
 export function skepticRejected(problems: SkepticProblem[] | null): boolean {
-  return !!problems && problems.some((p) => p.severity.toLowerCase() === "error");
+  return !!problems && problems.some((p) => p.severity === "error");
 }
 
-const EVIDENCE_KEYS = new Set([
-  "evidence_id", "event_id", "title", "source_url", "archive_url", "published_at", "observed_at", "available_at",
-  "content_sha256", "content", "retrospective_unverified", "provenance",
-]);
-const QUOTE_KEYS = new Set([
-  "quote_id", "venue", "market_id", "ts", "p_yes", "quote_kind", "raw_payload_sha256", "provenance", "label",
-  "outcome",
-]);
+const EVIDENCE_KEYS = [
+  "evidence_id", "title", "published_at", "available_at", "source_url", "content", "provenance",
+] as const;
+const QUOTE_KEYS = [
+  "venue", "market_id", "p_yes", "quote_kind", "ts", "spread", "volume", "open_interest", "period_seconds",
+] as const;
+const QUOTE_OPTIONAL_KEYS = ["label", "provenance"] as const;
+const EVIDENCE_BODY_KEYS = [
+  "status", "event_id", "as_of", "case_as_of", "items", "market_quotes", "market_at_cutoff", "excluded_by_reason",
+  "notes",
+] as const;
 
 /**
  * Shape + cutoff check for the evidence body. An item or quote stamped after the cutoff makes the WHOLE response
  * malformed: the browser does not silently drop it.
  */
-export function checkCaseEvidence(body: unknown, asOf: string): string | null {
+export function checkCaseEvidence(body: unknown, c: Pick<ReplayCasePublic, "event_id" | "as_of">): string | null {
   if (!isObj(body)) return "body is not an object";
-  const extra = extraKey(body, new Set(["status", "as_of", "items", "market_quotes", "notes"]), "body");
-  if (extra) return extra;
+  const keys = exactKeys(body, EVIDENCE_BODY_KEYS, "body");
+  if (keys) return keys;
   if (body.status !== "AVAILABLE" && body.status !== "NOT AVAILABLE") return "status malformed";
-  if (!isInstant(body.as_of)) return "as_of missing";
-  if (Date.parse(body.as_of) !== Date.parse(asOf)) return "as_of does not match the case cutoff";
+  if (body.event_id !== c.event_id) return "event_id does not match the selected case";
+  if (!isInstant(body.as_of) || !isInstant(body.case_as_of)) return "as_of / case_as_of missing";
+  if (Date.parse(body.as_of) !== Date.parse(c.as_of)) return "as_of does not match the case cutoff";
+  if (Date.parse(body.case_as_of) !== Date.parse(c.as_of)) return "case_as_of does not match the case cutoff";
   if (!Array.isArray(body.items) || !Array.isArray(body.market_quotes)) return "items / market_quotes missing";
   if (!isStrArray(body.notes)) return "notes malformed";
-  const cutoff = Date.parse(asOf);
+  if (!isObj(body.excluded_by_reason) || !Object.values(body.excluded_by_reason).every(isInt)) {
+    return "excluded_by_reason malformed";
+  }
+  const cutoff = Date.parse(c.as_of);
   for (let i = 0; i < body.items.length; i++) {
-    const e = body.items[i];
+    const e: unknown = body.items[i];
     const at = `items[${i}]`;
     if (!isObj(e)) return `${at} is not an object`;
-    const x = extraKey(e, EVIDENCE_KEYS, at);
+    const x = exactKeys(e, EVIDENCE_KEYS, at);
     if (x) return x;
-    for (const k of ["evidence_id", "title", "source_url", "content", "content_sha256"]) {
-      if (!isStr(e[k])) return `${at}.${k} missing`;
-    }
-    if (!isInstant(e.published_at) || !isInstant(e.available_at) || !isInstant(e.observed_at)) {
-      return `${at} timestamps malformed`;
-    }
+    for (const k of ["evidence_id", "title", "source_url", "content"]) if (!isStr(e[k])) return `${at}.${k} missing`;
+    if (!isInstant(e.published_at) || !isInstant(e.available_at)) return `${at} timestamps malformed`;
     if (Date.parse(e.available_at) > cutoff) return `${at} has available_at after the cutoff (refused)`;
-    if (e.retrospective_unverified === true) return `${at} is retrospective_unverified (refused)`;
     if (!isWireProvenance(e.provenance)) return `${at}.provenance is not a known wire label`;
   }
   for (let i = 0; i < body.market_quotes.length; i++) {
-    const q = body.market_quotes[i];
+    const q: unknown = body.market_quotes[i];
     const at = `market_quotes[${i}]`;
     if (!isObj(q)) return `${at} is not an object`;
-    const x = extraKey(q, QUOTE_KEYS, at);
+    const x = exactKeys(q, QUOTE_KEYS, at, QUOTE_OPTIONAL_KEYS);
     if (x) return x;
-    if (!isStr(q.quote_id) || !isStr(q.market_id) || !isStr(q.label)) return `${at} ids missing`;
-    if (q.venue !== "kalshi" && q.venue !== "polymarket") return `${at}.venue malformed`;
+    if (!isStr(q.market_id)) return `${at}.market_id missing`;
+    if (q.label !== undefined && !isStr(q.label)) return `${at}.label malformed`;
+    if (q.provenance !== undefined && !isWireProvenance(q.provenance)) return `${at}.provenance malformed`;
+    if (!isVenue(q.venue)) return `${at}.venue malformed`;
+    const mismatch = syntheticMismatch(q, at);
+    if (mismatch) return mismatch;
+    if (!QUOTE_KINDS.includes(q.quote_kind as QuoteKind)) return `${at}.quote_kind malformed`;
     if (!isInstant(q.ts)) return `${at}.ts malformed`;
     if (Date.parse(q.ts) > cutoff) return `${at} is stamped after the cutoff (refused)`;
     if (!isProb(q.p_yes)) return `${at}.p_yes is not in [0, 1]`;
-    if (!isWireProvenance(q.provenance)) return `${at}.provenance is not a known wire label`;
+    if (!isNullOr(q.spread, (v): v is number => typeof v === "number")) return `${at}.spread malformed`;
+    if (!isNullOr(q.volume, isStr) || !isNullOr(q.open_interest, isStr)) return `${at} volume fields malformed`;
+    if (!isNullOr(q.period_seconds, isInt)) return `${at}.period_seconds malformed`;
   }
-  return null;
+  return checkMarketAtCutoff(body.market_at_cutoff, "market_at_cutoff", c.as_of);
 }
 
 // --------------------------------------------------------------------------------------------- transport
@@ -452,8 +638,11 @@ async function request(
       // FastAPI's own 404/405 for an unregistered path has no `code`; a route's coded 404 does.
       if ((status === 404 || status === 405) && !hasCode) return fail("route_missing", msg, { status });
       if (status === 404) return fail("not_found", msg, { status, code });
-      if (status === 401 || status === 403) return fail("forbidden", msg, { status, code });
+      // Public mode: run and reveal are admin-only (routes/replay.py require_admin_in_public_mode).
+      if (status === 401 || status === 403) return fail("admin_required", msg, { status, code });
+      if (status === 409 && code === "PREDICTION_EXISTS") return fail("conflict", msg, { status, code });
       if (status === 422) return fail("validation", msg, { status, code });
+      if (code === "DATA_INVALID") return fail("data_invalid", msg, { status, code });
       if (status === 503 && code === "MODEL_UNAVAILABLE") return fail("model_unavailable", msg, { status, code });
       return fail("http", msg, { status, code });
     }
@@ -481,8 +670,12 @@ async function request(
 
 export const CASES_PATH = "/api/cases";
 export const REPLAY_RUN_PATH = "/api/replay/run";
-export const evidencePath = (caseId: string, asOf: string) =>
-  `/api/cases/${encodeURIComponent(caseId)}/evidence?as_of=${encodeURIComponent(asOf)}`;
+/**
+ * routes/cases.py `case_evidence`. `as_of` is omitted on purpose: its default (and maximum) is the case's own
+ * cutoff, so the client never re-encodes the served instant. The response's `as_of` is checked against the case.
+ */
+export const evidencePath = (caseId: string) => `/api/cases/${encodeURIComponent(caseId)}/evidence`;
+export const EVIDENCE_PATH_TEMPLATE = "/api/cases/{case_id}/evidence";
 
 /** GET /api/cases. Never throws. */
 export async function getCases(signal?: AbortSignal): Promise<ReplayResult<CasesResponse>> {
@@ -493,14 +686,14 @@ export async function getCases(signal?: AbortSignal): Promise<ReplayResult<Cases
   return { ok: true, data: res.data as CasesResponse, request: res.request };
 }
 
-/** GET /api/cases/{id}/evidence?as_of=<case cutoff>. `as_of` is always the case's own cutoff, sent as served. */
+/** GET /api/cases/{case_id}/evidence: what the temporal gate admits at the case cutoff. Never throws. */
 export async function getCaseEvidence(
   c: Pick<ReplayCasePublic, "event_id" | "as_of">,
   signal?: AbortSignal,
 ): Promise<ReplayResult<CaseEvidenceResponse>> {
-  const res = await request("GET", evidencePath(c.event_id, c.as_of), 6000, signal);
+  const res = await request("GET", evidencePath(c.event_id), 6000, signal);
   if (!res.ok) return res;
-  const problem = checkCaseEvidence(res.data, c.as_of);
+  const problem = checkCaseEvidence(res.data, c);
   if (problem) {
     return { ok: false, kind: "malformed", message: `malformed evidence payload: ${problem}`, request: res.request };
   }
@@ -508,8 +701,10 @@ export async function getCaseEvidence(
 }
 
 /**
- * POST /api/replay/run `{case_id, variant}` (issue #44). Only ever called from an explicit click: it runs the local
- * model and persists a prediction. Generous timeout because a local model can be slow; no progress is invented.
+ * POST /api/replay/run `{case_id, variant}` (routes/replay.py). Only ever called from an explicit click: it runs the
+ * local model and persists a prediction before any reveal. Generous timeout because a local model can be slow; no
+ * progress is invented. In public mode the route is admin-only (401/403 ADMIN_TOKEN_REQUIRED); this client never
+ * sends a token, so the public demo shows that refusal, never a substitute forecast.
  */
 export async function runReplay(
   c: Pick<ReplayCasePublic, "event_id" | "as_of">,
@@ -545,7 +740,7 @@ export interface ReplayRoutes {
 
 /**
  * Which replay routes this API build registers, read from FastAPI's `/openapi.json` (a GET with no side effects),
- * so the run button can say "route pending (#44)" without POSTing to a model. `unknown` when the schema is not
+ * so the run button can say "route not served" without POSTing to a model. `unknown` when the schema is not
  * served (e.g. disabled in public mode): the screen then lets the request itself report what happened.
  */
 export async function getReplayRoutes(signal?: AbortSignal): Promise<ReplayRoutes> {
@@ -560,14 +755,14 @@ export async function getReplayRoutes(signal?: AbortSignal): Promise<ReplayRoute
 }
 
 /**
- * Typed stub: retrieving a committed RECORDED RUN for a case. #44 commits recorded-run rows but defines no route
- * that serves them (needed: e.g. `GET /api/replay/recorded?case_id=` returning `Prediction[]`). Never fetches,
- * never returns data.
+ * Typed stub: retrieving a committed RECORDED RUN prediction for a case before its reveal. #91's `GET /api/benchmark`
+ * serves post-reveal scorecards only, which DECISION must not show. Needed: e.g. `GET /api/replay/recorded?case_id=`
+ * returning the persisted `Prediction[]` with hashes. Never fetches, never returns data.
  */
 export const RECORDED_RUNS_PENDING: ReplayFailure = {
   ok: false,
   kind: "pending",
-  message: "No route serves committed RECORDED RUN rows yet (#44 commits them; a read route is a follow-up).",
+  message: "No pre-reveal route serves committed RECORDED RUN predictions yet (GET /api/benchmark is post-reveal scorecards only).",
   request: "GET /api/replay/recorded?case_id= (proposed)",
 };
 

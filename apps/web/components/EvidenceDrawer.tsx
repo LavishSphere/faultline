@@ -2,16 +2,17 @@
 
 import { useEffect, useRef } from "react";
 import { ProvenanceBadge } from "./ProvenanceBadge";
-import { CaseBadges, CutoffLine, FailureNote, Hash, InFlight } from "./replay/ReplayParts";
+import { CaseBadges, CutoffLine, FailureNote, InFlight } from "./replay/ReplayParts";
 import type { EvidenceState } from "./replay/hooks";
-import { formatInstantUtc, type EvidenceItem, type ReplayCasePublic } from "@/lib/replay";
+import { EVIDENCE_PATH_TEMPLATE, formatInstantUtc, type EvidenceItem, type ReplayCasePublic } from "@/lib/replay";
 
 /**
  * Side drawer with the point-in-time evidence for one case (SPEC §2 "hover evidence", §5).
  *
- * Lists the case's `evidence_ids` as served by GET /api/cases. Full documents (source, timestamps, text, hash) come
- * only from GET /api/cases/{id}/evidence?as_of=<cutoff>; until that route exists each document is NOT AVAILABLE.
- * The browser never filters by date: a body with anything after the cutoff is refused whole (lib/replay.ts).
+ * Lists the case's `evidence_ids` as served by GET /api/cases. Documents (title, source, timestamps, text) come from
+ * GET /api/cases/{case_id}/evidence (routes/cases.py `GatedEvidence`: exactly what the prompt shows); if that request
+ * fails each document is NOT AVAILABLE. The browser never filters by date: a body with anything after the cutoff is
+ * refused whole (lib/replay.ts). Excluded items are counted by reason only, as served.
  *
  * Native <dialog>: Escape closes it, focus is contained while open and returns to the opener on close.
  */
@@ -139,14 +140,13 @@ export function EvidenceDrawer({
 
 function EvidenceSource({ evidence }: { evidence: EvidenceState }) {
   if (evidence.kind === "checking" || evidence.kind === "loading") {
-    return <InFlight request={evidence.kind === "checking" ? "GET /openapi.json" : "GET /api/cases/{id}/evidence"} />;
+    return <InFlight request={evidence.kind === "checking" ? "GET /openapi.json" : `GET ${EVIDENCE_PATH_TEMPLATE}`} />;
   }
   if (evidence.kind === "absent") {
     return (
       <FailureNote
         size="sm"
         failure={evidence.failure}
-        pendingIssue="SPEC §8; no issue yet"
         note="Ids below are from GET /api/cases. Titles, sources, timestamps and text need the evidence route."
       />
     );
@@ -156,18 +156,28 @@ function EvidenceSource({ evidence }: { evidence: EvidenceState }) {
       <FailureNote
         size="sm"
         failure={evidence.result}
-        pendingIssue="SPEC §8; no issue yet"
         note="Ids below are from GET /api/cases."
       />
     );
   }
   if (evidence.kind === "done" && evidence.result.ok) {
-    const { notes, items } = evidence.result.data;
+    const { notes, items, excluded_by_reason } = evidence.result.data;
+    const excluded = Object.entries(excluded_by_reason);
     return (
       <div className="flex flex-col gap-1">
         <p className="font-mono text-[11px] text-muted">
           <code className="text-text-2">{evidence.result.request}</code> · {items.length} admitted at the cutoff
         </p>
+        {excluded.length ? (
+          <p className="font-mono text-[11px] text-muted">
+            Excluded by the gate (ids and text not served):{" "}
+            {excluded.map(([reason, n]) => (
+              <span key={reason} className="num mr-2 text-text-2">
+                {reason} × {n}
+              </span>
+            ))}
+          </p>
+        ) : null}
         {notes.map((n) => (
           <p key={n} className="text-xs text-muted">
             {n}
@@ -195,20 +205,10 @@ function EvidenceBody({ item }: { item: EvidenceItem }) {
         <dd className="num text-text-2">{formatInstantUtc(item.published_at)}</dd>
         <dt className="text-muted">available</dt>
         <dd className="num text-text-2">{formatInstantUtc(item.available_at)}</dd>
-        <dt className="text-muted">sha256</dt>
-        <dd>
-          <Hash value={item.content_sha256} />
+        <dt className="text-muted">source</dt>
+        <dd className="min-w-0 truncate text-text-2" title={item.source_url}>
+          {item.source_url}
         </dd>
-        {item.archive_url ? (
-          <>
-            <dt className="text-muted">archive</dt>
-            <dd className="min-w-0 truncate">
-              <a href={item.archive_url} target="_blank" rel="noreferrer noopener" className="text-text-2 hover:text-link-hover">
-                {item.archive_url}
-              </a>
-            </dd>
-          </>
-        ) : null}
       </dl>
       <p className="whitespace-pre-line text-xs leading-relaxed text-text-2">{item.content}</p>
     </div>
