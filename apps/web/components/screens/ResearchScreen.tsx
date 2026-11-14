@@ -1,4 +1,5 @@
 import { ThesisCourt } from "../ThesisCourt";
+import { LiveExplorePanel } from "../explore/LiveExplorePanel";
 import { ScreenHeader } from "./ScreenHeader";
 import type { Step } from "@/lib/steps";
 
@@ -21,6 +22,8 @@ export function ResearchScreen({ step }: { step: Step }) {
         enter; the browser does not filter, rank or score them. Quote kinds separate documentary fact, analyst
         interpretation and quantitative forecast; none is scored against the firms.
       </p>
+      {/* LIVE EXPLORE (#60): current web search, a separate section; never feeds the Blind Replay. */}
+      <LiveExplorePanel />
     </div>
   );
 }

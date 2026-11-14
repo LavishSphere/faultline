@@ -5,7 +5,7 @@
  * - The browser never computes authoritative numbers. Every figure shown comes from a response here.
  * - Anything not yet served by the API is listed in PENDING_ENDPOINTS and renders NOT AVAILABLE.
  *
- * Wired: `/api/health`, `POST /api/simulate` and `GET /api/scenarios` (contract: issue #25).
+ * Wired: `/api/health`, `POST /api/simulate`, `GET /api/scenarios` (contract: issue #25) and `POST /api/optimize` (#47).
  * `HealthResponse` is a tolerant reading of issue #1's acceptance criteria. The simulate types mirror the Pydantic
  * models in `services/api/core/financials.py` field for field: keep them in sync (or generate them from
  * `/openapi.json` once the routes land).
@@ -121,7 +121,7 @@ export function describeErrorBody(body: unknown): { message: string | null; code
   return { message: null, code };
 }
 
-async function requestJson<T>(
+export async function requestJson<T>(
   method: "GET" | "POST",
   path: string,
   timeoutMs: number,
@@ -195,12 +195,11 @@ export async function getHealth(signal?: AbortSignal): Promise<ApiResult<HealthS
  * (`simulate` stays listed for the DECISION screen's ACT/WAIT/HEDGE branches, which are not wired to it yet.)
  */
 export const PENDING_ENDPOINTS = {
-  cases: "GET /api/cases",
-  evidence: "GET /api/cases/{id}/evidence?as_of=",
+  // REWIND / DECISION call GET /api/cases/{case_id}/evidence and POST /api/replay/run through lib/replay.ts.
+  // `replayRun` stays for ThesisCourt, which is not wired to a run.
   replayRun: "POST /api/replay/run",
   reveal: "POST /api/replay/{prediction_id}/reveal",
   simulate: "POST /api/simulate",
-  optimize: "POST /api/optimize",
   benchmark: "GET /api/benchmark",
 } as const;
 
@@ -241,7 +240,7 @@ export interface ScenarioShock {
   supplier?: SupplierOutage | null;
 }
 
-/** core/financials.py `ActionPlan`. Not sent by the cascade screen until the optimizer is wired (#17). */
+/** core/financials.py `ActionPlan`. The cascade screen sends only a plan /api/optimize returned ("Apply plan", #56). */
 export interface ActionPlan {
   use_backup_supplier?: boolean;
   defer_capex?: boolean;
@@ -403,6 +402,85 @@ export async function simulate(req: SimulateRequest, signal?: AbortSignal): Prom
   if (!res.ok) return res;
   const problem = checkSimulateResponse(res.data);
   if (problem) return { ok: false, kind: "malformed", error: `malformed simulate payload: ${problem}` };
+  return res;
+}
+
+// ---------------------------------------------------------------------------------------------------------------
+// POST /api/optimize (issues #47, #56). Types mirror services/api/core/optimizer.py `OptimizationResult`.
+// Every figure is the solver's; the browser formats it and never computes a plan, a cash path or a floor.
+// ---------------------------------------------------------------------------------------------------------------
+
+/** POST /api/optimize request body: the same shock model as /api/simulate, plus the payroll-protection switch. */
+export interface OptimizeRequest {
+  scenario_id?: string;
+  shock: ScenarioShock;
+  protect_payroll: boolean;
+}
+
+export type OptimizeStatus = "OPTIMAL" | "NO FEASIBLE PLAN" | "SOLVER ERROR";
+
+/** core/optimizer.py `ChosenAction`. `week`/`amount` are null for the yes/no decisions. */
+export interface ChosenAction {
+  action: string;
+  week: number | null;
+  /** Dollars; for payroll_cut, the dollars not paid (z_t W_t). */
+  amount: number | null;
+  /** payroll_cut only: the share z_t. */
+  share: number | null;
+}
+
+/** POST /api/optimize response. For NO FEASIBLE PLAN / SOLVER ERROR every plan field is null (nothing invented). */
+export interface OptimizeResponse {
+  provenance: string;
+  business_provenance: string;
+  status: OptimizeStatus;
+  solver_message: string;
+  scenario_name: string;
+  protect_payroll: boolean;
+  plan: ActionPlan | null;
+  actions: ChosenAction[] | null;
+  cash: number[] | null;
+  revolver_balance: number[] | null;
+  inventory: number[] | null;
+  min_cash: number | null;
+  min_cash_week: number | null;
+  binding_constraints: string[] | null;
+  objective: number | null;
+  disruption_cost: number | null;
+  /** NO FEASIBLE PLAN: the highest minimum cash any plan can reach (the floor would have to be lowered to this). */
+  max_feasible_cash_floor: number | null;
+  diagnostic: string | null;
+}
+
+const OPTIMIZE_STATUSES = new Set<string>(["OPTIMAL", "NO FEASIBLE PLAN", "SOLVER ERROR"]);
+
+function checkOptimizeResponse(v: unknown): string | null {
+  if (!v || typeof v !== "object") return "empty body";
+  const r = v as Record<string, unknown>;
+  if (typeof r.provenance !== "string" || typeof r.business_provenance !== "string") return "provenance labels missing";
+  if (typeof r.status !== "string" || !OPTIMIZE_STATUSES.has(r.status)) return "unknown status";
+  if (typeof r.solver_message !== "string") return "solver_message missing";
+  if (r.status === "OPTIMAL") {
+    if (!r.plan || typeof r.plan !== "object") return "plan missing";
+    if (!Array.isArray(r.actions) || !Array.isArray(r.binding_constraints)) return "actions or binding constraints missing";
+    if (!Array.isArray(r.cash) || !r.cash.every(isNum)) return "cash path missing";
+    if (!isNum(r.min_cash) || !isNum(r.min_cash_week) || !isNum(r.objective)) return "min cash or objective missing";
+  }
+  if (r.status === "NO FEASIBLE PLAN" && !(r.max_feasible_cash_floor === null || isNum(r.max_feasible_cash_floor))) {
+    return "max_feasible_cash_floor malformed";
+  }
+  return null;
+}
+
+/**
+ * POST /api/optimize. Never throws. NO FEASIBLE PLAN and SOLVER ERROR are 200 answers (the `status` field), not
+ * failures; a 422 carries the server's coded message like /api/simulate.
+ */
+export async function optimize(req: OptimizeRequest, signal?: AbortSignal): Promise<ApiResult<OptimizeResponse>> {
+  const res = await requestJson<OptimizeResponse>("POST", "/api/optimize", 15000, signal, req);
+  if (!res.ok) return res;
+  const problem = checkOptimizeResponse(res.data);
+  if (problem) return { ok: false, kind: "malformed", error: `malformed optimize payload: ${problem}` };
   return res;
 }
 
