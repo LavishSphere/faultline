@@ -1,0 +1,32 @@
+{
+  "entries": [
+    {
+      "bytes": 20836,
+      "collected_at": "2026-11-13T17:58:34.095550+00:00",
+      "endpoint": "kalshi.historical_candlesticks",
+      "http_status": 200,
+      "notes": {
+        "collector": "scripts/collect_market_snapshots.py",
+        "data_tier": "historical",
+        "kalshi_market_settled_cutoff": "2026-09-13T00:00:00+00:00",
+        "plan_group": "CPI YoY 2025-07 (july-inflation-annual-462)",
+        "plan_leg": "\u22653.0% == Kalshi Above 2.9%",
+        "points_in_response_set": 63,
+        "reference_close": "2025-08-12T12:29:00+00:00",
+        "venue_scheduled_close": "2025-08-12T12:29:00+00:00",
+        "window_end": "2025-08-05T00:00:00+00:00",
+        "window_rule": "T-7d: end = 00:00Z of (reference_close - 7d), lookback 3d",
+        "window_start": "2025-08-02T00:00:00+00:00"
+      },
+      "params": {
+        "end_ts": 1754352000,
+        "period_interval": 60,
+        "start_ts": 1754092800
+      },
+      "path": "kalshi/KXCPIYOY-25JUL-T2.9/20261113T175834095550Z.json",
+      "provenance": "REAL HISTORICAL",
+      "sha256": "15ad73d968b8eb4cc1f744bd49ffc40f254483f13b85518c92d032ba417afed6",
+      "url": "https://external-api.kalshi.com/trade-api/v2/historical/markets/KXCPIYOY-25JUL-T2.9/candlesticks"
+    }
+  ]
+}

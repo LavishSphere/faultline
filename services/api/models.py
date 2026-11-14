@@ -86,6 +86,9 @@ class ErrorCode(StrEnum):
     MODEL_OUTPUT_INVALID = "MODEL_OUTPUT_INVALID"  # answer failed output validation on every attempt
     PROMPT_TOO_LONG = "PROMPT_TOO_LONG"  # prompt + answer budget exceeds the context window; refused, not truncated
     PROMPT_NOT_VERIFIED = "PROMPT_NOT_VERIFIED"  # cannot confirm the model saw the whole prompt; answer discarded
+    # public mode: replay run / reveal need FAULTLINE_ADMIN_TOKEN (401 none presented, 403 wrong or not configured)
+    ADMIN_TOKEN_REQUIRED = "ADMIN_TOKEN_REQUIRED"
+    PREDICTION_EXISTS = "PREDICTION_EXISTS"  # a forecast with this id is already persisted (append-only store)
 
 
 class ApiError(BaseModel):
@@ -230,9 +233,17 @@ class ReplayCasePublic(_Strict):
 class Prediction(_Strict):
     """A model forecast, persisted (with hashes) BEFORE any outcome is revealed (SPEC §5).
 
-    prompt_sha256 = SHA256 of the final rendered prompt string.
+    prompt_sha256 = SHA256 of the exact prompt string the model saw on the attempt that validated (#44):
+    the gated prompt itself when ``attempts == 1``, the gated prompt followed by exactly the provider's repair
+    instruction (fixed header and footer, only ``- ...`` problem lines between) when ``attempts == 2``. No other
+    value of ``attempts`` and no other suffix is accepted by ``core.store``.
+    gated_prompt_sha256 = SHA256 of the prompt rendered by the temporal gate (``ModelInput.prompt``).
     snapshot_sha256 = SHA256 of canonical JSON (sorted keys, UTF-8, no whitespace) of the exact evidence
     + quote list given to the model.
+
+    The model-run audit fields (``gated_prompt_sha256``, ``attempts``, ``transcript_sha256``, ``num_ctx``,
+    ``num_predict``) are set by ``POST /api/replay/run`` on every new forecast. ``None`` only on records made
+    without a model provider (core tests), for which the stored prompt is the gated prompt.
     """
 
     prediction_id: Identifier
@@ -251,6 +262,20 @@ class Prediction(_Strict):
     seed: int | None = None
     recorded_at: AwareDatetime
     provenance: Provenance
+    gated_prompt_sha256: Sha256Hex | None = Field(
+        default=None, description="SHA256 of the temporal gate's rendered prompt (before any repair turn)."
+    )
+    attempts: int | None = Field(
+        default=None,
+        ge=1,
+        le=2,
+        description="1 = first answer validated; 2 = validated after the one schema repair (no other value).",
+    )
+    transcript_sha256: Sha256Hex | None = Field(
+        default=None, description="SHA256 of canonical JSON of the chat messages sent on the validated attempt."
+    )
+    num_ctx: int | None = Field(default=None, gt=0, description="Context window the model ran with (tokens).")
+    num_predict: int | None = Field(default=None, gt=0, description="Answer token budget the model ran with.")
 
 
 # ---------------------------------------------------------------- health
