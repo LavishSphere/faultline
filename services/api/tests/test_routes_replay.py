@@ -39,6 +39,7 @@ from core.evaluator import OutcomeVault, build_scorecard
 from core.store import PredictionStore, record_sha256
 from core.temporal_gate import EvidenceStore
 from main import create_app
+from markets.base import MARKET_LABEL
 from routes import replay
 
 OUTCOME_LIKE = re.compile(r"outcome|resolution|resolved|settle|result|winner|final_price", re.IGNORECASE)
@@ -61,7 +62,13 @@ PRE_REVEAL = {
     ("get", "/api/integrity"),
 }
 POST_REVEAL = {("post", "/api/replay/{prediction_id}/reveal")}
-NOT_REPLAY = {"/api/health", "/api/simulate", "/api/scenarios", "/api/vc-lenses"}
+# /api/explore/search is LIVE EXPLORE (#60): current web search, walled off from the replay by
+# tests/test_explore_separation.py (no replay module may reference it, and it serves no case or outcome data).
+NOT_REPLAY = {"/api/health", "/api/simulate", "/api/scenarios", "/api/vc-lenses", "/api/explore/search"}
+# routes/benchmark.py (tests/test_routes_benchmark*.py): GET serves recorded post-reveal scorecards, read-only (it
+# never reveals and never opens the store or sealed folder); compute reveals and is admin-only in public mode.
+BENCHMARK_POST_REVEAL_READ_ONLY = {("get", "/api/benchmark")}
+BENCHMARK_ADMIN_REVEALS = {("post", "/api/benchmark/compute")}
 
 RUN_KEYS = {
     "prediction", "skeptic", "market_at_cutoff", "persisted_at", "persist_seq", "record_sha256",
@@ -485,8 +492,12 @@ def test_reveal_contract_and_scores(world):
     assert body["scores"]["accuracy_at_0_5"] == 1.0
     assert set(body["baselines"]) == {"market", "naive"}
     market, naive = body["baselines"]["market"], body["baselines"]["naive"]
-    assert set(market) == {"p_yes", "brier", "log_loss"} and set(naive) == {"brier", "log_loss"}
+    assert set(market) == {"p_yes", "brier", "log_loss", "label", "ref"} and set(naive) == {"brier", "log_loss"}
     assert market["p_yes"] == 0.56  # the gate's pre-reveal baseline, not anything chosen now
+    # The ref frozen in the prediction context before reveal, and the label that ref implies (#117).
+    frozen = PredictionStore(world.db).get_record(pred["prediction_id"]).context.market_baseline_ref
+    assert market["ref"] == frozen == MARKET_REF
+    assert market["label"] == MARKET_LABEL
     assert market["brier"] == pytest.approx((0.56 - 1) ** 2) and market["log_loss"] == pytest.approx(-math.log(0.56))
     assert naive["brier"] == pytest.approx(0.25) and naive["log_loss"] == pytest.approx(math.log(2))
     assert len(PredictionStore(world.db).reveal_times(pred["prediction_id"])) == 1
@@ -567,7 +578,9 @@ def test_every_case_and_replay_route_is_classified(world):
     ops = {(m, path) for path, item in _paths(world.client()).items() for m in item}
     replay_ops = {op for op in ops if op[1].startswith(("/api/cases", "/api/replay", "/api/integrity"))}
     assert replay_ops == PRE_REVEAL | POST_REVEAL, "classify new case/replay routes as pre- or post-reveal"
-    unclassified = {op for op in ops - replay_ops if op[1] not in NOT_REPLAY}
+    benchmark_ops = {op for op in ops if op[1].startswith("/api/benchmark")}
+    assert benchmark_ops == BENCHMARK_POST_REVEAL_READ_ONLY | BENCHMARK_ADMIN_REVEALS, "classify new benchmark routes"
+    unclassified = {op for op in ops - replay_ops - benchmark_ops if op[1] not in NOT_REPLAY}
     assert not unclassified, f"new routes must be classified in this test: {sorted(unclassified)}"
 
 

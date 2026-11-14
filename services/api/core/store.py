@@ -19,7 +19,7 @@ Guarantees enforced here (tests/test_replay_seal.py):
   "persist_seq"}``, so an edit to the forecast or its context is detectable by ``verify``.
 * ``audit_log`` is one append-only, totally ordered sequence of ``persist`` and ``reveal`` entries
   (``seq``), so "saved before this event's outcome was first revealed" is a comparison of integers,
-  not of clock readings.
+  not of clock readings. A reveal row also records the sealed file's provenance (``sealed_provenance``, #102).
 * Triggers abort UPDATE and DELETE on both tables, an INSERT that reuses a prediction id (this also blocks
   ``INSERT OR REPLACE``), any ``audit_log`` row with a caller-chosen or non-increasing ``seq`` (no backdating),
   a reveal entry for a prediction that does not exist, and a prediction whose ``persist_seq`` is not its own
@@ -34,11 +34,12 @@ from __future__ import annotations
 
 import json
 import sqlite3
-from collections.abc import Callable, Iterator
+from collections.abc import Callable, Iterable, Iterator
 from contextlib import contextmanager
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
+from typing import Literal
 
 from agents.local_ollama import MAX_ATTEMPTS, is_repair_instruction
 from config import API_DIR
@@ -174,6 +175,15 @@ _RUN_AUDIT_COLUMNS = {
     "num_predict": "INTEGER CHECK (num_predict IS NULL OR num_predict > 0)",
     "final_prompt_text": "TEXT",
 }
+# audit_log columns added later (ALTER TABLE ADD COLUMN, idempotent). ``sealed_provenance`` (#102) is the
+# provenance of the sealed file a reveal read, written by ``record_reveal``; NULL on persist rows and on reveals
+# logged before #102, which therefore count as real for the cross-event ``late`` check.
+_AUDIT_LOG_COLUMNS = {
+    "sealed_provenance": (
+        "TEXT CHECK (sealed_provenance IS NULL OR sealed_provenance IN ('REAL_HISTORICAL', 'SYNTHETIC'))"
+    ),
+}
+SealedProvenance = Literal["REAL_HISTORICAL", "SYNTHETIC"]
 # Prediction fields left out of record_sha256 when None, so records saved before #44 keep their hashes.
 _OPTIONAL_RUN_FIELDS = ("gated_prompt_sha256", "attempts", "transcript_sha256", "num_ctx", "num_predict")
 # The provider makes one answer plus at most one schema repair (agents.local_ollama.MAX_ATTEMPTS == 2).
@@ -360,6 +370,10 @@ class PredictionStore:
             for name, ddl in _RUN_AUDIT_COLUMNS.items():
                 if name not in present:
                     conn.execute(f"ALTER TABLE predictions ADD COLUMN {name} {ddl}")
+            present = {r["name"] for r in conn.execute("PRAGMA table_info(audit_log)")}
+            for name, ddl in _AUDIT_LOG_COLUMNS.items():
+                if name not in present:
+                    conn.execute(f"ALTER TABLE audit_log ADD COLUMN {name} {ddl}")
 
     @contextmanager
     def _connect(self) -> Iterator[sqlite3.Connection]:
@@ -438,11 +452,17 @@ class PredictionStore:
             final_prompt=model_prompt,
         )
 
-    def record_reveal(self, prediction: Prediction, revealed_at: datetime) -> RevealMark:
+    def record_reveal(
+        self, prediction: Prediction, revealed_at: datetime, *, sealed_provenance: SealedProvenance
+    ) -> RevealMark:
+        """Log one reveal, with the provenance of the sealed file it read (REAL_HISTORICAL or SYNTHETIC)."""
+        if sealed_provenance not in ("REAL_HISTORICAL", "SYNTHETIC"):
+            raise ValueError("sealed_provenance must be REAL_HISTORICAL or SYNTHETIC")
         with self._connect() as conn:
             cur = conn.execute(
-                "INSERT INTO audit_log (kind, prediction_id, event_id, at) VALUES ('reveal', ?, ?, ?)",
-                (prediction.prediction_id, prediction.event_id, _iso(revealed_at)),
+                "INSERT INTO audit_log (kind, prediction_id, event_id, at, sealed_provenance) "
+                "VALUES ('reveal', ?, ?, ?, ?)",
+                (prediction.prediction_id, prediction.event_id, _iso(revealed_at), sealed_provenance),
             )
         return RevealMark(seq=int(cur.lastrowid), at=revealed_at)
 
@@ -507,6 +527,24 @@ class PredictionStore:
         """The earliest reveal of any prediction in this store (any event), or None."""
         with self._connect() as conn:
             row = conn.execute("SELECT seq, at FROM audit_log WHERE kind = 'reveal' ORDER BY seq LIMIT 1").fetchone()
+        return None if row is None else RevealMark(seq=int(row["seq"]), at=datetime.fromisoformat(row["at"]))
+
+    def first_counted_reveal(self, exempt_events: Iterable[str]) -> RevealMark | None:
+        """The earliest reveal that counts for the cross-event ``late`` check (#102).
+
+        A reveal is skipped only if its event is in ``exempt_events`` AND it was logged with sealed provenance
+        SYNTHETIC. Reveals logged with REAL_HISTORICAL, or before #102 (NULL), always count.
+        """
+        exempt = sorted(set(exempt_events))
+        if not exempt:
+            return self.first_reveal_any()
+        marks = ", ".join("?" for _ in exempt)
+        with self._connect() as conn:
+            row = conn.execute(
+                "SELECT seq, at FROM audit_log WHERE kind = 'reveal' AND NOT "
+                f"(COALESCE(sealed_provenance, '') = 'SYNTHETIC' AND event_id IN ({marks})) ORDER BY seq LIMIT 1",
+                exempt,
+            ).fetchone()
         return None if row is None else RevealMark(seq=int(row["seq"]), at=datetime.fromisoformat(row["at"]))
 
     def first_reveal(self, event_id: str) -> RevealMark | None:

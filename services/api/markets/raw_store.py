@@ -23,7 +23,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
-from .base import PROVENANCE_REAL, MarketDataError, Venue
+from .base import PROVENANCE_REAL, MarketDataError, RealVenue
 
 # Keys that reveal (or after settlement, encode) the outcome. Matched case-insensitively
 # against every key in the JSON body.
@@ -116,8 +116,11 @@ def _safe_component(s: str) -> str:
     return s
 
 
-def store_raw(raw_root: Path, venue: Venue, market_id: str, resp: RawResponse) -> Path:
+def store_raw(raw_root: Path, venue: RealVenue, market_id: str, resp: RawResponse) -> Path:
     """Write ``resp.body`` byte-for-byte and append a manifest entry. Returns the file path."""
+    if venue not in ("kalshi", "polymarket"):
+        # data/raw holds collected venue bytes only; a synthetic price is never "collected".
+        raise MarketDataError(f"refusing to store raw data for venue {venue!r}: only real venues are collected")
     if resp.status_code != 200:
         raise MarketDataError(f"refusing to store non-200 response ({resp.status_code})")
     leaked = find_outcome_keys(resp.body)  # raises on non-JSON bodies
