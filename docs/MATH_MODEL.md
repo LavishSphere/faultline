@@ -135,7 +135,7 @@ Inputs must be finite (no NaN or ±∞).
 Every term is **linear** in the decisions $(x_b, x_c, x_e, v_t, y_t, q_t, z_t)$, given the scenario parameters, except
 the $\max$ in $u_t$. With the §2 base-store outage, no term multiplies two decisions together. The $\max$ is convex and
 only ever costs the business, so the optimizer represents it exactly with two linear inequalities and a positive cost
-(§4.9). So the optimizer below is exact with respect to this model; there is no approximation.
+(§4.10). So the optimizer below is exact with respect to this model; there is no approximation.
 
 ## 4. Recovery optimizer (MILP, `scipy.optimize.milp`)
 
@@ -153,9 +153,11 @@ and $u_t \ge 0$ (inventory shortfall, issue #103).
 7. **Terminal revolver:** $B_T \le B_0$ (issue #16). The facility must be back to its opening balance by the end of the
    horizon, so no plan can borrow and never repay, which would flatter the cash path.
 8. **Purchases non-negative:** $P_t \ge 0$ for all $t$, i.e. $v_t \le (1-g)S_t + \pi(1-g)S^{core}_t\lambda_t x_b$.
-9. **Service-level shortfall (issue #103):** $u_t \ge I^{svc}_t - I_t$ and $u_t \ge 0$ for all $t$, with
+9. **Debt covenant (optional, issue #85):** $\text{DSCR}_{a,b} \ge \text{DSCR}_{min}$ on every rolling $w$-week window
+   (defined below). **Off by default**; switched on by passing `covenant_dscr_min`.
+10. **Service-level shortfall (issue #103):** $u_t \ge I^{svc}_t - I_t$ and $u_t \ge 0$ for all $t$, with
    $S_t$ in the §3 recurrence reduced by $\theta\,u_t$.
-10. **Sales non-negative:** $S_t \ge 0$ for all $t$ (the §3 physical rule).
+11. **Sales non-negative:** $S_t \ge 0$ for all $t$ (the §3 physical rule).
 
 **Objective** (minimize disruption, tie-break toward more cash):
 $$
@@ -163,7 +165,7 @@ $$
 $$
 with $\varepsilon$ small (e.g. $10^{-4}$) so cash only breaks ties. The $c_\cdot$ are **disruption costs set by the
 finance owner** (non-cash harm: operational risk, lost goodwill, morale), on top of the cash effects already in §3.
-*Why constraint 9 is exact:* $c_u > 0$, and a larger $u_t$ lowers $S_t$, which lowers cash in week $t$ and every later
+*Why constraint 10 is exact:* $c_u > 0$, and a larger $u_t$ lowers $S_t$, which lowers cash in week $t$ and every later
 week (by $a\,\theta$, then $\theta$, then $g\,\theta$ per \$) and never relaxes a constraint. So at the optimum
 $u_t = \max(0, I^{svc}_t - I_t)$, the same value `simulate()` computes, and the solver's cash path matches the simulator's.
 
@@ -188,7 +190,8 @@ and borrow for as short a time as possible, so that options stay open. It is app
 with $\delta = \max(10^{-9}\,\lvert J^*\rvert,\ 10^{-7})$, i.e. solver round-off only. The stage-2 row is $J(x) \le J^*$
 with no allowance on purpose: any positive allowance would let $TB$ buy sub-cent changes in the plan (e.g. a
 \$0.0000001 payroll cut, which would then be listed as an action). After stage 2 the code recomputes $J$ for the
-plan; if it exceeds $J^* + \delta$, or stage 2 fails, the stage-1 plan is reported (still optimal on cost) and the
+plan; if it exceeds $J^* + \delta$, or stage 2 fails, or the stage-2 plan does not reproduce in `simulate()` (cash paths differ by more than the
+agreement tolerance), the stage-1 plan is reported (still optimal on cost) and the
 solver message says the tie-break was not applied. A single objective $J + \eta\,TB$ was not used: it keeps cost
 first only if $\eta$ is below the smallest cost gap between two distinct candidate plans, a data-dependent number we
 cannot bound in advance for every scenario. The two-stage solve needs no such bound.
@@ -197,6 +200,100 @@ constraints. It is not impossible in principle; if it happens, HiGHS still retur
 Worked example (70% demand drop, weeks 5-8): stage 1 alone gave cost $677.34$ in both modes but cut
 $v_3 = 10{,}000,\ v_5 = 1{,}024.73$ with payroll protected and $v_4 = 461.54,\ v_5 = 9{,}750,\ v_6 = 813.19$ without.
 With the tie-break both modes give the second plan, at the same cost.
+
+**Optional DSCR debt covenant, constraint 9 (issue #85). *Proposal for finance-owner review (issue #85). Not signed
+off.*** A lender's debt-service coverage covenant asks whether the business earns enough operating cash to pay its
+lenders. A plan that keeps cash above $C_{min}$ but breaks the covenant puts the loan in default, so with the covenant
+switched on such a plan counts as infeasible.
+
+*Operating cash flow* (cash basis, built only from §3 terms):
+$$
+OCF_t = R_t - P_{t-L_p} - (1-z_t)\,W_t - O_t - F_b\,x_b\,\mathbb{1}[t=1].
+$$
+It counts what the business collects and pays in order to trade: customer receipts, supplier bills when they are paid,
+payroll actually paid, fixed opex, and the backup-supplier switching fee. The fee is an operating cost; a bank might
+agree to add back a one-off cost, but we do not, which is the conservative choice. It leaves out:
+- debt service $J_t, A_t, J^R_t$: this is what is being covered;
+- revolver draws and repayments $y_t, q_t$: these are financing, so a business cannot borrow its way into compliance;
+- capex $(1-x_c)K_t$ and expansion $(1-x_e)E_t$: these are investing flows. The usual DSCR numerator is operating cash
+  before capex, close to EBITDA.
+
+Two caveats for the finance owner. (i) The measure is cash-based, so working-capital moves count. A purchase cut $v_t$
+raises $OCF_{t+L_p}$ dollar for dollar by running down stock, which a bank testing on EBITDA would not credit.
+(ii) §10 puts the new store's payroll and opex inside $E_t$ (issue #16), while its sales $X_t$ are in $R_t$. In a case
+with an expansion, $OCF_t$ would therefore include the new store's sales but not its running costs, and would be
+overstated. Both SYNTHETIC businesses have $E_t = X_t = 0$, so this changes no current number.
+
+*Debt service:* $DS_t = J_t + A_t + J^R_t$: term-loan interest, scheduled amortization, and revolver interest. Revolver
+interest is included because a lender counts all interest. As a result, drawing on the revolver *lowers* DSCR.
+Revolver repayments $q_t$ are not included, because they are voluntary, not scheduled.
+
+*Covenant.* Take a window of $w$ weeks (default $w = 4$, about a month; `covenant_window_weeks`). For every window
+$a..b$ inside the horizon, with $b = w..T$ and $a = b - w + 1$ (23 windows when $T = 26$):
+$$
+\text{DSCR}_{a,b} = \frac{\sum_{t=a}^{b} OCF_t}{\sum_{t=a}^{b} DS_t} \;\ge\; \text{DSCR}_{min}.
+$$
+No pre-horizon history is used, and a window with zero term-loan debt service ($\sum_{t=a}^{b} (J_t + A_t) = 0$) is not
+tested: a drawn revolver could still make $DS > 0$ there, but the multiplied-out row would then demand
+$OCF \ge \text{DSCR}_{min} \cdot J^R$ (coverage of revolver interest alone), which is a different covenant.
+
+*Why it is linear (exact, no approximation).* In every tested window the denominator is positive: $J_t + A_t$ sums to
+more than 0 by the rule above, and $J^R_t \ge 0$ because $B_{t-1} \ge 0$ (constraint 2). Multiplying both sides by the
+denominator therefore keeps the inequality the same:
+$$
+\sum_{t=a}^{b} OCF_t \;-\; \text{DSCR}_{min} \sum_{t=a}^{b} DS_t \;\ge\; 0 .
+$$
+$OCF_t$ is made of §3 terms, which are already linear in the decisions. $J_t + A_t$ does not depend on any decision.
+$J^R_t = B_{t-1}(r_t + s_R)/52$ is linear in the balance $B_{t-1}$, and $\text{DSCR}_{min}$ is a constant, so
+$\text{DSCR}_{min}\cdot J^R_t$ is still linear. Each window is one linear row. It belongs to the shared constraint set,
+so it holds in both stages of the tie-break. When it is tight (slack $< 10^{-6}$) it is reported as
+"DSCR covenant, weeks $a$–$b$". If the covenant makes a scenario infeasible, the `NO FEASIBLE PLAN` diagnostic keeps
+it, and also says whether a plan would exist without it.
+
+*Proposed value.* $\text{DSCR}_{min} = 1.20$ when switched on. Bank covenants are typically in the 1.20–1.25×
+range. This range is an `[assumed]` figure from general lending practice: no source was fetched. Real covenants are
+usually tested quarterly on trailing-twelve-month figures. A rolling 4-week test is much stricter, because it catches
+short shocks that a twelve-month test would average out.
+
+*Worked numbers (baseline, no shock, no action; $R_t$ and $P_{t-L_p}$ at steady state):*
+
+| Business | $OCF_t$ per week | $DS_t$ per week | 4-week $\text{DSCR}$ |
+|---|---|---|---|
+| Grocer (§10) | $50{,}000 - 32{,}500 - 12{,}000 - 6{,}000 = -500$ | $600{,}000 \times 8\%/52 = 923.08$ | $-2{,}000 / 3{,}692.31 = -0.54$ |
+| Restaurant (§10b) | $20{,}000 - 6{,}800 - 7{,}300 - 5{,}400 = 500$ | $156{,}000 \times 10\%/52 = 300$ | $2{,}000 / 1{,}200 = 1.67$ |
+
+*The grocer already breaches any bank covenant, before any shock.* Its operating cash flow is negative ($-500$ a
+week: the 1,423.08 weekly loss in §10 is this $-500$ plus 923.08 of interest). With *Protect payroll*, the only lever
+that raises OCF is a purchase cut, and total cuts are capped at $I_0 - I_{min} = 25{,}000$. The six windows 3–6, 7–10,
+…, 23–26 do not overlap. Each starts at $-2{,}000$, so
+$6\,(2{,}000 + 3{,}692.31\,\text{DSCR}_{min}) \le 25{,}000$ if a cut raised OCF by its full amount, which would give
+$\text{DSCR}_{min} \le 0.587$. With the stock-out cost (§3, #103) it does not: a cut raises OCF once, in the week it is
+paid out, and then loses $\theta = 0.20$ of sales per \$ short in every later week (about $0.35 \times 0.20 = 0.07$ of
+OCF per \$ per week once settled). Cuts that repair the early windows deepen the later ones, so with *Protect payroll*
+the grocer reaches **no positive** DSCR at all (`NO FEASIBLE PLAN` even at 0.01). With payroll cuts allowed, the
+optimizer certifies a plan at 0.73 and none at 0.90 or above. A 1.20 covenant is therefore `NO FEASIBLE PLAN` in both
+modes, for **every** grocer scenario including the no-shock baseline. **So the covenant is off by default (`None`),
+and the demo grocer runs without it.** The parameters were not changed to hide this. A lender would not have lent on
+these terms, and the honest output is that the grocer breaches.
+
+*Known limitation when the covenant is combined with the stock-out cost (§4.10).* Constraint 10 is exact only
+because a larger $u_t$ never helps: it costs $c_u$ and lowers cash. Under the covenant a larger $u_t$ can help, since
+lower sales cut receipts in weeks $t, t{+}1$ but cut purchases paid in week $t{+}L_p$, which shifts OCF from one
+window into the next. The solver can then report a shortfall bigger than the true $\max(0, I^{svc}_t - I_t)$. The
+re-simulation check catches this: such a plan disagrees with `simulate()` and is withheld as `SOLVER ERROR`, never
+shown (grocer, payroll allowed: DSCR_min 0.74 to 0.80, gaps of \$2.79 to \$91). The covenant is off in the product and
+in the demo. The exact fix, a follow-up, is a yes/no variable per week with big-$M$ rows that force
+$u_t = \max(0, I^{svc}_t - I_t)$.
+
+*Restaurant (§10b), $\text{DSCR}_{min} = 1.20$, both payroll modes* (in `tests/test_optimizer.py`, hand-checked there):
+- `distributor-loss-4wk`: **the plan changes.** Without the covenant, the plan draws 2,760 on the revolver in week 9 and
+  repays it in week 10 (cost 27.60). A draw cannot help DSCR, so with the covenant the plan uses the backup supplier,
+  plus purchase cuts $v_6 = 52$ and $v_7 = v_8 = v_9 = 612$. These exactly offset the 612 weekly premium paid in weeks
+  7–10 against the $1.20 \times 1{,}200 = 1{,}440$ each window needs. Cost: $2{,}500 + 0.05 \times 1{,}888 = 2{,}594.40$.
+  The binding constraints are "DSCR covenant, weeks 4–7", "5–8", "6–9" and "7–10".
+- `slow-season-plus-300bp`: **feasible without the covenant, `NO FEASIBLE PLAN` with it.** In weeks 4–7 each week has
+  $OCF = 14{,}000 - 4{,}760 - 7{,}300 - 5{,}400 = -3{,}460$, so the window has $-13{,}840$ against the $1.20 \times 1{,}560
+  = 1{,}872$ it needs. All the levers together add at most $2{,}800 + 2{,}920 = 5{,}720$.
 
 **Outputs:** status ∈ {`OPTIMAL`, `NO FEASIBLE PLAN`}, the chosen actions, $C_t$ path, $\min_t C_t$, binding
 constraints (slack ≈ 0), and the objective value. If infeasible, report it: no LLM may override it. Useful
