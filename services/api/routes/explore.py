@@ -474,7 +474,6 @@ class ExploreAnalysis(BaseModel):
     label: Literal["LIVE EXPLORE: current, not point-in-time"] = LIVE_EXPLORE_LABEL
     provider: Literal["tavily"] = "tavily"
     attribution: Literal["Search powered by Tavily"] = ATTRIBUTION
-    suggestion_label: Literal["MODEL-SUGGESTED, HUMAN TO CONFIRM"] = analyst.SUGGESTION_LABEL
     decision_text: str = Field(description="The normalized decision text (also the Tavily query).")
     retrieved_at: datetime
     cached: bool

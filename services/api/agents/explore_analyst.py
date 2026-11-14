@@ -37,10 +37,12 @@ import json
 import math
 import re
 import time
-from collections.abc import Mapping, Sequence
+import unicodedata
+from collections.abc import Iterable, Mapping, Sequence
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Literal
+from urllib.parse import urlsplit
 
 import httpx
 from pydantic import BaseModel, ConfigDict, Field, ValidationError, model_validator
@@ -51,6 +53,9 @@ from core.financials import DemandShock, RateShock, ScenarioShock, SupplierOutag
 
 GUIDANCE_FILE = "explore_shock_guidance.json"
 SUGGESTION_LABEL = "MODEL-SUGGESTED, HUMAN TO CONFIRM"
+# Used instead when the model gave no usable number at all: every value is the ILLUSTRATIVE guidance default.
+DEFAULTS_LABEL = "GUIDANCE DEFAULTS, HUMAN TO CONFIRM"
+DEFAULTS_NOTE = "The model gave no usable numbers; these are guidance defaults."
 
 MAX_CLAIMS = 6
 CLAIM_MAX_CHARS = 300
@@ -58,13 +63,18 @@ PARAM_RATIONALE_MAX_CHARS = 240
 MAX_MODEL_ITEMS = 20  # evidence list length the schema accepts at all (extra claims beyond MAX_CLAIMS are rejected)
 REJECTED_TEXT_MAX_CHARS = 300  # how much of a rejected claim / url is echoed back for display
 ANALYST_NUM_PREDICT = 1024  # answer budget: up to six claims plus a rationale per parameter
+# Context window for Live Explore. The installed llama3.1:8b supports 131072; 16384 fits five 1200-character
+# snippets, the category menu and a repair turn (the replay provider keeps its own 8192 default).
+ANALYST_NUM_CTX = 16384
 MAX_ATTEMPTS = 2
 
 Block = Literal["rate", "demand", "supplier"]
 ParamKind = Literal["rate", "fraction", "week", "count", "count0"]
 ValueSource = Literal["model", "model_clamped", "guidance_default"]
 RejectReason = Literal[
-    "uncited", "unknown_url", "unknown_url_in_text", "empty_claim", "claim_too_long", "duplicate", "over_limit"
+    "uncited", "unknown_url", "unknown_url_in_text", "number_not_in_source", "hidden_characters", "provenance_label",
+    "empty_claim",
+    "claim_too_long", "duplicate", "over_limit"
 ]
 
 # Parameters per shock block and their kind (MATH_MODEL §1; the guidance file's `units`).
@@ -82,6 +92,14 @@ INTEGER_KINDS = frozenset({"week", "count", "count0"})
 RATE_HARD_BOUND = 0.1  # |Δr| a guidance file may name at all (±1000bp); the categories use far less
 
 _URL_IN_TEXT = re.compile(r"https?://[^\s<>\"')\]]+", re.IGNORECASE)
+# After NFKC folding: any scheme (javascript:, data:, ftp://, hxxps://), and any host-like token (evil.com,
+# www.evil.com). A host-like token is allowed only if it is (a suffix of) a host Tavily returned.
+_SCHEME = re.compile(r"(?<![a-z0-9])(?:[a-z][a-z0-9+.-]*://|(?:javascript|data|vbscript|file|blob):)", re.IGNORECASE)
+_HOST_LIKE = re.compile(r"(?<![\w@.-])(?:[a-z0-9](?:[a-z0-9-]*[a-z0-9])?\.)+[a-z]{2,24}(?![\w-])", re.IGNORECASE)
+# Numeric tokens: 50, 0.25, 1,200, 3.5. Every one in a claim must appear in the cited result's snippet or title.
+_NUMBER = re.compile(r"\d+(?:[.,]\d+)*")
+# Live Explore is never REAL HISTORICAL or RECORDED RUN; model text that names those labels could spoof one.
+_PROVENANCE_LABEL = re.compile(r"real[\s_-]*historical|recorded[\s_-]*run", re.IGNORECASE)
 
 
 # --------------------------------------------------------------------------- guidance (ILLUSTRATIVE, #79)
@@ -224,11 +242,13 @@ def _category_menu(guidance: Guidance) -> str:
     for c in guidance.categories:
         lines.append(f'- "{c.id}": {_one_line(c.news_trigger)}')
         for block, params in c.shocks.items():
+            lines.append(f'    block "{block}":')
             for name, r in params.items():
                 kind = PARAM_KINDS[block][name]
-                integer = " (whole weeks)" if kind in INTEGER_KINDS else ""
+                integer = ", whole weeks" if kind in INTEGER_KINDS else ""
                 lines.append(
-                    f"    {block}.{name}: from {_fmt(r.min)} to {_fmt(r.max)}, typical {_fmt(r.default)}{integer}"
+                    f'        parameter "{name}": from {_fmt(r.min)} to {_fmt(r.max)} (typical {_fmt(r.default)}'
+                    f"{integer})"
                 )
     return "\n".join(lines)
 
@@ -257,15 +277,24 @@ sentence of at most {claim_chars} characters. Put the exact url of the ONE sourc
 each with a one-line rationale of at most {rationale_chars} characters. These are stress-test inputs that a human \
 will review and edit; they are not forecasts.
 
-CATEGORIES (id: when it applies; then each parameter and its allowed range)
+CATEGORIES (id: when it applies; then its blocks, and each parameter's allowed range)
 {menu}
 
 PARAMETER UNITS
 {units}
 
 Answer with exactly one JSON object and nothing else, with exactly these keys:
-{{"evidence": [{{"claim": "...", "source_url": "..."}}], "category_id": "<id>" or null, \
-"parameters": {{"<block>": {{"<parameter>": {{"value": <number>, "rationale": "..."}}}}}}}}"""
+{{"evidence": [{{"claim": "...", "source_url": "..."}}], "category_id": "<id>" or null, "parameters": {{...}}}}
+
+"parameters" is nested: block name, then parameter name, then an object with "value" (a number) and "rationale". \
+Use the block names (rate, demand, supplier) as the keys of "parameters". Do not put the category id inside \
+"parameters", and do not join names with dots. The shape, with placeholders in angle brackets:
+"parameters": {{
+  "<block>": {{
+    "<parameter>": {{"value": <number>, "rationale": "<one line>"}},
+    "<parameter>": {{"value": <number>, "rationale": "<one line>"}}
+  }}
+}}"""
 
 
 def render_prompt(decision_text: str, sources: Sequence[PromptSource], guidance: Guidance) -> str:
@@ -329,7 +358,9 @@ class AnalystOutput(BaseModel):
 
     evidence: list[ModelClaim] = Field(max_length=MAX_MODEL_ITEMS)
     category_id: str | None = None
-    parameters: dict[str, dict[str, ModelParam]] = Field(default_factory=dict)
+    # Any JSON object: the model's nesting varies (block -> param, "block.param", or wrapped in the category id).
+    # normalize_parameters reads it; values are never trusted until clamped by build_suggestion.
+    parameters: dict[str, Any] = Field(default_factory=dict)
 
 
 @dataclass(frozen=True)
@@ -353,7 +384,7 @@ class ExploreAnalyst(LocalOllamaProvider):
     @classmethod
     def for_explore(cls, settings: Any, *, transport: httpx.AsyncBaseTransport | None = None) -> ExploreAnalyst:
         return cls(settings.ollama_base_url, settings.ollama_model, transport=transport,
-                   num_predict=ANALYST_NUM_PREDICT)
+                   num_ctx=ANALYST_NUM_CTX, num_predict=ANALYST_NUM_PREDICT)
 
     async def analyze(self, prompt: str) -> AnalystRun:
         """Raises ModelUnavailable, ModelOutputInvalid, PromptTooLong or PromptNotVerified; never a stand-in."""
@@ -461,7 +492,10 @@ class RejectedClaim:
 _REJECT_MESSAGES: dict[str, str] = {
     "uncited": "No source_url: every claim must cite one Tavily result returned for this request.",
     "unknown_url": "source_url is not exactly one of the URLs Tavily returned for this request.",
-    "unknown_url_in_text": "The claim names a URL that Tavily did not return for this request.",
+    "unknown_url_in_text": "The claim names a URL, link scheme or web domain that Tavily did not return.",
+    "number_not_in_source": "The claim states a number that the cited result's snippet and title do not contain.",
+    "hidden_characters": "The claim contains invisible formatting characters (zero-width or bidirectional controls).",
+    "provenance_label": "The claim names a FAULTLINE provenance label (REAL HISTORICAL / RECORDED RUN).",
     "empty_claim": "The claim has no visible text.",
     "claim_too_long": f"The claim is longer than {CLAIM_MAX_CHARS} characters.",
     "duplicate": "The same claim and source were already accepted.",
@@ -475,8 +509,69 @@ def _shorten(text: str | None) -> str | None:
     return text if len(text) <= REJECTED_TEXT_MAX_CHARS else text[: REJECTED_TEXT_MAX_CHARS - 1] + "…"
 
 
-def _unknown_urls_in(text: str, offered: set[str]) -> list[str]:
-    return [u for u in (m.group(0).rstrip(".,;:") for m in _URL_IN_TEXT.finditer(text)) if u not in offered]
+def _has_format_chars(text: str) -> bool:
+    return any(unicodedata.category(ch) == "Cf" for ch in text)
+
+
+def _fold(text: str) -> str:
+    """NFKC (full-width letters, ligatures -> ASCII forms) with invisible format characters (Cf) removed."""
+    return "".join(ch for ch in unicodedata.normalize("NFKC", text) if unicodedata.category(ch) != "Cf")
+
+
+def _host(url: str) -> str:
+    host = (urlsplit(url).hostname or "").lower()
+    return host[4:] if host.startswith("www.") else host
+
+
+def _mask_offered_urls(text: str, offered: Iterable[str]) -> tuple[str, list[str]]:
+    """(text with every offered URL blanked out, URLs in the text that were NOT offered)."""
+    offered_set = set(offered)
+    unknown: list[str] = []
+    masked = text
+    for m in _URL_IN_TEXT.finditer(text):
+        raw = m.group(0).rstrip(".,;:")
+        candidates = (raw, raw + ")")  # a url ending in ")" (e.g. wiki/Foo_(bar)) is cut by the pattern
+        hit = next((u for u in candidates if u in offered_set and text.find(u, m.start()) == m.start()), None)
+        if hit is None:
+            unknown.append(raw)
+        else:
+            masked = masked[: m.start()] + " " * len(hit) + masked[m.start() + len(hit):]
+    return masked, unknown
+
+
+def _unknown_urls_in(text: str, offered: Iterable[str]) -> list[str]:
+    """URLs, link schemes and host-like tokens in ``text`` (NFKC-folded, Cf removed) that Tavily did not return.
+
+    An offered URL written in full is fine; a host-like token (``reuters.com``) is fine only when it is the host of
+    a returned URL (``www.`` ignored)."""
+    offered = list(offered)
+    folded = _fold(text)
+    masked, unknown = _mask_offered_urls(folded, offered)
+    hosts = {_host(u) for u in offered}
+    unknown += [m.group(0) for m in _SCHEME.finditer(masked)]
+    for m in _HOST_LIKE.finditer(masked):
+        token = m.group(0).lower()
+        token = token[4:] if token.startswith("www.") else token
+        if token not in hosts:
+            unknown.append(m.group(0))
+    return unknown
+
+
+_SOURCE_ID_TOKEN = re.compile(r"(?<![\w])[Ss]\d{1,2}(?![\w])")
+
+
+def _numbers(text: str) -> set[str]:
+    return {t.replace(",", "") for t in _NUMBER.findall(text)}
+
+
+def numbers_not_in_source(claim: str, source: PromptSource, offered: Iterable[str]) -> list[str]:
+    """Numeric tokens of the claim that the cited result's snippet and title do not contain (B2: a valid citation
+    must not carry an invented figure). Offered URLs, host names and source ids (S1) in the claim are not figures."""
+    masked, _ = _mask_offered_urls(_fold(claim), offered)
+    # Host names (news0.example) are not figures either; an unreturned one is refused by the URL check first.
+    masked = _HOST_LIKE.sub(" ", _SOURCE_ID_TOKEN.sub(" ", masked))
+    in_source = _numbers(_fold(source.snippet)) | _numbers(_fold(source.title))
+    return sorted({t.replace(",", "") for t in _NUMBER.findall(masked)} - in_source)
 
 
 def review_claims(claims: Sequence[ModelClaim], sources: Sequence[PromptSource]) -> tuple[
@@ -485,7 +580,10 @@ def review_claims(claims: Sequence[ModelClaim], sources: Sequence[PromptSource])
     """Keep each claim that cites, exactly, a URL Tavily returned; reject everything else with a reason.
 
     Never edits a claim. A URL match is exact after trimming surrounding whitespace (no trailing-slash, scheme or
-    case normalization: a near miss is not the source that was returned).
+    case normalization: a near miss is not the source that was returned). After NFKC folding, the claim may name no
+    other URL, link scheme or web domain, and every number in it must appear in the cited result's snippet or
+    title (a real citation must not carry an invented figure). Invisible format characters are refused outright.
+    Limits: numbers written as words ("fifty") and paraphrase are not checked; a human reads the snippet.
     """
     by_url = {s.url: s for s in sources}
     offered = set(by_url)
@@ -502,6 +600,10 @@ def review_claims(claims: Sequence[ModelClaim], sources: Sequence[PromptSource])
         url = c.source_url.strip() if isinstance(c.source_url, str) else ""
         if not has_visible_text(text):
             reject(c, "empty_claim")
+        elif _has_format_chars(text):
+            reject(c, "hidden_characters")
+        elif _PROVENANCE_LABEL.search(_fold(text)):
+            reject(c, "provenance_label")
         elif len(text) > CLAIM_MAX_CHARS:
             reject(c, "claim_too_long")
         elif not url:
@@ -510,6 +612,8 @@ def review_claims(claims: Sequence[ModelClaim], sources: Sequence[PromptSource])
             reject(c, "unknown_url")
         elif _unknown_urls_in(text, offered):
             reject(c, "unknown_url_in_text")
+        elif numbers_not_in_source(text, by_url[url], offered):
+            reject(c, "number_not_in_source")
         elif (text, url) in seen:
             reject(c, "duplicate")
         elif len(accepted) >= MAX_CLAIMS:
@@ -547,7 +651,12 @@ class SuggestedParameter(BaseModel):
 class Suggestion(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
-    label: Literal["MODEL-SUGGESTED, HUMAN TO CONFIRM"] = SUGGESTION_LABEL
+    label: Literal["MODEL-SUGGESTED, HUMAN TO CONFIRM", "GUIDANCE DEFAULTS, HUMAN TO CONFIRM"] = Field(
+        description="MODEL-SUGGESTED only when at least one value came from the model (source model or "
+        "model_clamped); otherwise GUIDANCE DEFAULTS: every value is the ILLUSTRATIVE guidance default."
+    )
+    values_from_model: int = Field(description="How many parameters took the model's number (source model or "
+                                   "model_clamped). 0 = none: the numbers are guidance defaults, not the model's.")
     category_id: str
     category_name: str
     parameters: list[SuggestedParameter]
@@ -561,8 +670,70 @@ class Suggestion(BaseModel):
 def _number(value: Any) -> float | None:
     if isinstance(value, bool) or not isinstance(value, int | float):
         return None
-    v = float(value)
+    try:
+        v = float(value)
+    except OverflowError:  # a JSON integer too large for a float (e.g. 10**400) is not a usable number
+        return None
     return v if math.isfinite(v) else None
+
+
+_PARAM_SHAPE_KEYS = frozenset({"value", "rationale"})
+
+
+def _is_param_object(v: Any) -> bool:
+    return isinstance(v, dict) and bool(v) and set(v) <= _PARAM_SHAPE_KEYS
+
+
+def normalize_parameters(raw: Any, category: GuidanceCategory) -> tuple[dict[str, dict[str, ModelParam]], int]:
+    """The model's ``parameters`` object -> {block: {param: ModelParam}} for this category, and how many entries
+    were ignored (not a parameter of the category, a duplicate, or not a value/rationale object).
+
+    Accepted shapes, as small models actually answer: nested ``{"rate": {"delta_rate": {...}}}``; dotted
+    ``{"rate.delta_rate": {...}}``; either one wrapped in a single key equal to the category id
+    (``{"credit-tightening": {...}}``, seen from llama3.1:8b); and a bare parameter name when exactly one block of
+    the category has it. Only the shape is normalized: every value is still clamped by ``_clamp_param``.
+    Model-written keys are counted, never echoed.
+    """
+    if not isinstance(raw, dict):
+        return {}, 0
+    if len(raw) == 1 and category.id in raw and isinstance(raw[category.id], dict):
+        raw = raw[category.id]
+    out: dict[str, dict[str, ModelParam]] = {}
+    ignored = 0
+
+    def put(block: str, name: str, value: Any) -> None:
+        nonlocal ignored
+        if block not in category.shocks or name not in category.shocks[block] or name in out.get(block, {}):
+            ignored += 1
+            return
+        try:
+            out.setdefault(block, {})[name] = ModelParam.model_validate(value)
+        except ValidationError:
+            ignored += 1
+
+    owners: dict[str, list[str]] = {}
+    for block, ranges in category.shocks.items():
+        for name in ranges:
+            owners.setdefault(name, []).append(block)
+
+    for key, value in raw.items():
+        if not isinstance(key, str):
+            ignored += 1
+        elif "." in key:
+            block, _, name = key.partition(".")
+            put(block, name, value)
+        elif key in category.shocks and isinstance(value, dict) and not _is_param_object(value):
+            for inner, inner_value in value.items():
+                name = inner if isinstance(inner, str) else ""
+                if "." in name:
+                    b2, _, n2 = name.partition(".")
+                    name = n2 if b2 == key else ""
+                put(key, name, inner_value)
+        elif len(owners.get(key, [])) == 1:
+            put(owners[key][0], key, value)
+        else:
+            ignored += 1
+    return out, ignored
 
 
 def _clamp_param(block: str, name: str, r: ParamRange, sent: ModelParam | None, unit: str,
@@ -592,6 +763,9 @@ def _clamp_param(block: str, name: str, r: ParamRange, sent: ModelParam | None, 
         elif len(rationale) > PARAM_RATIONALE_MAX_CHARS:
             rationale = None
             notes.append(f"Model rationale dropped: longer than {PARAM_RATIONALE_MAX_CHARS} characters.")
+        elif _has_format_chars(rationale) or _PROVENANCE_LABEL.search(_fold(rationale)):
+            rationale = None
+            notes.append("Model rationale dropped: invisible characters or a provenance label in it.")
         elif _unknown_urls_in(rationale, offered):
             rationale = None
             notes.append("Model rationale dropped: it names a URL that Tavily did not return for this request.")
@@ -663,18 +837,22 @@ def build_suggestion(output: AnalystOutput, guidance: Guidance, sources: Sequenc
                       "scenario. Choose a category to start from its guidance defaults."]
     offered = {s.url for s in sources}
     notes: list[str] = []
-    for block, sent in output.parameters.items():
-        for name in sent:
-            if block not in category.shocks or name not in category.shocks[block]:
-                notes.append(f"Ignored {block}.{name}: not a parameter of category {category.id}.")
+    sent, ignored = normalize_parameters(output.parameters, category)
+    if ignored:
+        notes.append(f"Ignored {ignored} parameter(s) not listed for this category.")
     params: dict[tuple[str, str], SuggestedParameter] = {}
     for block, ranges in category.shocks.items():
         for name, r in ranges.items():
-            sent_param = output.parameters.get(block, {}).get(name)
+            sent_param = sent.get(block, {}).get(name)
             params[(block, name)] = _clamp_param(block, name, r, sent_param, guidance.units.get(name, ""), offered)
     values = {block: {name: params[(block, name)].value for name in ranges}
               for block, ranges in category.shocks.items()}
     _fit_windows(values, guidance.horizon_weeks, params, notes)
-    shock = shock_from_values(f"live explore: {category.id} (model-suggested)", values, guidance.horizon_weeks)
-    return Suggestion(category_id=category.id, category_name=category.name, parameters=list(params.values()),
+    from_model = sum(p.source in ("model", "model_clamped") for p in params.values())
+    if not from_model:
+        notes.insert(0, DEFAULTS_NOTE)
+    kind = "model-suggested" if from_model else "guidance defaults"
+    shock = shock_from_values(f"live explore: {category.id} ({kind})", values, guidance.horizon_weeks)
+    return Suggestion(label=SUGGESTION_LABEL if from_model else DEFAULTS_LABEL, values_from_model=from_model,
+                      category_id=category.id, category_name=category.name, parameters=list(params.values()),
                       shock=shock, notes=notes), []

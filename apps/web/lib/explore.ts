@@ -244,6 +244,9 @@ export async function searchLiveExplore(
 
 export const EXPLORE_ANALYZE_PATH = "/api/explore/analyze";
 export const SUGGESTION_LABEL = "MODEL-SUGGESTED, HUMAN TO CONFIRM";
+/** agents/explore_analyst.py DEFAULTS_LABEL: the model gave no usable number, so every value is a guidance default. */
+export const DEFAULTS_LABEL = "GUIDANCE DEFAULTS, HUMAN TO CONFIRM";
+export const DEFAULTS_NOTE = "The model gave no usable numbers; these are guidance defaults.";
 /** routes/explore.py MAX_DECISION_CHARS (input limit only; the API re-validates). */
 export const EXPLORE_MAX_DECISION_CHARS = 300;
 /** The local model may take a while on a laptop; the API's own Ollama timeout is 180 s plus one repair turn. */
@@ -307,7 +310,10 @@ export interface SuggestedParameter {
 }
 
 export interface ExploreSuggestion {
-  label: typeof SUGGESTION_LABEL;
+  /** MODEL-SUGGESTED only when at least one value is the model's (values_from_model > 0). */
+  label: typeof SUGGESTION_LABEL | typeof DEFAULTS_LABEL;
+  /** Parameters whose value is the model's number (source model or model_clamped). */
+  values_from_model: number;
   category_id: string;
   category_name: string;
   parameters: SuggestedParameter[];
@@ -362,7 +368,6 @@ export interface ExploreAnalysis {
   label: typeof LIVE_EXPLORE_LABEL;
   provider: "tavily";
   attribution: typeof TAVILY_ATTRIBUTION;
-  suggestion_label: typeof SUGGESTION_LABEL;
   decision_text: string;
   retrieved_at: string;
   cached: boolean;
@@ -380,7 +385,7 @@ export interface ExploreAnalysis {
 export type AnalyzeResult = { ok: true; data: ExploreAnalysis } | ExploreFailure;
 
 const ANALYSIS_KEYS = new Set([
-  "mode", "label", "provider", "attribution", "suggestion_label", "decision_text", "retrieved_at", "cached", "status",
+  "mode", "label", "provider", "attribution", "decision_text", "retrieved_at", "cached", "status",
   "status_message", "sources", "evidence", "rejected_claims", "suggestion", "model", "guidance", "notes",
 ]);
 const isFiniteNum = (v: unknown): v is number => typeof v === "number" && Number.isFinite(v);
@@ -404,7 +409,6 @@ export function checkAnalysisResponse(body: unknown): string | null {
   if (extra) return extra;
   if (body.mode !== "live_explore" || body.label !== LIVE_EXPLORE_LABEL) return "not labeled LIVE EXPLORE";
   if (body.provider !== "tavily" || body.attribution !== TAVILY_ATTRIBUTION) return "provider attribution missing";
-  if (body.suggestion_label !== SUGGESTION_LABEL) return "suggestion label missing";
   if (!isStr(body.decision_text) || !isStr(body.retrieved_at) || typeof body.cached !== "boolean") return "header malformed";
   if (!ANALYSIS_STATUSES.includes(body.status as AnalysisStatus)) return "status unknown";
   if (!isStrOrNull(body.status_message)) return "status_message malformed";
@@ -446,10 +450,18 @@ export function checkAnalysisResponse(body: unknown): string | null {
 
   const s = body.suggestion;
   if (s !== null) {
-    if (!isObj(s) || s.label !== SUGGESTION_LABEL || !isStr(s.category_id) || !Array.isArray(s.parameters)) {
+    if (!isObj(s) || !isStr(s.category_id) || !Array.isArray(s.parameters) || !isFiniteNum(s.values_from_model)) {
       return "suggestion malformed";
     }
     if (!isObj(s.shock)) return "suggestion.shock missing";
+    // The label must tell the truth about where the numbers came from (audit of #121, B1).
+    const fromModel = (s.parameters as unknown[]).filter(
+      (p) => isObj(p) && (p.source === "model" || p.source === "model_clamped"),
+    ).length;
+    if (fromModel !== s.values_from_model) return "suggestion values_from_model does not match its parameters";
+    if (s.label !== (fromModel > 0 ? SUGGESTION_LABEL : DEFAULTS_LABEL)) {
+      return "suggestion label does not match where its numbers came from";
+    }
     for (const p of s.parameters as unknown[]) {
       if (!isObj(p)) return "suggestion parameter malformed";
       const problem = checkRange(p, `suggestion ${String(p.block)}.${String(p.param)}`);

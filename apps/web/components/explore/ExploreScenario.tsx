@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { simulate, type ApiFailure, type ScenarioShock, type SimulateResponse } from "@/lib/api";
 import {
+  DEFAULTS_NOTE,
   SUGGESTION_LABEL,
   shockFromValues,
   type ExploreAnalysis,
@@ -153,6 +154,8 @@ export function ExploreScenario({ analysis }: { analysis: ExploreAnalysis }) {
 
   const blocks = category ? [...new Set(category.params.map((p) => p.block))] : [];
   const fromSuggestion = suggestion !== null && suggestion.category_id === categoryId;
+  // MODEL-SUGGESTED only when the API says at least one number is the model's own (audit of #121, B1).
+  const modelNumbers = fromSuggestion && suggestion.values_from_model > 0;
   const anyEnabled = inputs !== null && inputs.enabled.length > 0;
 
   return (
@@ -160,18 +163,29 @@ export function ExploreScenario({ analysis }: { analysis: ExploreAnalysis }) {
       <Panel
         code="X.3"
         title="Scenario inputs · confirm before the engine runs"
-        provenance={fromSuggestion ? ["MODEL-SUGGESTED", "ILLUSTRATIVE"] : ["ILLUSTRATIVE"]}
-        provenanceDetail={fromSuggestion ? "human to confirm" : "guidance ranges"}
+        provenance={modelNumbers ? ["MODEL-SUGGESTED", "ILLUSTRATIVE"] : ["ILLUSTRATIVE"]}
+        provenanceDetail={modelNumbers ? "human to confirm" : category ? "guidance defaults" : "guidance ranges"}
         className="xl:col-span-5"
         bodyClassName="flex flex-col gap-4 px-5 py-4"
       >
         <p className="text-xs leading-relaxed text-muted">
-          {suggestion ? (
+          {modelNumbers ? (
             <>
               <span className="font-mono uppercase tracking-[0.08em] text-info">{SUGGESTION_LABEL}.</span> The local
-              model proposed these numbers from the cited evidence; each is already inside the finance owner&apos;s
-              guidance range for its category. They are stress-test inputs for the SYNTHETIC demo business, not
-              forecasts. Edit anything, then confirm.
+              model proposed {suggestion.values_from_model} of these {suggestion.parameters.length} numbers from the
+              cited evidence (each input below says which); every one is inside the finance owner&apos;s guidance range
+              for its category. They are stress-test inputs for the SYNTHETIC demo business, not forecasts. Edit
+              anything, then confirm.
+            </>
+          ) : fromSuggestion ? (
+            <>
+              <span className="font-mono uppercase tracking-[0.08em] text-muted">ILLUSTRATIVE.</span> {DEFAULTS_NOTE}{" "}
+              The model chose this category from the cited evidence; every number is the finance owner&apos;s guidance
+              default, not a model or market estimate. Edit anything, then confirm.
+            </>
+          ) : suggestion || category ? (
+            <>
+              Guidance defaults (ILLUSTRATIVE) for the category you chose; no model numbers. Edit them, then confirm.
             </>
           ) : (
             <>

@@ -222,8 +222,9 @@ export function ExploreWorkbench() {
           ? `${data.evidence.length} cited evidence cards from ${data.sources.length} Tavily results`
           : "";
 
+  // overflow-wrap inherits: long URLs, hashes and model text wrap instead of widening the page (audit S4).
   return (
-    <div className="grid grid-cols-1 gap-5 xl:grid-cols-12">
+    <div className="grid grid-cols-1 gap-5 [overflow-wrap:anywhere] xl:grid-cols-12">
       <Panel
         code="X.1"
         title="Decision · test it against today's news"

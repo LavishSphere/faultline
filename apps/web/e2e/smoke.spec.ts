@@ -250,4 +250,93 @@ test.describe("LIVE EXPLORE", () => {
     await expect(page.getByRole("button", { name: /Confirm inputs/ })).toHaveCount(0);
     expect(posts).toEqual(["/api/explore/analyze"]);
   });
+
+  /**
+   * A filled analysis, served by intercepting the analyze request (no Tavily key or model in e2e). TEST FIXTURE:
+   * shaped like routes/explore.py `ExploreAnalysis`, with unbreakable URLs and hashes to provoke overflow. Its
+   * numbers are scenario INPUTS; no result figure is asserted and Confirm is never clicked.
+   */
+  function filledAnalysis(fromModel: boolean) {
+    const at = "2026-11-14T15:00:00Z";
+    const long = (i: number) => `https://news${i}.example.test/${"averyveryverylongpathsegmentwithoutanybreaks".repeat(4)}`;
+    const sources = [1, 2].map((i) => ({
+      source_id: `S${i}`, title: `TEST FIXTURE headline ${"x".repeat(80)}`, url: long(i),
+      snippet: `TEST FIXTURE snippet ${"y".repeat(150)}`, score: 0.5, published_at: null, published_at_raw: null,
+      retrieved_at: at,
+    }));
+    const params = [
+      { block: "rate", param: "delta_rate", unit: "Δr", integer: false, min: 0.0025, default: 0.005, max: 0.01, worse_when: "higher" },
+      { block: "rate", param: "start_week", unit: "t", integer: true, min: 1, default: 1, max: 7, worse_when: "lower" },
+    ];
+    const suggested = params.map((p, i) => ({
+      ...p,
+      value: p.default,
+      source: fromModel && i === 0 ? "model" : "guidance_default",
+      model_value: fromModel && i === 0 ? p.default : null,
+      rationale: fromModel && i === 0 ? `TEST FIXTURE rationale ${"z".repeat(120)}` : null,
+      note: null,
+    }));
+    return {
+      mode: "live_explore", label: "LIVE EXPLORE: current, not point-in-time", provider: "tavily",
+      attribution: "Search powered by Tavily", decision_text: "TEST FIXTURE decision", retrieved_at: at, cached: false,
+      status: "ok", status_message: null, sources,
+      evidence: sources.map((s) => ({
+        claim: `TEST FIXTURE claim ${"w".repeat(90)}`, source_id: s.source_id, source_url: s.url, source_title: s.title,
+        snippet: s.snippet, published_at: null, published_at_raw: null, retrieved_at: at,
+      })),
+      rejected_claims: [{ claim: "TEST FIXTURE rejected", source_url: long(9), reason: "unknown_url", message: "not returned" }],
+      suggestion: {
+        label: fromModel ? "MODEL-SUGGESTED, HUMAN TO CONFIRM" : "GUIDANCE DEFAULTS, HUMAN TO CONFIRM",
+        values_from_model: fromModel ? 1 : 0,
+        category_id: "central-bank-rate-surprise", category_name: "Central-bank rate surprise", parameters: suggested,
+        shock: { name: "fixture", rate: { delta_rate: 0.005, start_week: 1 }, demand: null, supplier: null },
+        notes: fromModel ? [] : ["The model gave no usable numbers; these are guidance defaults."],
+      },
+      model: {
+        agent_model: "ollama/fixture", model_tag: "fixture", model_digest: "d".repeat(64), temperature: 0, seed: 1,
+        attempts: 1, prompt_sha256: "a".repeat(64), sources_sha256: "b".repeat(64), raw_output_sha256: "c".repeat(64),
+        latency_ms: 1,
+      },
+      guidance: {
+        provenance: "ILLUSTRATIVE", label: "ILLUSTRATIVE: modelling guidance, not forecasts", horizon_weeks: 26,
+        categories: [{ id: "central-bank-rate-surprise", name: "Central-bank rate surprise", news_trigger: "t",
+          timing_guidance: "g", rationale: "r", basis: "b", params }],
+      },
+      notes: [],
+    };
+  }
+
+  for (const width of [390, 1920]) {
+    for (const fromModel of [true, false]) {
+      test(`filled analysis at ${width} px (${fromModel ? "model numbers" : "guidance defaults"}): no overflow, honest label`, async ({ page }) => {
+        await page.setViewportSize({ width, height: 900 });
+        await page.route(ANALYZE_URL, (route) =>
+          route.fulfill({
+            status: 200,
+            contentType: "application/json",
+            headers: { "access-control-allow-origin": "*" },
+            body: JSON.stringify(filledAnalysis(fromModel)),
+          }),
+        );
+        await page.goto("/explore/");
+        await page.locator("#explore-decision").fill("TEST FIXTURE decision");
+        await page.getByRole("button", { name: "Research and analyze" }).click();
+        await expect(page.getByText("Scenario inputs · confirm before the engine runs")).toBeVisible();
+        await expect(page.locator("#explore-rate-delta_rate")).toBeVisible();
+
+        const overflow = await page.evaluate(() => document.documentElement.scrollWidth - window.innerWidth);
+        expect(overflow, "horizontal overflow in px").toBeLessThanOrEqual(0);
+
+        const scenario = page.locator("section").filter({ hasText: "Scenario inputs · confirm before the engine runs" });
+        if (fromModel) {
+          await expect(scenario.locator('[data-provenance="MODEL-SUGGESTED"]')).toHaveCount(1);
+          await expect(scenario.getByText(/The local model proposed 1 of these 2 numbers/)).toBeVisible();
+        } else {
+          await expect(scenario.locator('[data-provenance="MODEL-SUGGESTED"]')).toHaveCount(0);
+          await expect(scenario.getByText(/MODEL-SUGGESTED/)).toHaveCount(0);
+          await expect(scenario.getByText(/The model gave no usable numbers; these are guidance defaults\./).first()).toBeVisible();
+        }
+      });
+    }
+  }
 });

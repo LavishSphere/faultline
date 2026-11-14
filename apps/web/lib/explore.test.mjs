@@ -3,7 +3,14 @@
 // The checks under test only accept or refuse a body, or translate inputs into a ScenarioShock; they compute no result.
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { LIVE_EXPLORE_LABEL, SUGGESTION_LABEL, TAVILY_ATTRIBUTION, checkAnalysisResponse, shockFromValues } from "./explore.ts";
+import {
+  DEFAULTS_LABEL,
+  LIVE_EXPLORE_LABEL,
+  SUGGESTION_LABEL,
+  TAVILY_ATTRIBUTION,
+  checkAnalysisResponse,
+  shockFromValues,
+} from "./explore.ts";
 
 const URL_A = "https://news-a.example/story";
 const URL_B = "https://news-b.example/story";
@@ -27,7 +34,6 @@ function analysis(over = {}) {
     label: LIVE_EXPLORE_LABEL,
     provider: "tavily",
     attribution: TAVILY_ATTRIBUTION,
-    suggestion_label: SUGGESTION_LABEL,
     decision_text: "fixture decision",
     retrieved_at: AT,
     cached: false,
@@ -40,7 +46,8 @@ function analysis(over = {}) {
     ],
     rejected_claims: [],
     suggestion: {
-      label: SUGGESTION_LABEL,
+      label: DEFAULTS_LABEL,
+      values_from_model: 0,
       category_id: "central-bank-rate-surprise",
       category_name: "Central-bank rate surprise",
       parameters: RATE_PARAMS.map((p) => ({ ...p, value: p.default, source: "guidance_default", model_value: null,
@@ -80,7 +87,7 @@ test("a suggested value outside its stated range is refused", () => {
 
 test("any label other than LIVE EXPLORE is refused", () => {
   assert.match(checkAnalysisResponse(analysis({ label: "REAL HISTORICAL" })), /LIVE EXPLORE/);
-  assert.match(checkAnalysisResponse(analysis({ suggestion_label: "FORECAST" })), /suggestion label/);
+  assert.match(checkAnalysisResponse(analysis({ suggestion_label: SUGGESTION_LABEL })), /non-contract key/);
   assert.match(checkAnalysisResponse(analysis({ extra: 1 })), /non-contract key/);
 });
 
@@ -104,4 +111,22 @@ test("shockFromValues follows the guidance mapping_to_scenario_shock", () => {
   assert.deepEqual(shock.supplier.availability.slice(0, 5), [1, 1, 0.2, 0.2, 1]);
   assert.equal(shock.supplier.dependent_share, 0.4);
   assert.deepEqual(shockFromValues("none", {}, 26), { name: "none" });
+});
+
+test("an all-default suggestion labeled MODEL-SUGGESTED is refused; one model value requires the model label", () => {
+  const spoofed = analysis();
+  spoofed.suggestion.label = SUGGESTION_LABEL; // every parameter is guidance_default
+  assert.match(checkAnalysisResponse(spoofed), /label does not match/);
+
+  const partial = analysis();
+  partial.suggestion.parameters[0].source = "model";
+  partial.suggestion.parameters[0].model_value = 0.005;
+  partial.suggestion.values_from_model = 1;
+  assert.match(checkAnalysisResponse(partial), /label does not match/); // still says GUIDANCE DEFAULTS
+  partial.suggestion.label = SUGGESTION_LABEL;
+  assert.equal(checkAnalysisResponse(partial), null);
+
+  const miscounted = analysis();
+  miscounted.suggestion.values_from_model = 2;
+  assert.match(checkAnalysisResponse(miscounted), /values_from_model/);
 });

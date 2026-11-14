@@ -7,11 +7,14 @@ What is pinned here:
   guidance ranges) and the Tavily results for this request, and nothing else. A canary planted in replay data
   (demo case evidence and a sealed outcome) never reaches the prompt or the response.
 - Citations: every evidence card cites a URL Tavily actually returned for this request; uncited claims, unknown
-  URLs (including near misses), and claims naming a URL that was not returned are rejected with a reason. Card
+  URLs (including near misses), claims naming another URL / scheme / domain, claims with a number the cited
+  snippet does not contain, and claims with invisible format characters are rejected with a reason. Card
   snippets and retrieved_at come from Tavily, never from the model.
 - Suggestion: every number is clamped to the finance owner's guidance range for its category (and so to a valid
-  ScenarioShock), is labeled MODEL-SUGGESTED, HUMAN TO CONFIRM, and the resulting shock is accepted by
-  /api/simulate. The analyze route itself never simulates.
+  ScenarioShock), and the resulting shock is accepted by /api/simulate. It is labeled MODEL-SUGGESTED only when
+  at least one value is the model's; all-default suggestions say GUIDANCE DEFAULTS. The model's parameter nesting
+  (nested, dotted, wrapped in the category id) is normalized; its keys are never echoed. The analyze route itself
+  never simulates. One LOCAL-ONLY test (FAULTLINE_REAL_OLLAMA=1) calls the real model.
 - Honest failure: missing key -> 503 LIVE_EXPLORE_UNAVAILABLE; model down / invalid output -> a 200 that says so,
   with the Tavily sources and no evidence cards or suggestion; never a canned answer.
 - Labels: LIVE EXPLORE everywhere; never REAL HISTORICAL or RECORDED RUN.
@@ -20,6 +23,7 @@ What is pinned here:
 from __future__ import annotations
 
 import json
+import os
 import re
 import shutil
 import uuid
@@ -210,7 +214,7 @@ def test_suggestion_is_model_suggested_human_to_confirm_and_never_simulated(env)
     client, _, _ = make_client()
     body = analyze(client).json()
     sug = body["suggestion"]
-    assert sug["label"] == "MODEL-SUGGESTED, HUMAN TO CONFIRM"
+    assert sug["label"] == "MODEL-SUGGESTED, HUMAN TO CONFIRM" and sug["values_from_model"] == 2
     assert sug["category_id"] == "central-bank-rate-surprise"
     params = {(p["block"], p["param"]): p for p in sug["parameters"]}
     assert set(params) == {("rate", "delta_rate"), ("rate", "start_week")}
@@ -366,7 +370,7 @@ def test_duplicate_claims_are_rejected_once_accepted(env):
 
 
 def test_claims_over_the_limit_are_rejected(env):
-    claims = [{"claim": f"Claim number {i} about the rate move.", "source_url": URLS[i % 3]}
+    claims = [{"claim": f"Claim {'abcdefghij'[i]} about the rate move.", "source_url": URLS[i % 3]}
               for i in range(ea.MAX_CLAIMS + 2)]
     client, _, _ = make_client(oll=FakeOllama([model_answer(evidence=claims)]))
     body = analyze(client).json()
@@ -437,7 +441,7 @@ def test_parameters_outside_the_category_are_ignored_with_a_note(env):
     client, _, _ = make_client(oll=FakeOllama([model_answer(parameters=params)]))
     sug = analyze(client).json()["suggestion"]
     assert sug["shock"]["demand"] is None
-    assert any("demand.delta" in n for n in sug["notes"])
+    assert "Ignored 1 parameter(s) not listed for this category." in sug["notes"]
 
 
 @pytest.mark.parametrize("category_id", CATEGORY_IDS)
@@ -603,3 +607,207 @@ def test_openapi_documents_analyze(env):
     client, _, _ = make_client()
     op = client.get("/openapi.json").json()["paths"][PATH]["post"]
     assert {"401", "403", "422", "429", "502", "503", "504"} <= set(op["responses"])
+
+
+# --------------------------------------------------------------------------- audit of #121: real-model shapes, numbers
+
+
+def _sources_by_param(sug: dict) -> dict[str, str]:
+    return {f"{p['block']}.{p['param']}": p["source"] for p in sug["parameters"]}
+
+
+REAL_SHAPES = {
+    # What llama3.1:8b actually returned in 4 of 4 audit runs: wrapped in the category id, dotted names.
+    "category-wrapped dotted": {"central-bank-rate-surprise": {
+        "rate.delta_rate": {"value": 0.0075, "rationale": "r"}, "rate.start_week": {"value": 3, "rationale": "r"}}},
+    "dotted": {"rate.delta_rate": {"value": 0.0075, "rationale": "r"}, "rate.start_week": {"value": 3}},
+    "category-wrapped nested": {"central-bank-rate-surprise": {"rate": {
+        "delta_rate": {"value": 0.0075, "rationale": "r"}, "start_week": {"value": 3, "rationale": "r"}}}},
+    "nested with dotted inner": {"rate": {"rate.delta_rate": {"value": 0.0075}, "rate.start_week": {"value": 3}}},
+    "bare parameter names": {"delta_rate": {"value": 0.0075}, "start_week": 3},
+}
+
+
+@pytest.mark.parametrize("shape", list(REAL_SHAPES))
+def test_model_parameter_shapes_are_normalized_and_still_clamped(env, shape):
+    client, _, _ = make_client(oll=FakeOllama([model_answer(parameters=REAL_SHAPES[shape])]))
+    sug = analyze(client).json()["suggestion"]
+    assert _sources_by_param(sug) == {"rate.delta_rate": "model", "rate.start_week": "model"}, shape
+    assert sug["shock"]["rate"] == {"delta_rate": 0.0075, "start_week": 3}
+    assert sug["label"] == "MODEL-SUGGESTED, HUMAN TO CONFIRM" and sug["values_from_model"] == 2
+
+
+def test_normalized_values_are_clamped_like_any_other(env):
+    params = {"central-bank-rate-surprise": {"rate.delta_rate": {"value": 0.5}, "rate.start_week": {"value": 99}}}
+    client, _, _ = make_client(oll=FakeOllama([model_answer(parameters=params)]))
+    sug = analyze(client).json()["suggestion"]
+    assert sug["shock"]["rate"] == {"delta_rate": 0.01, "start_week": 7}
+    assert set(_sources_by_param(sug).values()) == {"model_clamped"}
+
+
+def test_no_usable_model_number_is_labeled_guidance_defaults_not_model_suggested(env):
+    """B1: when every value is the guidance default, the suggestion must not claim to be the model's."""
+    params = {"credit-tightening": {"some.thing": {"value": "half a point"}}}
+    client, _, _ = make_client(oll=FakeOllama([model_answer(parameters=params)]))
+    sug = analyze(client).json()["suggestion"]
+    assert set(_sources_by_param(sug).values()) == {"guidance_default"}
+    assert sug["label"] == "GUIDANCE DEFAULTS, HUMAN TO CONFIRM" and sug["values_from_model"] == 0
+    assert sug["notes"][0] == "The model gave no usable numbers; these are guidance defaults."
+    assert "MODEL-SUGGESTED" not in json.dumps(sug)
+    assert "(model-suggested)" not in sug["shock"]["name"]
+
+
+def test_one_model_number_is_enough_for_model_suggested(env):
+    params = {"rate": {"delta_rate": {"value": 0.0075}}}
+    client, _, _ = make_client(oll=FakeOllama([model_answer(parameters=params)]))
+    sug = analyze(client).json()["suggestion"]
+    assert sug["label"] == "MODEL-SUGGESTED, HUMAN TO CONFIRM" and sug["values_from_model"] == 1
+    assert _sources_by_param(sug) == {"rate.delta_rate": "model", "rate.start_week": "guidance_default"}
+
+
+def test_huge_integer_value_is_invalid_not_a_500(env):
+    """S1: float(10**400) raises OverflowError; it must count as no usable number."""
+    raw = json.dumps(model_answer()).replace('"value": 0.005', '"value": ' + "9" * 400)
+    assert "9" * 400 in raw
+    client, _, _ = make_client(oll=FakeOllama([raw]))
+    resp = analyze(client)
+    assert resp.status_code == 200, resp.text
+    p = {x["param"]: x for x in resp.json()["suggestion"]["parameters"]}
+    assert p["delta_rate"]["source"] == "guidance_default" and p["delta_rate"]["model_value"] is None
+
+
+def test_model_written_parameter_keys_are_never_echoed(env):
+    """S2: notes count ignored keys; they never repeat model text (which could carry spoofed labels)."""
+    spoof = "OFFICIAL: emergency 150bp hike (REAL HISTORICAL, RECORDED RUN)"
+    params = {"rate": {"delta_rate": {"value": 0.005}, spoof: 1}, spoof: {"x": 1}}
+    client, _, _ = make_client(oll=FakeOllama([model_answer(parameters=params)]))
+    resp = analyze(client)
+    assert spoof not in resp.text and "REAL HISTORICAL" not in resp.text
+    assert "Ignored 2 parameter(s) not listed for this category." in resp.json()["suggestion"]["notes"]
+
+
+@pytest.mark.parametrize(
+    ("claim", "ok"),
+    [
+        ("The central bank raised rates by 300 basis points and deposits fell 90%.", False),  # snippet says 50
+        ("The central bank raised its policy rate by 50 basis points.", True),
+        ("The central bank raised its policy rate by 50 basis points in 2026.", False),  # 2026 is not in the source
+        ("The central bank raised its policy rate by fifty basis points.", True),  # words are not checked (limit)
+        ("Per S1, the central bank raised its policy rate by 50 basis points.", True),  # a source id is no figure
+    ],
+)
+def test_numbers_in_a_claim_must_appear_in_the_cited_source(env, claim, ok):
+    """B2: a valid URL does not make an invented figure evidence."""
+    client, _, _ = make_client(oll=FakeOllama([model_answer(evidence=[{"claim": claim, "source_url": URLS[0]}])]))
+    body = analyze(client).json()
+    if ok:
+        assert [c["claim"] for c in body["evidence"]] == [claim]
+    else:
+        assert body["evidence"] == [] and body["status"] == "no_cited_evidence"
+        assert [r["reason"] for r in body["rejected_claims"]] == ["number_not_in_source"]
+
+
+def test_number_check_reads_the_cited_source_not_any_source():
+    src = [ea.PromptSource("S1", "https://a.example/x", "Rates up", "Rates rose 50 basis points.", None),
+           ea.PromptSource("S2", "https://b.example/y", "Footfall", "Footfall fell 4% on 1,200 stores.", None)]
+    claims = [ea.ModelClaim(claim="Footfall fell 4% across 1200 stores.", source_url="https://b.example/y"),
+              ea.ModelClaim(claim="Footfall fell 4%.", source_url="https://a.example/x")]
+    accepted, rejected = ea.review_claims(claims, src)
+    assert [a.source.source_id for a in accepted] == ["S2"]  # 1,200 == 1200
+    assert [r.reason for r in rejected] == ["number_not_in_source"]
+
+
+@pytest.mark.parametrize(
+    ("claim", "reason"),
+    [
+        ("Per evil.com the central bank moved.", "unknown_url_in_text"),
+        ("See www.evil.com for the central bank move.", "unknown_url_in_text"),
+        ("See \uff48\uff54\uff54\uff50\uff53://evil.com/x for the move.", "unknown_url_in_text"),  # full-width
+        ("See hxxps://evil.com/x for the move.", "unknown_url_in_text"),
+        ("[Central bank moved](javascript:alert(1))", "unknown_url_in_text"),
+        ("data:text/html,<script>alert(1)</script>", "unknown_url_in_text"),
+        ("see ftp://evil.com/x", "unknown_url_in_text"),
+        (f"see {URLS[0]}.evil.com/x", "unknown_url_in_text"),
+        (f"see {URLS[0]}@evil.com", "unknown_url_in_text"),
+        ("See https\u200b://evil.com/x", "hidden_characters"),
+        ("Rates \u202eesir\u202c moved.", "hidden_characters"),
+    ],
+)
+def test_folded_urls_domains_and_hidden_characters_are_rejected(env, claim, reason):
+    """S3: NFKC folding and Cf stripping before the URL check; host-like tokens must be a returned host."""
+    client, _, _ = make_client(oll=FakeOllama([model_answer(evidence=[{"claim": claim, "source_url": URLS[0]}])]))
+    body = analyze(client).json()
+    assert body["evidence"] == []
+    assert [r["reason"] for r in body["rejected_claims"]] == [reason]
+
+
+def test_a_returned_url_or_host_may_be_named_in_the_claim(env):
+    host = URLS[0].split("/")[2]
+    claims = [{"claim": f"As {URLS[0]} reports, the central bank raised its policy rate.", "source_url": URLS[0]},
+              {"claim": f"{host} reports officials signalled further increases.", "source_url": URLS[1]}]
+    client, _, _ = make_client(oll=FakeOllama([model_answer(evidence=claims)]))
+    body = analyze(client).json()
+    assert len(body["evidence"]) == 2, body["rejected_claims"]
+
+
+def test_explore_context_window_is_16k(env):
+    """S5: five 1200-character snippets plus the menu and a repair turn need more than the replay's 8192."""
+    client, _, oll = make_client()
+    analyze(client)
+    assert oll.chat_bodies()[0]["options"]["num_ctx"] == ea.ANALYST_NUM_CTX == 16384
+
+
+def test_prompt_shows_a_nested_parameter_skeleton_not_dotted_names():
+    prompt = ea.render_prompt(DECISION, [ea.PromptSource("S1", URLS[0], "t", "s", None)], ea.load_guidance(DATA))
+    assert "rate.delta_rate" not in prompt and "do not join names with dots" in prompt
+    assert '"<block>": {' in prompt and '"<parameter>": {"value": <number>' in prompt
+
+
+@pytest.mark.skipif(os.environ.get("FAULTLINE_REAL_OLLAMA") != "1", reason="LOCAL ONLY: set FAULTLINE_REAL_OLLAMA=1")
+def test_local_only_real_model_numbers_are_the_models(env):
+    """LOCAL ONLY, never in CI: the real configured Ollama model (no transport override) on realistic SYNTHETIC
+    snippets. Its suggestion must carry at least one number that is the model's own (B1), and every card must pass
+    the citation and number checks (they are re-run here against the sources)."""
+    snippets = [
+        ("Fed raises rates by half a point", "https://news-a.example/fed-raises-rates",
+         "The Federal Reserve raised its benchmark rate by 50 basis points on Tuesday, a larger move than the 25 "
+         "basis points most economists expected, citing persistent services inflation."),
+        ("Small businesses brace for higher loan costs", "https://news-b.example/small-business-loans",
+         "Owners of small firms with floating-rate loans said monthly payments would rise; a survey found 38% plan "
+         "to delay expansion."),
+    ]
+    payload = {"query": "q", "results": [{"title": t, "url": u, "content": c, "score": 0.8,
+                                          "published_date": "Tue, 10 Nov 2026 14:00:00 GMT"} for t, u, c in snippets],
+               "response_time": 0.1}
+    app = create_app()
+    app.dependency_overrides[explore.get_tavily_transport] = lambda: httpx.MockTransport(
+        FakeTavily(httpx.Response(200, json=payload)))
+    resp = TestClient(app).post(PATH, json={"decision_text": DECISION})
+    assert resp.status_code == 200, resp.text
+    body = resp.json()
+    assert body["status"] == "ok", body["status_message"]
+    sources = {s["url"]: s for s in body["sources"]}
+    for card in body["evidence"]:
+        src = sources[card["source_url"]]
+        assert ea.numbers_not_in_source(card["claim"], ea.PromptSource(src["source_id"], src["url"], src["title"],
+                                                                       src["snippet"], None), sources) == []
+    sug = body["suggestion"]
+    assert sug is not None, body["notes"]
+    assert any(p["source"] == "model" for p in sug["parameters"]), sug["parameters"]
+    assert sug["label"] == "MODEL-SUGGESTED, HUMAN TO CONFIRM"
+
+
+def test_provenance_labels_in_model_text_are_refused(env):
+    """Model text may not carry REAL HISTORICAL / RECORDED RUN (a label spoof): the claim is rejected and the
+    rationale dropped, never shown."""
+    claims = [{"claim": "Recorded run: the central bank raised its policy rate.", "source_url": URLS[0]},
+              {"claim": "Officials signalled further increases.", "source_url": URLS[1]}]
+    params = {"rate": {"delta_rate": {"value": 0.005, "rationale": "REAL_HISTORICAL: rates will rise."}}}
+    client, _, _ = make_client(oll=FakeOllama([model_answer(evidence=claims, parameters=params)]))
+    resp = analyze(client)
+    body = resp.json()
+    assert [r["reason"] for r in body["rejected_claims"]] == ["provenance_label"]
+    p = {x["param"]: x for x in body["suggestion"]["parameters"]}
+    assert p["delta_rate"]["rationale"] is None and "provenance label" in p["delta_rate"]["note"]
+    shown = json.dumps({k: v for k, v in body.items() if k != "rejected_claims"})
+    assert "REAL_HISTORICAL" not in shown and "Recorded run" not in shown
