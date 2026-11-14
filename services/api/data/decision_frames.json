@@ -12,8 +12,8 @@
     "actions_available": "Policies may only use the MATH_MODEL §4 actions in ActionPlan: backup supplier, defer capex, delay expansion, purchase cuts, revolver draw/repay, payroll cut. The model has no interest-rate swaps, caps or other financial hedges, so no policy here is a financial hedge or a trading position.",
     "capex_and_expansion": "The demo business has K_t = 0, E_t = 0 and X_t = 0 (MATH_MODEL §10 'set per demo case'), so 'defer capex' and 'delay expansion' would change nothing. No policy uses them, and frames do not override the business.",
     "payroll": "Proposal: no policy cuts payroll (z_t = 0 everywhere) and every frame is evaluated with protect_payroll = true. Open question for the finance owner.",
-    "purchase_cuts": "Total cuts stay well under I_0 - I_min = 65,000 - 40,000 = 25,000, and each weekly cut is far below normal purchases of (1 - g) x 50,000 = 32,500 a week, so purchases and inventory stay positive.",
-    "fees": "Each fee lists whether it is in the payoff. Cash costs (switching fee F_b, backup premium, revolver interest J^R_t, extra term-loan interest) are in the simulated cash path. The MATH_MODEL §10 disruption costs c_. are non-cash harm and are NOT in V; they are listed so nothing is hidden."
+    "purchase_cuts": "Total cuts stay well under I_0 - I_min = 65,000 - 40,000 = 25,000, and each weekly cut is far below normal purchases of (1 - g) x 50,000 = 32,500 a week, so purchases and inventory stay positive. A purchase cut is not free cash (issue #103, MATH_MODEL §3): inventory below the service level I^svc_t = I_0 x m_t (65,000 at planned demand, scaled by the demand multiplier m_t) loses 0.20 of sales per $ of shortfall per week, so a cut pays only when lower demand is expected to lower the stock the business needs.",
+    "fees": "Each fee lists whether it is in the payoff. Cash costs (switching fee F_b, backup premium, revolver interest J^R_t, extra term-loan interest) are in the simulated cash path. The MATH_MODEL §10 disruption costs c_. are non-cash harm and are NOT in V; they are listed so nothing is hidden. Stock-out lost margin (issue #103) is a cash effect, so it is in the payoff; its typed amount is checked against the engine as V(a, y) with the stock-out cost switched off (theta = 0) minus V(a, y)."
   },
   "schema": {
     "frames[]": "One frame per question type.",
@@ -43,62 +43,69 @@
       "no_means": "The Fed changes the range: a cut or a hike (the replay cases' rule is NO if either bound changes). This frame models only the cut: shock_if_no is the 25bp cut the planning path already assumes. If NO turns out to be a hike, this frame has no payoff for it and the reveal shows not_modelled_note instead of a regret.",
       "no_state_models": "cut",
       "not_modelled_note": "NOT AVAILABLE: this frame does not model a hike",
-      "forecast_sensitive": false,
-      "caveat": "In this model the recommendation does not depend on the forecast: purchase cuts raise cash in both states.",
+      "forecast_sensitive": true,
       "assumptions": [
         "ILLUSTRATIVE: the CFO's planning path (the 8.0% all-in floating rate in demo_business.json) already assumes a 25bp cut at this meeting, as if markets expected a cut. If a real case's market priced a hold at the cutoff, the shocks must be re-anchored for that case.",
         "ILLUSTRATIVE: the 600,000 floating term loan reprices from week 2, the week after the decision.",
         "ILLUSTRATIVE: a hold is a one-step +25bp gap to the plan that persists to week 26 (no later catch-up cut is modelled).",
-        "ILLUSTRATIVE: no demand effect. One meeting's decision is assumed not to move grocery footfall measurably within 26 weeks.",
+        "ILLUSTRATIVE (proposal for finance-owner review, issue #103): a hold keeps household borrowing costs above what was planned and a small share of customers of a fresh/deli-heavy grocer trade down, so base-store demand is 1% below the plan from week 2 to week 26 (a third of the CPI frame's 3% hot-print effect, and persistent like the rate gap). Without a demand channel no available action's payoff depends on the rate, so ACT, WAIT and HEDGE would differ by the same amount in both states and no break-even p* could exist (MATH_MODEL §8).",
         "The revolver is undrawn in every policy here, so only the term loan carries the rate shock."
       ],
       "shock_if_yes": {
-        "name": "Fed holds: floating rate stays 25bp above the plan from week 2",
-        "rate": {"delta_rate": 0.0025, "start_week": 2}
+        "name": "Fed holds: floating rate 25bp above the plan and demand 1% below it from week 2",
+        "rate": {"delta_rate": 0.0025, "start_week": 2},
+        "demand": {"delta": 0.01, "start_week": 2, "end_week": 26, "recovery_weeks": 0}
       },
       "shock_if_no": {
         "name": "Fed cuts 25bp as planned: planning path, no shock"
       },
       "shock_rationale": {
-        "if_yes": "The plan assumed a cut that does not come, so the floating rate is 8.25% instead of 8.0% from week 2: extra interest 600,000 x 0.25% / 52 = 28.85 a week, x 25 weeks (2..26) = 721.15 lower cash by week 26.",
+        "if_yes": "Rate: the plan assumed a cut that does not come, so the floating rate is 8.25% instead of 8.0% from week 2: extra interest 600,000 x 0.25% / 52 = 28.85 a week, x 25 weeks (2..26) = 721.15. Demand: 1% of 50,000 = 500 of sales lost a week in weeks 2-26. By week 26 receipts have lost 500 x 25 - 0.2 x 500 (week 26's late-paid 20% arrives in week 27) = 12,400 and payables have fallen by 0.65 x 500 x 23 (purchases of weeks 2-24, paid two weeks later) = 7,475, so 4,925. Total: 721.15 + 4,925 = 5,646.15 lower cash by week 26.",
         "if_no": "The cut the plan assumed happens, so the business follows its planning path: no shock."
       },
       "protect_payroll": true,
       "policies": [
         {
           "name": "ACT",
-          "summary": "Trim purchases by 125 a week for weeks 1-8 (1,000 in total) to pre-fund the cost of a hold.",
+          "summary": "Cut purchases by 650 in week 2, bringing stock down to the lower service level a hold would bring.",
           "provenance": "ILLUSTRATIVE",
-          "rationale": "Size the response to the exposure: a hold costs 721.15 of extra interest over the horizon, so trim purchases by that amount rounded up to the next 1,000. 125 a week is 0.4% of normal weekly purchases of 32,500; inventory falls from 65,000 to 64,000, far above the 40,000 floor. In this model a purchase cut raises cash in both states (MVP simplification, MATH_MODEL §3: no stock-outs), so its real downside is only the non-cash disruption cost. A real CFO with a floating-rate loan might instead buy an interest-rate cap or swap; this model has no such instrument.",
+          "rationale": "The service level is I^svc_t = I_0 x m_t = 65,000 x m_t, i.e. 2 weeks of cost of goods at planned demand (MATH_MODEL §3): 65,000 at planned demand, 64,350 if demand is 1% lower. If the Fed holds, 650 of stock becomes surplus and cutting it releases 650 of cash with no stock-out. If the Fed cuts as planned, the same cut leaves inventory 650 below the 65,000 service level in weeks 2-26 and loses 0.20 x 650 = 130 of sales a week; by week 26 that has cost 130 x (0.35 x 23 + 1.0 + 0.8) = 1,280.50 of cash (a lost sale in weeks 2-24 costs the 35% margin once settled; in week 25 the saved purchase would be paid only after week 26, so it costs the full sale; in week 26 the 80% collected that week). Net +650 if the Fed holds, 650 - 1,280.50 = -630.50 if it cuts. A real CFO with a floating-rate loan might instead buy an interest-rate cap or swap; this model has no such instrument.",
           "fees": [
             {"item": "Extra term-loan interest if the Fed holds", "amount": "600,000 x 0.25% / 52 x 25 weeks = 721.15", "when": "weeks 2-26, YES only", "in_payoff": true},
-            {"item": "Purchase-cut disruption cost c_v (MATH_MODEL §10)", "amount": "0.05 x 1,000 = 50", "when": "non-cash, both states", "in_payoff": false}
+            {"item": "Lost gross margin on lower demand if the Fed holds", "amount": "12,400 lost receipts - 7,475 lower payables = 4,925", "when": "weeks 2-26, YES only", "in_payoff": true},
+            {"item": "Stock-out lost margin if the Fed cuts (inventory 650 below the service level)", "amount": "0.20 x 650 x (0.35 x 23 + 1.0 + 0.8) = 1,280.50", "when": "weeks 2-26, NO only (none if the Fed holds: the stock then matches the lower service level)", "in_payoff": true},
+            {"item": "Purchase-cut disruption cost c_v (MATH_MODEL §10)", "amount": "0.05 x 650 = 32.50", "when": "non-cash, both states", "in_payoff": false},
+            {"item": "Stock-shortfall disruption cost c_u (MATH_MODEL §10, issue #103)", "amount": "0.01 x 650 x 25 weeks = 162.50", "when": "non-cash, NO only", "in_payoff": false}
           ],
           "plan": {
-            "purchase_cut": [125.0, 125.0, 125.0, 125.0, 125.0, 125.0, 125.0, 125.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
+            "purchase_cut": [0.0, 650.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
           }
         },
         {
           "name": "WAIT",
           "summary": "Change nothing and carry the floating-rate exposure.",
           "provenance": "ILLUSTRATIVE",
-          "rationale": "The exposure is small: a hold costs 721.15 over 26 weeks, about 1.1% of the planning path's lowest cash balance of 63,000. Waiting keeps every lever available for later.",
+          "rationale": "Keep stock at the 65,000 service level. If the Fed holds, the business carries the higher interest and the lower demand (5,646.15 lower cash by week 26, about 9% of the planning path's lowest balance of 63,000) with 650 of stock it no longer needs; if it cuts, nothing is lost. Waiting keeps every lever available for later.",
           "fees": [
-            {"item": "Extra term-loan interest if the Fed holds", "amount": "600,000 x 0.25% / 52 x 25 weeks = 721.15", "when": "weeks 2-26, YES only", "in_payoff": true}
+            {"item": "Extra term-loan interest if the Fed holds", "amount": "600,000 x 0.25% / 52 x 25 weeks = 721.15", "when": "weeks 2-26, YES only", "in_payoff": true},
+            {"item": "Lost gross margin on lower demand if the Fed holds", "amount": "12,400 lost receipts - 7,475 lower payables = 4,925", "when": "weeks 2-26, YES only", "in_payoff": true}
           ],
           "plan": {}
         },
         {
           "name": "HEDGE",
-          "summary": "Trim purchases by 125 a week for weeks 1-4 only (500 in total): half of ACT.",
+          "summary": "Cut purchases by 325 in week 2: half of ACT.",
           "provenance": "ILLUSTRATIVE",
-          "rationale": "A partial, shorter commitment: the same weekly trim as ACT but for 4 weeks, covering about 69% of the cost of a hold (500 / 721.15). This is not a financial hedge. A real CFO might hedge the floating rate with a cap or swap, which this model does not include; the closest available lever is a smaller precautionary purchase trim.",
+          "rationale": "A half-size commitment. If the Fed holds, 325 of surplus stock is released (+325); if it cuts, inventory sits 325 below the service level and loses 0.20 x 325 = 65 of sales a week, 65 x 9.85 = 640.25 of cash by week 26 (net -315.25). Its payoffs are exactly halfway between ACT and WAIT in both states, so it ties with both at the break-even p* and is never strictly best. This is not a financial hedge: the model has no rate caps or swaps.",
           "fees": [
             {"item": "Extra term-loan interest if the Fed holds", "amount": "600,000 x 0.25% / 52 x 25 weeks = 721.15", "when": "weeks 2-26, YES only", "in_payoff": true},
-            {"item": "Purchase-cut disruption cost c_v (MATH_MODEL §10)", "amount": "0.05 x 500 = 25", "when": "non-cash, both states", "in_payoff": false}
+            {"item": "Lost gross margin on lower demand if the Fed holds", "amount": "12,400 lost receipts - 7,475 lower payables = 4,925", "when": "weeks 2-26, YES only", "in_payoff": true},
+            {"item": "Stock-out lost margin if the Fed cuts (inventory 325 below the service level)", "amount": "0.20 x 325 x (0.35 x 23 + 1.0 + 0.8) = 640.25", "when": "weeks 2-26, NO only (none if the Fed holds)", "in_payoff": true},
+            {"item": "Purchase-cut disruption cost c_v (MATH_MODEL §10)", "amount": "0.05 x 325 = 16.25", "when": "non-cash, both states", "in_payoff": false},
+            {"item": "Stock-shortfall disruption cost c_u (MATH_MODEL §10, issue #103)", "amount": "0.01 x 325 x 25 weeks = 81.25", "when": "non-cash, NO only", "in_payoff": false}
           ],
           "plan": {
-            "purchase_cut": [125.0, 125.0, 125.0, 125.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
+            "purchase_cut": [0.0, 325.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
           }
         }
       ]
@@ -111,8 +118,7 @@
       "yes_means": "A hotter print than the threshold: inflation is running above what the plan assumed.",
       "no_means": "An in-line or cooler print. This frame treats NO as the planning path (no upside shock from a cooler print is modelled).",
       "no_state_models": "in-line or cooler print, both treated as the planning path",
-      "forecast_sensitive": false,
-      "caveat": "In this model the recommendation does not depend on the forecast: purchase cuts raise cash in both states.",
+      "forecast_sensitive": true,
       "assumptions": [
         "ILLUSTRATIVE: the planning path assumes an in-line print and a 25bp cut at the next FOMC meeting, about 3 weeks after the release.",
         "ILLUSTRATIVE: a hot print pushes that cut out, so the floating rate stays 25bp above the plan from week 4 to week 26.",
@@ -136,23 +142,26 @@
       "policies": [
         {
           "name": "ACT",
-          "summary": "Trim purchases by 1,000 a week for weeks 1-8 (8,000 in total) to pre-fund the hot-print hit.",
+          "summary": "Cut purchases by 975 in week 3: half of the 1,950 drop in the service level a hot print would bring.",
           "provenance": "ILLUSTRATIVE",
-          "rationale": "Size the response to the exposure: a hot print costs about 7,750.96 of cash by week 26, so trim purchases by that amount rounded up to the next 1,000. 1,000 a week is 3.1% of normal weekly purchases of 32,500; inventory falls from 65,000 to 57,000, above the 40,000 floor. In this model a purchase cut raises cash in both states (MVP simplification, MATH_MODEL §3: no stock-outs), so its real downside is only the non-cash disruption cost. A real CFO might also hedge the floating rate with a cap or swap; this model has no such instrument.",
+          "rationale": "The service level is I^svc_t = I_0 x m_t = 65,000 x m_t, i.e. 2 weeks of cost of goods at planned demand (MATH_MODEL §3): 65,000 at planned demand; after a hot print 63,050 in weeks 3-14 (3% lower), then 63,537.50, 64,025 and 64,512.50 in weeks 15-17 as demand recovers, and 65,000 again from week 18. A cut is permanent (the model has no restocking action), so stock cut below 65,000 is short again once demand recovers. ACT leaves inventory at 64,025. Hot print: short by 487.50 in week 17 and 975 in weeks 18-26, losing 0.20 of sales per $ short; by week 26 that costs 0.35 x (97.50 + 7 x 195) + 195 x 1.0 + 195 x 0.8 = 862.88, so net 975 - 862.88 = +112.13. In-line print: short by 975 in weeks 3-26, 195 of sales a week, 195 x (0.35 x 22 + 1.0 + 0.8) = 1,852.50, so net -877.50. A real CFO might also hedge the floating rate with a cap or swap; this model has no such instrument.",
           "fees": [
             {"item": "Extra term-loan interest if the print is hot", "amount": "600,000 x 0.25% / 52 x 23 weeks = 663.46", "when": "weeks 4-26, YES only", "in_payoff": true},
             {"item": "Lost gross margin on lower demand if the print is hot", "amount": "0.35 x 20,250 = 7,087.50", "when": "weeks 3-17, YES only", "in_payoff": true},
-            {"item": "Purchase-cut disruption cost c_v (MATH_MODEL §10)", "amount": "0.05 x 8,000 = 400", "when": "non-cash, both states", "in_payoff": false}
+            {"item": "Stock-out lost margin if the print is hot", "amount": "0.35 x (97.50 + 7 x 195) + 195 x 1.0 + 195 x 0.8 = 862.88", "when": "weeks 17-26, YES only", "in_payoff": true},
+            {"item": "Stock-out lost margin if the print is in line", "amount": "195 x (0.35 x 22 + 1.0 + 0.8) = 1,852.50", "when": "weeks 3-26, NO only", "in_payoff": true},
+            {"item": "Purchase-cut disruption cost c_v (MATH_MODEL §10)", "amount": "0.05 x 975 = 48.75", "when": "non-cash, both states", "in_payoff": false},
+            {"item": "Stock-shortfall disruption cost c_u (MATH_MODEL §10, issue #103)", "amount": "if hot 0.01 x (487.50 + 9 x 975) = 92.63; if in line 0.01 x 975 x 24 weeks = 234", "when": "non-cash", "in_payoff": false}
           ],
           "plan": {
-            "purchase_cut": [1000.0, 1000.0, 1000.0, 1000.0, 1000.0, 1000.0, 1000.0, 1000.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
+            "purchase_cut": [0.0, 0.0, 975.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
           }
         },
         {
           "name": "WAIT",
           "summary": "Change nothing and absorb the hot-print hit if it comes.",
           "provenance": "ILLUSTRATIVE",
-          "rationale": "Even a hot print leaves the lowest cash balance far above the 25,000 floor (about 63,000 - 7,751 = 55,249), so waiting is safe and keeps every lever available for later.",
+          "rationale": "Keep stock at the service level. Even a hot print leaves the lowest cash balance far above the 25,000 floor (about 63,000 - 7,751 = 55,249). If the print is hot, the business holds up to 1,950 of stock it does not need for a quarter; if it is in line, nothing is lost.",
           "fees": [
             {"item": "Extra term-loan interest if the print is hot", "amount": "600,000 x 0.25% / 52 x 23 weeks = 663.46", "when": "weeks 4-26, YES only", "in_payoff": true},
             {"item": "Lost gross margin on lower demand if the print is hot", "amount": "0.35 x 20,250 = 7,087.50", "when": "weeks 3-17, YES only", "in_payoff": true}
@@ -161,16 +170,19 @@
         },
         {
           "name": "HEDGE",
-          "summary": "Trim purchases by 1,000 a week for weeks 1-4 only (4,000 in total): half of ACT.",
+          "summary": "Cut purchases by 487.50 in week 3: half of ACT.",
           "provenance": "ILLUSTRATIVE",
-          "rationale": "A partial, shorter commitment: the same weekly trim as ACT but for 4 weeks, covering about half of the hot-print hit (4,000 / 7,750.96). This is not a financial hedge: the model has no interest-rate caps, swaps or inflation-linked instruments, so the closest available lever is a smaller precautionary purchase trim.",
+          "rationale": "The service level is I^svc_t = I_0 x m_t = 65,000 x m_t, i.e. 2 weeks of cost of goods at planned demand (MATH_MODEL §3): 65,000 at planned demand; after a hot print 63,050 in weeks 3-14 (3% lower), then 63,537.50, 64,025 and 64,512.50 in weeks 15-17 as demand recovers, and 65,000 again from week 18. A cut is permanent (the model has no restocking action), so stock cut below 65,000 is short again once demand recovers. HEDGE leaves inventory at 64,512.50. Hot print: short by 487.50 only in weeks 18-26, 97.50 of sales a week, 0.35 x 7 x 97.50 + 97.50 x 1.0 + 97.50 x 0.8 = 414.38, so net 487.50 - 414.38 = +73.13. In-line print: short in weeks 3-26, 97.50 x 9.5 = 926.25, so net -438.75. Per dollar cut it gains more than ACT after a hot print (ACT's second half is short one week longer) and loses the same in line, so it is the best policy for P(YES) between 6/7 = 0.857 and 45/49 = 0.918. This is not a financial hedge: the model has no interest-rate caps, swaps or inflation-linked instruments.",
           "fees": [
             {"item": "Extra term-loan interest if the print is hot", "amount": "600,000 x 0.25% / 52 x 23 weeks = 663.46", "when": "weeks 4-26, YES only", "in_payoff": true},
             {"item": "Lost gross margin on lower demand if the print is hot", "amount": "0.35 x 20,250 = 7,087.50", "when": "weeks 3-17, YES only", "in_payoff": true},
-            {"item": "Purchase-cut disruption cost c_v (MATH_MODEL §10)", "amount": "0.05 x 4,000 = 200", "when": "non-cash, both states", "in_payoff": false}
+            {"item": "Stock-out lost margin if the print is hot", "amount": "0.35 x 7 x 97.50 + 97.50 x 1.0 + 97.50 x 0.8 = 414.38", "when": "weeks 18-26, YES only", "in_payoff": true},
+            {"item": "Stock-out lost margin if the print is in line", "amount": "97.50 x (0.35 x 22 + 1.0 + 0.8) = 926.25", "when": "weeks 3-26, NO only", "in_payoff": true},
+            {"item": "Purchase-cut disruption cost c_v (MATH_MODEL §10)", "amount": "0.05 x 487.50 = 24.38", "when": "non-cash, both states", "in_payoff": false},
+            {"item": "Stock-shortfall disruption cost c_u (MATH_MODEL §10, issue #103)", "amount": "if hot 0.01 x 487.50 x 9 weeks = 43.88; if in line 0.01 x 487.50 x 24 weeks = 117", "when": "non-cash", "in_payoff": false}
           ],
           "plan": {
-            "purchase_cut": [1000.0, 1000.0, 1000.0, 1000.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
+            "purchase_cut": [0.0, 0.0, 487.5, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
           }
         }
       ]
@@ -185,7 +197,7 @@
       "no_state_models": "no disruption",
       "forecast_sensitive": true,
       "assumptions": [
-        "ILLUSTRATIVE: added beyond the two question types named in issue #45 because the FOMC and CPI frames cannot produce a break-even probability in this model (see the PR); a lead may drop it.",
+        "ILLUSTRATIVE: added beyond the two question types named in issue #45 because, before issue #103, the FOMC and CPI frames could not produce a break-even probability (purchase cuts were free cash); a lead may drop it.",
         "ILLUSTRATIVE: the YES state is the supplier-outage-3wk scenario in scenarios.json: the primary distributor is down in weeks 5-7 (availability 0), and 40% of base-store sales depend on it (phi = 0.40, MATH_MODEL §10).",
         "The backup supplier must be signed up at the cutoff (before week 1) to be available in weeks 5-7; it cannot be added after the disruption is known.",
         "No rate or demand effect in either state."

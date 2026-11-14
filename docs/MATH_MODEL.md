@@ -32,6 +32,11 @@ issue #6 with a one-line justification each. They are modelling choices, not fig
 | $K_t$ | scheduled non-critical capex | \$ |
 | $E_t$, $X_t$ | expansion outflow, and expansion sales once opened | \$ |
 | $I_t$ | inventory at cost, end of week $t$ | \$ |
+| $\sigma$ | service level: the stock the business aims to hold, as a share of $I_0$ at planned demand (issue #103) | fraction |
+| $I^{svc}_t$ | service-level inventory $\sigma\,I_0\,m_t$ | \$ |
+| $u_t$ | inventory shortfall below the service level, $\max(0,\,I^{svc}_t - I_t)$ | \$ |
+| $\theta$ | stock-out lost sales per \$ of shortfall per week | 1/week |
+| $\ell_t$ | stock-out lost sales $\theta\,u_t$ | \$ |
 
 ## 1. Shocks (exogenous scenario inputs)
 
@@ -53,11 +58,12 @@ S^{dem}_t = S^{core}_t \;+\; (1-x_e)\,X_t
 $$
 
 $$
-S_t = S^{core}_t\,\bigl(1 - \lambda_t\,(1 - x_b)\bigr) \;+\; (1-x_e)\,X_t
+S_t = S^{core}_t\,\bigl(1 - \lambda_t\,(1 - x_b)\bigr) \;+\; (1-x_e)\,X_t \;-\; \ell_t
 $$
 
 where $S^{core}_t$ is base-store demand, $S^{dem}_t$ is total demand, $x_b \in \{0,1\}$ = "use backup supplier" and
-$x_e \in \{0,1\}$ = "delay expansion" (§4). Lost sales are $S^{dem}_t - S_t = S^{core}_t\,\lambda_t\,(1-x_b)$.
+$x_e \in \{0,1\}$ = "delay expansion" (§4), and $\ell_t = \theta\,u_t$ are the stock-out lost sales of §3 (issue #103).
+Lost sales are $S^{dem}_t - S_t = S^{core}_t\,\lambda_t\,(1-x_b) + \ell_t$.
 
 *Decision (issue #16): the outage hits base-store sales only.* The new store's sales $X_t$ do not depend on the primary
 supplier. This keeps the model linear: $m_t$ and $\lambda_t$ are scenario inputs, so the outage term contains only the
@@ -78,9 +84,29 @@ $$P_t = (1-g)\,S_t - v_t + \pi\,(1-g)\,S^{core}_t\,\lambda_t\,x_b$$
 $$I_t = I_{t-1} + P_t - (1-g)S_t - \pi(1-g)S^{core}_t\lambda_t x_b = I_{t-1} - v_t$$
 (the premium is a cost, not extra stock).
 
-*MVP simplification [assumed] (issue #16): purchase cuts do not cause stock-outs.* Inventory has no effect on sales, so
-$S_t$ does not change with $v_t$. Two parameters stand in for stock-out risk: the inventory floor $I_{min}$, which caps
-total cuts at $\sum_t v_t \le I_0 - I_{min}$, and the disruption cost $c_v$ (§10).
+**Stock-out cost** (issue #103; replaces the issue #16 simplification "purchase cuts do not cause stock-outs").
+*Proposal for finance-owner review (issue #103).* The business aims to hold the share $\sigma$ of its opening stock
+$I_0$ at planned demand, scaled with the demand shock $m_t$ (§1). Inventory below that level loses sales:
+$$
+I^{svc}_t = \sigma\,I_0\,m_t, \qquad u_t = \max\bigl(0,\; I^{svc}_t - I_t\bigr), \qquad \ell_t = \theta\,u_t ,
+$$
+and $\ell_t$ is subtracted from $S_t$ (§2), so it flows through receipts and purchases like every other lost sale: a lost
+sales dollar costs $a$ of receipts in week $t$ and $1-a$ in $t+1$, and the purchase that would have replaced it,
+$(1-g)$, is not made, so once settled it costs the gross margin $g$. $I_t = I_{t-1} - v_t$ does not depend on $S_t$, so
+there is no circularity. $I^{svc}_t$ follows the base-store demand multiplier $m_t$ (scenario data, not a decision):
+when demand falls, the stock the business needs falls with it, which is what lets a purchase cut pay off in one state
+and cost in the other (§8). For the §10 grocer $\sigma = 1$, so $I^{svc}_t = 65{,}000\,m_t$, which is 2 weeks of cost of
+goods of base-store demand, $2\,(1-g)\,S^{core}_t$. Two choices keep the cost from appearing where nothing was cut:
+the target is anchored to $I_0$ (so a sensitivity run that changes $g$ or baseline sales without restating $I_0$ does not
+create a stock-out), and it ignores the outage $\lambda_t$ (stock cannot be bought for lines the supplier cannot deliver)
+and the new store's $X_t$ (its stock is not modelled, as for the outage, §2). It does not follow seasonal changes in
+$S^{base}_{\ell,t}$; no fixture uses them.
+*Why it matters:* without it a purchase cut raised cash in every state with no downside except the non-cash $c_v$, so
+the optimizer treated cuts as free cash and ACT won the FOMC and CPI frames at every $p$ (review of #71).
+*Golden cases and baselines:* with no purchase cut $I_t = I_0$, and $I^{svc}_t = \sigma I_0 m_t \le I_0$ whenever
+$\sigma \le 1$ and $m_t \le 1$, so $u_t = 0$ and nothing changes unless purchases are cut (or demand rises above plan). A cut is permanent in this model ($v_t \ge 0$; there is no restocking action), so stock cut
+below $I^{svc}_t$ stays short until the horizon ends. The inventory floor $I_{min}$ remains a hard constraint (§4.3) that
+caps total cuts at $\sum_t v_t \le I_0 - I_{min}$; the disruption costs $c_v$ and $c_u$ (§10) add the non-cash harm.
 
 **Interest:** term loan $\;J_t = D_t\,r_t/52$; revolver $\;J^R_t = B_{t-1}\,(r_t + s_R)/52$.
 
@@ -98,18 +124,23 @@ Principal evolves as $D_{t+1} = D_t - A_t$. In the demand shock, $\rho = 0$ mean
 ($m_t = 1$ immediately after $t_2$), which is how §9 Case B "week 2 only" is encoded ($t_1 = t_2 = 2$, $\rho = 0$).
 Financing that cannot happen is rejected by the simulator, not simulated: a repayment above the balance ($B_t < 0$) or
 amortization above the remaining principal ($D_{t+1} < 0$), with a \$$10^{-6}$ tolerance for solver round-off.
-Physically impossible plans are rejected the same way: the simulator enforces $P_t \ge 0$ and $I_t \ge 0$ in every week
-(same tolerance; purchases are checked before inventory), while the floor $I_t \ge I_{min}$ stays an optimizer constraint (§4.3).
+Physically impossible plans are rejected the same way: the simulator enforces $S_t \ge 0$, $P_t \ge 0$ and $I_t \ge 0$ in
+every week (same tolerance; sales, then purchases, then inventory), while the floor $I_t \ge I_{min}$ stays an optimizer
+constraint (§4.3). ($S_t \ge 0$ can only fail if $\ell_t$ exceeds the week's other sales. Since $I_t \ge 0$,
+$\ell_t \le \theta\,I^{svc}_t$; for the §10 grocer that is $0.2 \times 65{,}000\,m_t = 13{,}000\,m_t$, 26% of base-store demand.)
 Inputs must be finite (no NaN or ±∞).
 
 **Runway:** first $t$ with $C_t < 0$ on the simulated path; reported as `> T weeks` if none. (No extrapolated burn-rate runway unless labeled.)
 
-Every term is **linear** in the decisions $(x_b, x_c, x_e, v_t, y_t, q_t, z_t)$, given the scenario parameters. With the
-§2 base-store outage, no term multiplies two decisions together, so §3 stays linear in all decisions. So the optimizer below is exact with respect to this model; there is no approximation.
+Every term is **linear** in the decisions $(x_b, x_c, x_e, v_t, y_t, q_t, z_t)$, given the scenario parameters, except
+the $\max$ in $u_t$. With the §2 base-store outage, no term multiplies two decisions together. The $\max$ is convex and
+only ever costs the business, so the optimizer represents it exactly with two linear inequalities and a positive cost
+(§4.9). So the optimizer below is exact with respect to this model; there is no approximation.
 
 ## 4. Recovery optimizer (MILP, `scipy.optimize.milp`)
 
-**Decisions:** $x_b, x_c, x_e \in \{0,1\}$; $v_t \in [0, \bar v]$; $y_t, q_t \ge 0$; $z_t \in [0,\bar z]$; auxiliary $\mu$ (minimum cash).
+**Decisions:** $x_b, x_c, x_e \in \{0,1\}$; $v_t \in [0, \bar v]$; $y_t, q_t \ge 0$; $z_t \in [0,\bar z]$; auxiliary $\mu$ (minimum cash)
+and $u_t \ge 0$ (inventory shortfall, issue #103).
 
 **Hard constraints** (for all $t$):
 1. Liquidity floor: $C_t \ge C_{min}$
@@ -122,13 +153,19 @@ Every term is **linear** in the decisions $(x_b, x_c, x_e, v_t, y_t, q_t, z_t)$,
 7. **Terminal revolver:** $B_T \le B_0$ (issue #16). The facility must be back to its opening balance by the end of the
    horizon, so no plan can borrow and never repay, which would flatter the cash path.
 8. **Purchases non-negative:** $P_t \ge 0$ for all $t$, i.e. $v_t \le (1-g)S_t + \pi(1-g)S^{core}_t\lambda_t x_b$.
+9. **Service-level shortfall (issue #103):** $u_t \ge I^{svc}_t - I_t$ and $u_t \ge 0$ for all $t$, with
+   $S_t$ in the §3 recurrence reduced by $\theta\,u_t$.
+10. **Sales non-negative:** $S_t \ge 0$ for all $t$ (the §3 physical rule).
 
 **Objective** (minimize disruption, tie-break toward more cash):
 $$
-\min\; c_b x_b + c_c x_c + c_e x_e + c_v \sum_t v_t + c_y \sum_t y_t + c_z \sum_t z_t W_t \;-\; \varepsilon\,\mu
+\min\; c_b x_b + c_c x_c + c_e x_e + c_v \sum_t v_t + c_y \sum_t y_t + c_z \sum_t z_t W_t + c_u \sum_t u_t \;-\; \varepsilon\,\mu
 $$
 with $\varepsilon$ small (e.g. $10^{-4}$) so cash only breaks ties. The $c_\cdot$ are **disruption costs set by the
 finance owner** (non-cash harm: operational risk, lost goodwill, morale), on top of the cash effects already in §3.
+*Why constraint 9 is exact:* $c_u > 0$, and a larger $u_t$ lowers $S_t$, which lowers cash in week $t$ and every later
+week (by $a\,\theta$, then $\theta$, then $g\,\theta$ per \$) and never relaxes a constraint. So at the optimum
+$u_t = \max(0, I^{svc}_t - I_t)$, the same value `simulate()` computes, and the solver's cash path matches the simulator's.
 
 **Outputs:** status ∈ {`OPTIMAL`, `NO FEASIBLE PLAN`}, the chosen actions, $C_t$ path, $\min_t C_t$, binding
 constraints (slack ≈ 0), and the objective value. If infeasible, report it: no LLM may override it. Useful
@@ -278,6 +315,16 @@ $$
 $p^*$ is NOT AVAILABLE when fewer than two policies are feasible in both states, when the denominator is $0$ (within
 $10^{-6}$ dollars: the two lines are parallel, so the ranking never depends on $p$), or when $p^* \notin [0,1]$.
 
+*When can a break-even exist? (issue #103).* $p^*$ exists only if $V(a,1) - V(b,1) \ne V(a,0) - V(b,0)$: some policy's
+cash effect must depend on the outcome. A shock that only raises the term-loan rate changes $J_t$, which no §4 action
+touches (the revolver is undrawn in the frames), and the stock-out cost depends on $I^{svc}_t$, which moves with demand,
+not with rates. So for a rate-only YES state every pair of policies differs by the same amount in both states and
+$p^*$ is NOT AVAILABLE, with or without the stock-out cost. The stock-out cost creates the dependence through demand: if
+the YES state lowers demand, $I^{svc}_t$ falls, and a purchase cut that is surplus stock in YES is a shortfall in NO.
+That is why the FOMC frame (`decision_frames.json`) now also carries a small demand effect in its YES state
+(*proposal for finance-owner review, issue #103*). Worked values: FOMC $p^* = 630.50 / 1{,}280.50 = 0.4924$; CPI
+WAIT → HEDGE at $6/7 = 0.857$ and HEDGE → ACT at $45/49 = 0.918$ (hand arithmetic in `tests/test_decision_frames.py`).
+
 ## 9. Golden test cases (hand-checked; must be in `tests/test_financials.py`)
 
 Common: $C_0 = 100{,}000$; $S^{base} = 50{,}000$/wk (all stores); $S_0 = 50{,}000$; $g = 0.35$; $a = 0.8$; $L_p = 1$,
@@ -286,6 +333,11 @@ These cases use their own inputs (note $L_p = 1$ here, versus 2 weeks in §10).
 *Hand-checked 2026-11-12 (issue #6): every value in cases A–C and every scoring fixture below matches.*
 *Unchanged by issue #16:* none of cases A–C has an outage, an expansion, a revolver or a purchase cut. The §2 base-store
 outage, the §4 terminal revolver condition and the §10 expansion-cost note therefore leave every value below as it was.
+*Unchanged by issue #103:* none of cases A–C cuts purchases, so $I_t = I_0$ in every week. With the §10 stock-out
+parameters ($\sigma = 1$, $\theta = 0.20$) and $I_0 = 65{,}000$, $I^{svc}_t = 65{,}000\,m_t$: 65,000 in cases A and C,
+and $65{,}000 \times 0.8 = 52{,}000$ in week 2 of case B. So $u_t = 0$ and the values below hold. (The test file's
+default uses $I_0 = 60{,}000$, which §9 does not use, with the stock-out cost off; a separate test re-runs A–C with
+$I_0 = 65{,}000$ and the §10 stock-out parameters and gets the same values.)
 
 **Case A, no shock, $r = 8\%$:** $R_t = 50{,}000$; outflow $= 32{,}500 + 12{,}000 + 6{,}000 + 923.077 = 51{,}423.077$
 → $C_1 = 98{,}576.923$, $C_2 = 97{,}153.846$, $C_3 = 95{,}730.769$.
@@ -322,6 +374,8 @@ modelling rationale, not a citation.
 | Starting inventory $I_0$ | 65,000 | 2 weeks of cost of goods ($2 \times 0.65 \times 50{,}000$), typical for a fresh-heavy grocer. |
 | Inventory floor $I_{min}$ | 40,000 | About 1.2 weeks of cost of goods: below this, shelves look empty. Together with $I_0$ this caps total purchase cuts at $\sum_t v_t \le 25{,}000$. |
 | Pre-horizon values $S_0$; $P_{-1}$, $P_0$ | 50,000; 32,500 each | Steady state before week 1: purchases $= (1-g) \times 50{,}000$. |
+| Service level $\sigma$ | 1.0 of $I_0$ ($I^{svc}_t = 65{,}000\,m_t$, i.e. 2 weeks of cost of goods of base-store demand) | *Proposal for finance-owner review (issue #103).* The service level is the starting stock: §10 already calls 2 weeks of cost of goods typical for a fresh-heavy grocer, so any cut below it thins the shelves. See the justification below. |
+| Stock-out lost sales $\theta$ | 0.20 of sales per \$ of shortfall per week | *Proposal for finance-owner review (issue #103).* A cut of 10% of the service level (6,500 at cost) loses $0.20 \times 6{,}500 = 1{,}300$ of sales a week, 2.6% of sales; at the floor (25,000 short) it loses 5,000 a week, 10% of sales. |
 | Purchase-cut cap $\bar v$ | 10,000/wk | About 30% of a normal week's purchases. Deeper one-week cuts are not realistic for perishables. |
 | Payroll-cut cap $\bar z$ | 0.10 | Up to 10% through reduced hours and no overtime, without layoffs. Forced to 0 in protect-payroll mode (§4). |
 | Outage share $\phi$ | 0.40 | 40% of sales rely on product lines from the primary distributor. |
@@ -335,6 +389,24 @@ or −2.85% of sales. It is a thin-margin retailer already under pressure, so sh
 from 100,000 to $100{,}000 - 26 \times 1{,}423.077 = 63{,}000$ by week 26 and stays above $C_{min}$. The figure is exact,
 because 26 weeks of interest is $600{,}000 \times 8\% / 2 = 24{,}000$ and 26 weeks of operating shortfall is $26 \times 500 = 13{,}000$.
 
+**Stock-out cost: justification (issue #103, proposal for finance-owner review).** The finance owner's decision was a
+stock-out / lost-margin cost, with a service level of about 1.5 weeks of cost of goods ($1.5 \times 0.65 \times 50{,}000 =
+48{,}750$) suggested as the starting point. Checked against $I_0 = 65{,}000$ and $I_{min} = 40{,}000$, 48,750 would leave
+$65{,}000 - 48{,}750 = 16{,}250$ of stock that the model treats as worthless. Every frame cut (at most 8,000 before this
+issue) and most optimizer cuts fit inside that, so purchase cuts would have stayed free cash, which is the flaw this issue
+fixes. $\sigma = 1$ puts the service level at $I_0$ = 2 weeks of cost of goods, which §10 already calls typical for a
+fresh-heavy grocer. The business is then running at its target stock, and any cut below it costs sales. Below the
+target, safety stock and shoppers switching to another item absorb most gaps, so not every missing dollar of stock is a
+lost sale. $\theta = 0.20$ means the share of sales lost is $\theta\,I^{svc}/S^{core} = 0.2 \times 65{,}000 / 50{,}000 =
+0.26$ times the share of cover that is missing: 10% short of cover loses 2.6% of sales, and at the hard floor $I_{min}$ ($1.23$ weeks of cover, "shelves look empty") 10% of sales. Once settled, each
+dollar of stock held below the service level costs $g\,\theta = 0.07$ of cash a week. So a permanent cut pays for itself
+only if the stock is not needed for more than about $1/0.07 \approx 14$ weeks, or if demand falls so that the service level
+falls with it. Golden cases A–C and every scenario without a purchase cut are unchanged (§9), because then $I_t = I_0 \ge I^{svc}_t$.
+*Known limits:* (1) a cut is permanent because the model has no restocking action, so a cut made for a temporary demand dip
+is short again once demand recovers (this matters for the CPI frame); (2) lost sales after week 26 are not counted, so a cut
+in the last weeks of the horizon looks cheaper than it is. The optimizer uses this end-of-horizon effect (it times cuts
+late, see `tests/test_optimizer.py`).
+
 ### Disruption costs (non-cash harm, on top of the cash effects in §3)
 
 Units differ by action type. The three yes/no actions carry a dollar-equivalent harm per decision. The three amount actions
@@ -344,13 +416,16 @@ save about 10,000. For a yes/no action, that is simply its fixed weight.
 | Weight | Action | Value | Harm at 10k | Why it ranks here |
 |---|---|---|---|---|
 | $c_y$ | Revolver draw | 0.01 per \$ drawn | 100 | Covering a cash gap is what the facility is for, and its interest is already in the cash path. This is a small charge for using up headroom. |
-| $c_v$ | Purchase cut | 0.05 per \$ cut | 500 | Thinner shelves and stock-out risk that the model does not capture. |
+| $c_v$ | Purchase cut | 0.05 per \$ cut | 500 | Thinner shelves and stock-out risk that the model does not capture. (Issue #103: the lost margin of stock below the service level is now in the cash path, and $c_u$ covers its goodwill harm; $c_v$ is kept unchanged as the harm of the order change itself.) |
 | $c_c$ | Defer non-critical capex | 1,000 per decision | 1,000 | Non-critical by definition, but maintenance risk builds up while it is deferred. |
 | $c_b$ | Use backup supplier | 2,500 per decision | 2,500 | Quality, consistency and supplier-relationship risk beyond the fee and premium. |
 | $c_e$ | Delay expansion | 5,000 per decision | 5,000 | Strategic cost: lost momentum and lease or landlord risk. |
+| $c_u$ | Stock below the service level | 0.01 per \$ of shortfall per week | 100 a week (1,000 for 10 weeks) | *Proposal for finance-owner review (issue #103).* Goodwill: shoppers who find gaps may shop elsewhere next time. The lost margin itself is already in the cash path ($g\,\theta = 0.07$ per \$ a week). It must be above 0 so the optimizer's shortfall $u_t$ equals the simulator's (§4.9). |
 | $c_z$ | Payroll cut | 5.00 per \$ of payroll cut | 50,000 | Worst lever: morale, turnover and service quality, and it hurts people. A 1,000 payroll cut counts as much harm as delaying the expansion, so cutting payroll beats delaying the expansion only for shortfalls under 1,000. |
 
 Ranking, least to most harmful: revolver draw < purchase cut < defer capex < backup supplier < delay expansion < payroll cut.
+$c_u$ is charged per week, so where a cut falls in this ranking depends on how long the stock stays short: a 10,000
+cut held 10 weeks costs $500 + 1{,}000 = 1{,}500$ of harm, more than deferring capex.
 
 **Sign-off:** ☑ Yaseen has reviewed §1–§4 and §8 assumptions (2026-11-12, issue #6) · ☐ Lead has reviewed §6–§7.
 
@@ -360,7 +435,8 @@ Ranking, least to most harmful: revolver draw < purchase cut < defer capex < bac
 
 This is a second fictional business, "Demo Bistro": a 12-person, single-location, full-service restaurant. It is
 **SYNTHETIC** (fixture `services/api/data/restaurant_business.json`, scenarios `services/api/data/scenarios_restaurant.json`).
-**No formula changed:** it runs through the same §1–§3 engine and §8 decision rule as the §10 grocer. Only the parameter
+**No formula changed** for this business (issue #103 added the §3 stock-out cost; the §10b values below keep it inactive
+for the restaurant, so every number in this section is unchanged): it runs through the same §1–§3 engine and §8 decision rule as the §10 grocer. Only the parameter
 values are different. They give the business a different shape: payroll is a large share of sales, there is about one
 week of perishable stock, card receipts settle in 1–2 days, suppliers are paid weekly, and the margin is thin. Public
 industry ratios are used only to make that shape realistic. The values are illustrative and describe no real company.
@@ -421,6 +497,8 @@ consistent median restaurant, so the opex value below is calibrated, not copied.
 | $C_{min}$ | `business.min_cash` | 15,000 | \$ | About 2 weeks of payroll ($2 \times 7{,}300 = 14{,}600$), the same rule as the grocer. | assumption: §10 rule applied |
 | $I_0$ | `business.inventory_0` | 6,800 | \$ at cost | One week (7 days) of food cost, $0.34 \times 20{,}000$, the top of the 5–7 days range. | [MarketMan]: "5-7 days worth of product on hand" |
 | $I_{min}$ | `business.min_inventory` | 4,000 | \$ at cost | About 4 days of food cost; below this the full menu cannot be served. It caps total purchase cuts at $I_0 - I_{min} = 2{,}800$. | assumption |
+| $\sigma$ | `business.service_level_share` | 0.5 | fraction of $I_0$ | *Proposal for finance-owner review (issue #103).* $I^{svc} = 0.5 \times 6{,}800 = 3{,}400$ at planned demand (3.5 days of food cost), below the hard floor $I_{min} = 4{,}000$. For this restaurant $I_{min}$ already marks where the menu breaks, so the floor binds before any stock-out cost: no feasible plan has $u_t > 0$ and every #109 number below is unchanged. Open question: a restaurant on one week of stock may lose covers before it reaches 4 days. | assumption: chosen to keep #109 unchanged |
+| $\theta$ | `business.stockout_lost_sales_rate` | 0.2 | 1/week | *Proposal for finance-owner review (issue #103).* Same as the grocer (§10); inactive here because of $\sigma$. | assumption: reused from §10 |
 | $\pi$ | `business.backup_premium` | 0.15 | fraction | Buying from a cash-and-carry or specialty supplier costs about 15% more than contract prices. | assumption |
 | $F_b$ | `business.backup_switch_fee` | 500 | \$ | Account set-up and delivery changes for a small single site. | assumption |
 | $\phi$ | `scenario_parameters.supplier_outage_dependent_share` | 0.60 | fraction | 60% of menu sales need proteins and produce that only the main broadline distributor delivers. | assumption |
@@ -433,6 +511,7 @@ consistent median restaurant, so the opex value below is calibrated, not copied.
 | $c_b$ | `optimizer_parameters.disruption_costs.backup_supplier_per_decision` | 2,500 | \$ | Reused from §10 unchanged. | assumption: reused from §10 |
 | $c_e$ | `optimizer_parameters.disruption_costs.delay_expansion_per_decision` | 5,000 | \$ | Reused from §10 unchanged (no expansion here). | assumption: reused from §10 |
 | $c_z$ | `optimizer_parameters.disruption_costs.payroll_cut_per_dollar` | 5.00 | per \$ | Reused from §10 unchanged: payroll is still the worst lever. | assumption: reused from §10 |
+| $c_u$ | `optimizer_parameters.disruption_costs.stock_shortfall_per_dollar_week` | 0.01 | per \$ per week | *Proposal for finance-owner review (issue #103).* Reused from §10. | assumption: reused from §10 |
 
 `tests/test_restaurant_business.py` parses this table and checks every value against the fixture, so the document and the
 data cannot drift apart.

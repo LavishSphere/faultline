@@ -9,6 +9,7 @@ Decisions (one variable vector, §4):
     y_t, q_t >= 0                     revolver draw and repayment, week t
     z_t in [0, z-bar]                 payroll reduction share, week t (upper bound 0 in protect-payroll mode)
     B_t, C_t, I_t                     revolver balance, cash and inventory at the end of week t
+    u_t >= 0                          inventory shortfall below the service level, week t (issue #103)
     mu                                auxiliary: minimum cash
 
 §3 as equality rows, for t = 1..T (every term is linear in the decisions once the scenario fixes m_t, lambda_t, r_t):
@@ -16,7 +17,7 @@ Decisions (one variable vector, §4):
         = -W_t - O_t - J_t - A_t - K_t - E_t
     B_t - B_{t-1} - y_t + q_t = 0
     I_t - I_{t-1} + v_t = 0
-  with S_t = S^core_t (1 - lambda_t (1 - x_b)) + (1 - x_e) X_t, R_t = a S_t + (1 - a) S_{t-1},
+  with S_t = S^core_t (1 - lambda_t (1 - x_b)) + (1 - x_e) X_t - theta u_t, R_t = a S_t + (1 - a) S_{t-1},
   P_t = (1 - g) S_t - v_t + pi (1 - g) S^core_t lambda_t x_b, J^R_t = B_{t-1} (r_t + s_R) / 52, and
   S_0, P_{1-L_p}..P_0, C_0, B_0, I_0 the given pre-horizon constants.
 
@@ -24,10 +25,14 @@ Decisions (one variable vector, §4):
     1. C_t >= C_min    2. 0 <= B_t <= B-bar    3. I_t >= max(I_min, 0)    4. debt service J_t + A_t is a fixed outflow
     5. protect payroll: z_t <= 0    6. mu <= C_t    7. B_T <= B_0
     8. purchases non-negative: P_t >= 0, i.e. v_t <= (1 - g) S_t + pi (1 - g) S^core_t lambda_t x_b
-  (8 and the 0 in 3 are the §3 physical rules simulate() enforces: no negative purchases or stock.)
+    9. service-level shortfall: u_t >= I^svc_t - I_t with I^svc_t = sigma I_0 m_t, u_t >= 0
+   10. sales non-negative: S_t >= 0
+  (8, 10 and the 0 in 3 are the §3 physical rules simulate() enforces: no negative purchases, sales or stock.)
 
 Objective (minimize disruption, tie-break toward more cash):
-    c_b x_b + c_c x_c + c_e x_e + c_v sum_t v_t + c_y sum_t y_t + c_z sum_t z_t W_t - epsilon mu
+    c_b x_b + c_c x_c + c_e x_e + c_v sum_t v_t + c_y sum_t y_t + c_z sum_t z_t W_t + c_u sum_t u_t - epsilon mu
+  c_u > 0 makes u_t = max(0, I^svc_t - I_t) at the optimum (a larger u_t only costs harm and cash), so the solver's
+  stock-out lost sales theta u_t equal the ones simulate() computes.
 
 Rules: pure functions only. No I/O, no randomness, no LLM calls, no clock. Dollars are plain floats and are never
 rounded here (round only for display). The returned cash path is the solver's C_t; optimize() re-simulates the chosen
@@ -86,6 +91,9 @@ class DisruptionCosts(_Model):
     backup_supplier_per_decision: NonNeg = 2_500.0  # c_b
     delay_expansion_per_decision: NonNeg = 5_000.0  # c_e
     payroll_cut_per_dollar: NonNeg = 5.0  # c_z, per $ of payroll cut (z_t W_t)
+    # c_u, per $ of inventory shortfall per week (issue #103; proposal for finance-owner review). Must be > 0 so the
+    # shortfall variable u_t is tight (see the module docstring).
+    stock_shortfall_per_dollar_week: Annotated[float, Field(gt=0.0)] = 0.01
 
 
 class OptimizerSettings(_Model):
@@ -193,13 +201,15 @@ def _var(j: int, coef: float = 1.0) -> _Affine:
 
 
 class _Index:
-    """Positions in the single variable vector: x_b, x_c, x_e, then v, y, q, z, B, C, I (T each), then mu."""
+    """Positions in the single variable vector: x_b, x_c, x_e, then v, y, q, z, B, C, I, u (T each), then mu."""
+
+    _WEEKLY = ("v", "y", "q", "z", "B", "C", "I", "u")
 
     def __init__(self, T: int) -> None:
         self.T = T
         self.xb, self.xc, self.xe = 0, 1, 2
-        self._base = {name: 3 + k * T for k, name in enumerate(("v", "y", "q", "z", "B", "C", "I"))}
-        self.mu = 3 + 7 * T
+        self._base = {name: 3 + k * T for k, name in enumerate(self._WEEKLY)}
+        self.mu = 3 + len(self._WEEKLY) * T
         self.n = self.mu + 1
 
     def __call__(self, name: str, t: int) -> int:
@@ -237,12 +247,16 @@ class _Problem:
         self.W = W
 
         # §2-§3 affine pieces. S[t] for t = 0..T (S[0] is the constant S_0); P[k] for k = 1..T.
+        # Stock-out (§3, issue #103): I^svc_t = sigma I_0 m_t is scenario data; S_t loses theta u_t.
+        theta = params.stockout_lost_sales_rate
         S: list[_Affine] = [_Affine(params.sales_0)]
         P: list[_Affine] = [_Affine()]  # placeholder at k = 0; pre-horizon P values come from prior_purchases
+        I_svc: list[float] = []
         for t in range(1, T + 1):
             core = m[t - 1] * base[t - 1]
             lost = core * lam[t - 1]
-            S_t = _Affine(core - lost + X[t - 1], {ix.xb: lost, ix.xe: -X[t - 1]})
+            I_svc.append(params.service_level_share * params.inventory_0 * m[t - 1])
+            S_t = _Affine(core - lost + X[t - 1], {ix.xb: lost, ix.xe: -X[t - 1], ix("u", t): -theta})
             S.append(S_t)
             premium = _var(ix.xb, params.backup_premium * (1.0 - g) * lost)
             P.append(S_t.scale(1.0 - g) - _var(ix("v", t)) + premium)
@@ -282,6 +296,8 @@ class _Problem:
             add_row(_var(ix("I", t)) - I_prev + _var(ix("v", t)), 0.0, 0.0)  # §3 inventory I_t = I_{t-1} - v_t
             add_row(_var(ix.mu) - _var(ix("C", t)), -np.inf, 0.0)  # §4.6 mu <= C_t
             add_row(P[t], 0.0, np.inf)  # §4.8 P_t >= 0: purchases cannot be negative (MATH_MODEL §3/§4)
+            add_row(_var(ix("u", t)) + _var(ix("I", t)), I_svc[i], np.inf)  # §4.9 u_t >= I^svc_t - I_t
+            add_row(S[t], 0.0, np.inf)  # §4.10 S_t >= 0: sales cannot be negative (MATH_MODEL §3)
             D -= A[i]  # D_{t+1} = D_t - A_t
 
         A_mat = np.zeros((len(rows), ix.n))
@@ -317,6 +333,7 @@ class _Problem:
             c[ix("v", t)] = costs.purchase_cut_per_dollar
             c[ix("y", t)] = costs.revolver_draw_per_dollar
             c[ix("z", t)] = costs.payroll_cut_per_dollar * W[t - 1]
+            c[ix("u", t)] = costs.stock_shortfall_per_dollar_week  # c_u (§4, issue #103)
         self.epsilon = settings.tie_break_epsilon
         c[ix.mu] = -settings.tie_break_epsilon
         self.c = c

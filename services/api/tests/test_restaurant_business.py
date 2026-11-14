@@ -147,7 +147,7 @@ def _resolve(path: str):
 
 def test_section_10b_table_matches_fixture():
     rows = _section_10b_rows()
-    assert len(rows) == 34
+    assert len(rows) == 37  # 34 from issue #109 + sigma, theta, c_u from issue #103
     for field, cell in rows.items():
         assert float(cell.replace(",", "")) == pytest.approx(float(_resolve(field)), abs=1e-12), field
 

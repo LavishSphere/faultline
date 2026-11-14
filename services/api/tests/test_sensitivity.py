@@ -255,9 +255,10 @@ def test_out_of_range_value_is_reported_infeasible_not_dropped():
 
 
 def test_run_rejected_by_simulate_is_reported_infeasible():
-    # A week-1 purchase cut of 30,000 is feasible at base (P_1 = 32,500 - 30,000 = 2,500), but with sales 10% lower
-    # P_1 = 0.65 x 45,000 - 30,000 = -750 < 0, which simulate() refuses.
-    plan = ActionPlan(purchase_cut=[30_000.0] + [0.0] * 25)
+    # A week-1 purchase cut of 27,000 leaves stock 27,000 below the 65,000 service level, so 0.20 x 27,000 = 5,400 of
+    # sales are lost (stock-out cost, issue #103). At base P_1 = 0.65 x (50,000 - 5,400) - 27,000 = 1,990 >= 0, but with
+    # sales 10% lower P_1 = 0.65 x (45,000 - 5,400) - 27,000 = -1,260 < 0, which simulate() refuses.
+    plan = ActionPlan(purchase_cut=[27_000.0] + [0.0] * 25)
     result = tornado(BUSINESS, ScenarioShock(), plan=plan)
     e = entry(result, "store_sales")
     assert e.status == "INFEASIBLE" and e.swing is None

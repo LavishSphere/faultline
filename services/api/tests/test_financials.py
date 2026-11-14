@@ -118,6 +118,82 @@ def test_golden_case_c_rate_shock_from_week_2():
     assert res.cash[2] == approx(95_269.231)
 
 
+# ---------------------------------------------------------------- stock-out cost (§3, issue #103)
+
+# §10 stock-out parameters: service level sigma = 1 (I^svc_t = I_0 m_t), theta = 0.20 of sales per $ short per week.
+STOCKOUT = dict(inventory_0=65_000.0, service_level_share=1.0, stockout_lost_sales_rate=0.2)
+
+
+@pytest.mark.parametrize("case", ["A", "B", "C"])
+def test_golden_cases_unchanged_with_section_10_stockout_cost(case):
+    """MATH_MODEL §9 'Unchanged by issue #103': no case cuts purchases, so I_t = I_0 = 65,000, and the service level
+    I^svc_t = I_0 m_t is 65,000 (52,000 in case B week 2, m_2 = 0.8). So u_t = 0 and every cash value is as before."""
+    shock = {
+        "A": NO_SHOCK,
+        "B": ScenarioShock(name="B", demand=DemandShock(delta=0.2, start_week=2, end_week=2)),
+        "C": ScenarioShock(name="C", rate=RateShock(delta_rate=0.02, start_week=2)),
+    }[case]
+    expected = {
+        "A": (98_576.923, 97_153.846, 95_730.769),
+        "B": (98_576.923, 89_153.846, 92_230.769),
+        "C": (98_576.923, 96_923.077, 95_269.231),
+    }[case]
+    res = simulate(golden_params(**STOCKOUT), shock, NO_ACTION)
+    assert res.cash[:3] == [approx(c) for c in expected]
+    assert res.service_level_inventory[:3] == [approx(65_000.0), approx(52_000.0 if case == "B" else 65_000.0),
+                                               approx(65_000.0)]
+    assert res.inventory_shortfall == [0.0] * T
+    assert res.stockout_lost_sales == [0.0] * T
+    assert res.cash == simulate(golden_params(), shock, NO_ACTION).cash  # identical to the stock-out-free run
+
+
+def test_stockout_hand_check_one_week_cut():
+    """Cut 1,000 in week 1 (case A inputs, L_p = 1, §10 stock-out parameters). Inventory 64,000 from week 1, 1,000 below
+    the 65,000 service level, so l_t = 0.20 x 1,000 = 200 of sales lost every week:
+      S_t = 50,000 - 200 = 49,800;  R_1 = 0.8 x 49,800 + 0.2 x 50,000 = 49,840;  R_t = 49,800 from week 2.
+      P_1 = 0.65 x 49,800 - 1,000 = 31,370 (paid in week 2); P_t = 32,370 from week 2 (paid from week 3).
+      C_1 = 100,000 + 49,840 - 32,500 - 18,923.077 = 98,416.923 (the cut is paid for only in week 2)
+      C_2 = C_1 + 49,800 - 31,370 - 18,923.077 = 97,923.846
+      C_3 = C_2 + 49,800 - 32,370 - 18,923.077 = 96,430.769
+    Against case A (98,576.923 / 97,153.846 / 95,730.769): -160, +770, +700. From week 3 the cut's 1,000 has been
+    released and each week loses 0.35 x 200 = 70 of margin, so the gain shrinks by 70 a week."""
+    plan = ActionPlan(purchase_cut=[1_000.0] + [0.0] * (T - 1))
+    res = simulate(golden_params(**STOCKOUT), NO_SHOCK, plan)
+    assert res.inventory[:3] == [approx(64_000.0)] * 3
+    assert res.inventory_shortfall[:3] == [approx(1_000.0)] * 3
+    assert res.stockout_lost_sales[:3] == [approx(200.0)] * 3
+    assert res.sales[:3] == [approx(49_800.0)] * 3
+    assert res.lost_sales[:3] == [approx(200.0)] * 3  # S^dem - S includes stock-out lost sales
+    assert res.receipts[:3] == [approx(49_840.0), approx(49_800.0), approx(49_800.0)]
+    assert res.purchases[:2] == [approx(31_370.0), approx(32_370.0)]
+    assert res.cash[:3] == [approx(98_416.923), approx(97_923.846), approx(96_430.769)]
+
+
+def test_stockout_shortfall_falls_with_demand():
+    """The service level follows the demand multiplier: with a 10% demand drop in weeks 2-3, I^svc = 65,000 x 0.9 =
+    58,500, so after a 5,000 cut in week 1 (stock 60,000) the business is short only in the weeks at full demand
+    (5,000 short -> 1,000 of sales lost)."""
+    shock = ScenarioShock(name="dip", demand=DemandShock(delta=0.1, start_week=2, end_week=3))
+    res = simulate(golden_params(**STOCKOUT), shock, ActionPlan(purchase_cut=[5_000.0] + [0.0] * (T - 1)))
+    assert res.service_level_inventory[:4] == [approx(65_000.0), approx(58_500.0), approx(58_500.0), approx(65_000.0)]
+    assert res.inventory_shortfall[:4] == [approx(5_000.0), 0.0, 0.0, approx(5_000.0)]
+    assert res.stockout_lost_sales[:4] == [approx(1_000.0), 0.0, 0.0, approx(1_000.0)]
+
+
+def test_stockout_lost_sales_cannot_make_sales_negative():
+    """§3 physical rule S_t >= 0: an extreme theta that would wipe out more than the week's sales is rejected."""
+    params = golden_params(inventory_0=1.0, service_level_share=100_000.0, stockout_lost_sales_rate=1.0)
+    with pytest.raises(ValueError, match="sales cannot be negative"):
+        simulate(params, NO_SHOCK, NO_ACTION)
+
+
+def test_stockout_cost_is_off_by_default():
+    params = golden_params()  # sigma = theta = 0 unless a fixture sets them
+    res = simulate(params, NO_SHOCK, NO_ACTION)
+    assert params.service_level_share == 0.0 and params.stockout_lost_sales_rate == 0.0
+    assert res.stockout_lost_sales == [0.0] * T
+
+
 # ---------------------------------------------------------------- other hand-checked cases
 
 
@@ -349,11 +425,14 @@ def test_amortization_above_principal_is_rejected():
 # These use the §10 demo business (demo_business.json): base sales 18k + 17k + 15k = 50,000/wk, g = 0.35,
 # I_0 = 65,000, no shock. Normal purchases P_t = (1 - g) S_t - v_t = 0.65 * 50,000 - v_t = 32,500 - v_t,
 # and inventory I_t = I_(t-1) - v_t = 65,000 - (cuts so far).
+# The stock-out cost (issue #103) is switched off here (theta = 0): these tests check the physical rules, and with it on
+# the lost sales would also lower purchases, changing the arithmetic above. The stock-out tests are further up.
 
 
 def _demo_params() -> BusinessParams:
     path = Path(__file__).resolve().parent.parent / "data" / "demo_business.json"
-    return BusinessParams.model_validate(json.loads(path.read_text())["business"])
+    params = BusinessParams.model_validate(json.loads(path.read_text())["business"])
+    return params.model_copy(update={"stockout_lost_sales_rate": 0.0})
 
 
 def test_purchase_cut_above_purchases_is_rejected_in_week_1():
