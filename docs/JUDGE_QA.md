@@ -8,7 +8,7 @@ How to use it:
 - **Backed by** points to the code, test or doc on `main` (commit `4a1f2c2`, 2026-11-14) that makes the answer true.
 - Anything not merged when this was written is marked **PENDING: #N**. If it is still pending on the day, say "that is
   in review" and do not describe it as working.
-- Finance questions about the demo business and the bad quarter are in `docs/DEMO_SCRIPT.md` (PENDING: #72).
+- Finance questions about the demo business and the bad quarter are in `docs/DEMO_SCRIPT.md` (on `main` via #72).
 - Never answer with a number that is not on screen or in a file below.
 
 ---
