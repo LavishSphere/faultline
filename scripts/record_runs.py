@@ -11,8 +11,10 @@ Lead-only procedure, run once the reviewed case files and sealed outcomes are on
 
 Order of operations (each step refuses rather than guessing):
 
-1. Pre-flight, before any model call: refuse if the configured prediction store has ANY reveal in its audit log
-   (no peeking), or already holds a forecast for a committed case x variant (other than this run's, on
+1. Pre-flight, before any model call: refuse if the configured prediction store has a counted reveal in its audit
+   log (no peeking; ``core.evaluator.first_counted_reveal``, the scorecard's own ``late`` rule: only a reveal
+   logged with sealed provenance SYNTHETIC of a committed SYNTHETIC case whose every stored forecast froze
+   ``synthetic=True`` is exempt), or already holds a forecast for a committed case x variant (other than this run's, on
    ``--resume``); refuse if a case's curated ``contamination_flag`` is weaker than the one derived from the
    model card (``agents.model_cards.contamination_flag``, model cutoff vs. the case horizon end
    ``as_of + horizon_days``); a dry run records the disagreement instead.
@@ -68,6 +70,7 @@ from agents.provider import (  # noqa: E402
 )
 from config import get_settings  # noqa: E402
 from core import store as store_module  # noqa: E402
+from core.evaluator import first_counted_reveal  # noqa: E402
 from core.store import HashMismatch, PredictionStore  # noqa: E402
 from core.temporal_gate import PROMPT_VARIANTS, EvidenceStore, MarketNotAvailable  # noqa: E402
 from models import ErrorCode, Provenance  # noqa: E402
@@ -256,11 +259,14 @@ def _contamination(cases: EvidenceStore, model_tag: str | None) -> list[dict]:
 
 
 def _preflight(store: PredictionStore, cases: EvidenceStore, variants, resume_rows: dict, enforce, contamination):
-    first = store.first_reveal_any()
+    # The evaluator's own rule (#118): only a reveal LOGGED as SYNTHETIC of a committed SYNTHETIC case whose every
+    # stored forecast froze synthetic=True (e.g. the fallback revealed on stage) does not count.
+    first = first_counted_reveal(store, cases)
     if first is not None:
         raise Refused(
             f"the prediction store already has a reveal (audit_log seq {first.seq}); an official run needs every "
-            "forecast saved before any outcome is revealed. Use a fresh store."
+            "forecast saved before any outcome is revealed (only logged-SYNTHETIC reveals of committed synthetic "
+            "cases are exempt). Use a fresh store."
         )
     clashes = []
     for cid in cases.case_ids():
@@ -393,7 +399,7 @@ async def _forecast_all(provider, cases, store, variants, run_dir, manifest, don
             except MarketNotAvailable:
                 manifest["skipped"].append({"event_id": cid, "variant": variant, "reason": "market_not_available"})
                 continue
-            if store.first_reveal_any() is not None:
+            if first_counted_reveal(store, cases) is not None:
                 raise Refused("a reveal appeared in the store during the run; stopping (nothing more is saved)")
             try:
                 result = await provider.forecast(mi.prompt, mi.evidence_ids)

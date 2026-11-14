@@ -76,6 +76,7 @@ from core.evaluator import (
 from core.store import PredictionStore, ScoringContext, model_prompt_problems, record_sha256
 from core.temporal_gate import EvidenceStore, SealedDataError
 from errors import FaultlineError
+from markets.base import MARKET_LABEL, SYNTHETIC_VENUE
 from models import OUTCOME_FIELD_PATTERN, ApiError, ErrorCode, Prediction, Provenance, Sha256Hex
 from routes import NOT_AVAILABLE, CodedRoute, RouteError, error_responses
 from routes.replay import require_admin_in_public_mode
@@ -389,6 +390,15 @@ def scorecard_problems(card: Scorecard) -> list[str]:
         p.append("a synthetic case-set card is never OFFICIAL")
     if card.market_label != market_label_for([ref for e in card.per_event for ref in e.market_refs]):
         p.append("market_label does not match the per-event market refs (synthetic prices must say SYNTHETIC)")
+    if card.provenance == Provenance.REAL_HISTORICAL or card.case_set == "real":
+        # A real card's baselines are real-venue quotes only: the gate refuses a synthetic quote on a real case.
+        synthetic_refs = sorted(
+            {e.event_id for e in card.per_event if any(r.startswith(f"{SYNTHETIC_VENUE}:") for r in e.market_refs)}
+        )
+        if synthetic_refs:
+            p.append(f"a real card cannot have synthetic: market refs (events {synthetic_refs})")
+        if card.market_label != MARKET_LABEL:
+            p.append(f"a real card cannot carry a synthetic market_label (must be {MARKET_LABEL!r})")
     for e in card.per_event:
         if set(e.brier) != set(forecasters) or set(e.log_loss) != set(forecasters):
             p.append(f"{e.event_id}: per-event scores must cover exactly {forecasters}")
@@ -452,6 +462,22 @@ def scorecard_problems(card: Scorecard) -> list[str]:
     if card.verdict != verdict:
         p.append(f"verdict must be {verdict!r} (CI upper bound {c.ci_high})")
     return p
+
+
+def cases_sha256_problems(record: RecordedScorecard) -> list[str]:
+    """``cases_sha256`` must agree with the card's case set (#118).
+
+    ``compute_and_record`` lists exactly the committed cases of the card's set (``event_case_sets``), and every
+    such case is a key of the card at its cutoff, so each listed case is either scored (``per_event``) or excluded
+    (``exclusions``). A listed case that is in neither belongs to the other set (or to no card) and is refused.
+    The other direction (every committed case of the set is listed) needs the case files and is not checked here.
+    """
+    card = record.scorecard
+    in_card = {e.event_id for e in card.per_event} | {x.event_id for x in card.exclusions}
+    stray = sorted(set(record.cases_sha256) - in_card)
+    if not stray:
+        return []
+    return [f"cases_sha256 lists case(s) that are not in this {case_set_of(card)} case-set card: {stray}"]
 
 
 def _committed_problems(record: RecordedScorecard, file_name: str, runs_root: Path) -> list[str]:
@@ -543,6 +569,7 @@ def verify_snapshot(
     if DRY_RUN_AGENT_MODEL in record.agent_models:
         problems.append(f"{DRY_RUN_AGENT_MODEL} (dry-run mock) is never a scored model")
     problems += scorecard_problems(record.scorecard)
+    problems += cases_sha256_problems(record)
     if origin == "committed" and not problems:
         if file_name is None or runs_root is None:
             problems.append("a committed snapshot needs its file name and the runs folder to be verified")
