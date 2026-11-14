@@ -1,0 +1,32 @@
+{
+  "entries": [
+    {
+      "bytes": 24784,
+      "collected_at": "2026-11-13T17:57:49.730503+00:00",
+      "endpoint": "kalshi.historical_candlesticks",
+      "http_status": 200,
+      "notes": {
+        "collector": "scripts/collect_market_snapshots.py",
+        "data_tier": "historical",
+        "kalshi_market_settled_cutoff": "2026-09-13T00:00:00+00:00",
+        "plan_group": "FOMC 2025-12",
+        "plan_leg": "cut 25",
+        "points_in_response_set": 73,
+        "reference_close": "2025-12-10T18:59:00+00:00",
+        "venue_scheduled_close": "2025-12-10T18:59:00+00:00",
+        "window_end": "2025-12-03T00:00:00+00:00",
+        "window_rule": "T-7d: end = 00:00Z of (reference_close - 7d), lookback 3d",
+        "window_start": "2025-11-30T00:00:00+00:00"
+      },
+      "params": {
+        "end_ts": 1764720000,
+        "period_interval": 60,
+        "start_ts": 1764460800
+      },
+      "path": "kalshi/KXFEDDECISION-25DEC-C25/20261113T175749730503Z.json",
+      "provenance": "REAL HISTORICAL",
+      "sha256": "fe569338850d942547941400d71b9215a5f9e909d3c696d6fed51ca3bed10025",
+      "url": "https://external-api.kalshi.com/trade-api/v2/historical/markets/KXFEDDECISION-25DEC-C25/candlesticks"
+    }
+  ]
+}

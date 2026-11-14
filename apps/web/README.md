@@ -22,6 +22,28 @@ It is read at build/dev start. The browser calls it directly, so:
 
 The app has no API routes or server actions.
 
+## End-to-end smoke test (Playwright)
+
+```bash
+cd apps/web
+npx playwright install chromium --only-shell   # once per Playwright version (pinned in package.json)
+npm run e2e
+```
+
+`npm run e2e` starts the real API (`uvicorn main:app` in `services/api`, port 8799) and a static export of this app
+built against it (`FAULTLINE_STATIC_EXPORT=1`, `NEXT_PUBLIC_API_BASE=http://127.0.0.1:8799`, served from `out/` on
+port 3799; CORS via `FAULTLINE_WEB_ORIGIN`), then runs `e2e/smoke.spec.ts` in Chromium:
+
+- CASCADE: the baseline minimum cash on screen equals `POST /api/simulate` for the same request body; one slider move
+  sends exactly one request and the readout changes to the API's new value;
+- CASCADE with the API unreachable: readouts show NOT AVAILABLE and inputs are disabled;
+- RESEARCH: at cutoff `2026-07-01T00:00:00Z` the not-yet-public count equals the API's (2 for the curated dataset).
+
+Expected figures are fetched from the API inside the test, never written into it. Python comes from
+`FAULTLINE_E2E_PYTHON`, else `services/api/.venv` (`make setup`), else `python3`. Ports: `FAULTLINE_E2E_API_PORT`,
+`FAULTLINE_E2E_WEB_PORT`. Each run rebuilds `out/` (the API base is inlined at build time). Traces of failed tests
+land in `node_modules/.cache/faultline-e2e/`. CI runs this as the `e2e` job.
+
 ## Screens
 
 `/rewind` → `/decision` → `/cascade` → `/reveal` → `/research`, grouped under THEN / DECISION / REVEAL.

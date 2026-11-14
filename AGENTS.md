@@ -7,6 +7,8 @@ Sunday 2026-11-15). Sources of truth:
 - **docs/SPEC.md**: product spec. Its principles (§1) are non-negotiable.
 - **docs/MATH_MODEL.md**: the formal math (cash recurrence, optimizer MILP, scoring). Code must match it exactly.
 - **docs/WORKFLOW.md**: who does what, branches, PRs, review.
+- **docs/HACKATHON.md**: deadlines (practice demos **Sat Nov 14, 1pm**; code freeze **Sun Nov 15, 11am**), judging criteria
+  (incl. the **+2 AI-alignment bonus**), and sponsors (Anthropic, Link Ventures, Tavily). Read it; plan against it.
 
 ## 0. First thing in every session (any agent)
 ```bash

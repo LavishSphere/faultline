@@ -16,7 +16,7 @@ Works for partners and leads. It never creates work: it only picks up issues a l
 - Keep an issue only if **all** of these hold:
   - its `author.login` is in `leads`;
   - **it isn't blocked**: every `#N` on its `**Starts after:**` line is closed or merged. Check with
-    `gh issue view N --json state` (PR numbers work too; merged means `CLOSED`). List blocked ones as "waiting on #N";
+    `gh issue view N --json state` (PR numbers work too; a merged PR reports `MERGED`, and both `CLOSED` and `MERGED` count as done). List blocked ones as "waiting on #N";
   - nobody is already on it: no open PR says `Closes #<it>` (`gh pr list --search "<it> in:body" --state open`).
 
 ## 2. Plan: no file overlap, at most 3 at once
