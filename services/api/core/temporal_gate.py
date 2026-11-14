@@ -327,12 +327,12 @@ def _pretty(obj: Any) -> str:
     return json.dumps(obj, indent=2, sort_keys=True, ensure_ascii=False, allow_nan=False)
 
 
-def _allowed_ids_block(evidence_ids: list[str], variant: PromptVariant) -> list[str]:
+def _allowed_ids_block(evidence_ids: list[str], market_ids: list[str]) -> list[str]:
     """The explicit id list (replay-v2, pre-run format fix of 2026-11-14, EVALUATION_PROTOCOL §8).
 
     Rehearsal finding: llama3.1:8b cited the JSON key as a label ("(evidence_id: x)") and, with market input, put
-    a quote's market_id into evidence_ids. Built only from the gated evidence ids, so it adds nothing the
-    evidence JSON above does not already show."""
+    a quote's market_id into evidence_ids. Built only from the gated evidence ids and the market_ids of the quotes
+    already shown above (empty for agent_only), so it adds nothing the JSON above does not already show."""
     lines = [
         "Allowed evidence ids (evidence_ids may contain only these, copied exactly): "
         + json.dumps(evidence_ids, ensure_ascii=False)
@@ -341,8 +341,11 @@ def _allowed_ids_block(evidence_ids: list[str], variant: PromptVariant) -> list[
         lines.append(
             f"In the rationale, cite an id in parentheses exactly as listed, with no label, e.g. ({evidence_ids[0]})."
         )
-    if variant == "agent_plus_market":
-        lines.append("A market_id is not an evidence id: never put a market_id in evidence_ids or in a citation.")
+    if market_ids:
+        lines.append(
+            "A market_id is not an evidence id: never put a market_id in evidence_ids or in a citation (market_ids "
+            "here: " + json.dumps(market_ids, ensure_ascii=False) + ")."
+        )
     return lines
 
 
@@ -366,7 +369,9 @@ def _render(snap: GatedSnapshot, variant: PromptVariant, payload: dict[str, list
     if variant == "agent_plus_market":
         synthetic = any(q.get("provenance") == "SYNTHETIC" for q in payload["market_quotes"])
         parts += ["", _SYNTHETIC_MARKET_HEADER if synthetic else _MARKET_HEADER, _pretty(payload["market_quotes"])]
-    parts += ["", *_allowed_ids_block([e["evidence_id"] for e in payload["evidence"]], variant), "", _ANSWER_FORMAT]
+    evidence_ids = [e["evidence_id"] for e in payload["evidence"]]
+    market_ids = list(dict.fromkeys(str(q["market_id"]) for q in payload["market_quotes"]))
+    parts += ["", *_allowed_ids_block(evidence_ids, market_ids), "", _ANSWER_FORMAT]
     return "\n".join(parts) + "\n"
 
 

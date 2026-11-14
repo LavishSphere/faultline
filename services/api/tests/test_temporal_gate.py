@@ -631,6 +631,10 @@ def test_prompt_lists_exactly_the_gated_evidence_ids_replay_v2():
                 assert withheld not in mi.prompt
             assert f"e.g. ({expected[0]})" in mi.prompt
             assert ("never put a market_id in evidence_ids" in mi.prompt) == (variant == "agent_plus_market")
+            shown = json.loads(mi.snapshot_json)["market_quotes"]
+            if shown:
+                (line,) = [ln for ln in mi.prompt.splitlines() if ln.startswith("A market_id is not an evidence id")]
+                assert json.dumps(list(dict.fromkeys(str(q["market_id"]) for q in shown))) in line
 
 
 def test_every_committed_prompt_lists_its_offered_ids():

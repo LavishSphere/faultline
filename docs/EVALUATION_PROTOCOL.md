@@ -288,7 +288,8 @@ Changes:
   - `Allowed evidence ids (evidence_ids may contain only these, copied exactly): [...]`. The list holds exactly
     the gated `ModelInput.evidence_ids`, so a withheld item's id is never shown (`test_temporal_gate`).
   - A citation example with no label, `e.g. (<first offered id>)`.
-  - For `agent_plus_market` only: "A market_id is not an evidence id".
+  - For `agent_plus_market` only: "A market_id is not an evidence id", naming the market_ids of the quotes
+    already shown in that prompt.
 - **Repair footer (`agents.local_ollama.REPAIR_INSTRUCTION`).** `evidence_ids` must come from the "Allowed
   evidence ids" line, and a market_id is not an evidence id. The footer is still fixed text, so
   `is_repair_instruction` and the store's repair check are unchanged.
