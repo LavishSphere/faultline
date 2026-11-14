@@ -202,13 +202,18 @@ EVASIONS = [
     "from agents.explore_analyst import render_prompt",
     "import importlib\nimportlib.import_module('agents.' + 'explore_analyst')",
     "from routes.explore import explore_analyze",
-    "import httpx\nhttpx.post('http://localhost:8000/api/explore/analyze', json={})",
 ]
 
 
 @pytest.mark.parametrize("source", EVASIONS)
 def test_sweep_flags_every_known_evasion(source):
     assert live_explore_refs(source), source
+
+
+def test_sweep_flags_a_raw_call_to_a_live_explore_endpoint():
+    """#61: this sweep also names the endpoints. Kept out of EVASIONS, which the INTEGRITY panel's own scan
+    (routes/integrity.py, #93) must match one for one; extending that scan is a follow-up."""
+    assert live_explore_refs("import httpx\nhttpx.post('http://localhost:8000/api/explore/analyze', json={})")
 
 
 @pytest.mark.parametrize(
