@@ -220,8 +220,9 @@ export function CascadeWorkbench() {
   const applyPreset = (preset: ScenarioPreset) => {
     if (horizon === null) return;
     setControls((c) => controlsFromShock(preset.shock, horizon, c));
+    // Setting `mode` changes `scenario`, hence both request keys: /api/simulate and /api/optimize (#56) re-run through
+    // their usual debounced effects. A plan applied for the previous shock no longer matches `optKey`, so it is dropped.
     setMode({ kind: "preset", preset, touched: new Set() });
-    // TODO(#56): also run POST /api/optimize (+ Protect payroll) for the new shock once #47/#56 land.
   };
 
   const reset = () => {
@@ -528,6 +529,8 @@ function PresetPicker({
   const presets = scenarios.kind === "ok" ? scenarios.data.presets : [];
   const active = mode.kind === "preset" ? mode.preset : null;
   const edited = mode.kind === "preset" && mode.touched.size > 0;
+  /** A Judge's Challenge (#123) is not a catalog preset; its description is already shown in the challenge block. */
+  const challenge = active !== null && !presets.some((p) => p.id === active.id);
   let status: string;
   if (scenarios.kind === "loading") status = "GET /api/scenarios · request in flight";
   else if (scenarios.kind === "error")
@@ -553,7 +556,7 @@ function PresetPicker({
           className="w-full min-w-0 rounded-md border border-line-strong bg-bg px-2.5 py-1.5 font-mono text-xs text-text disabled:cursor-not-allowed disabled:opacity-60"
         >
           <option value="">Custom (sliders below)</option>
-          {active && !presets.some((p) => p.id === active.id) ? (
+          {active && challenge ? (
             <option value={active.id}>Judge&apos;s Challenge: {active.name}</option>
           ) : null}
           {presets.map((p) => (
@@ -566,7 +569,7 @@ function PresetPicker({
       <p className="font-mono text-[10px] text-muted">{status}</p>
       {active ? (
         <p className="text-xs leading-snug text-text-2">
-          {active.rationale ?? "No rationale provided."}{" "}
+          {challenge ? null : <>{active.rationale ?? "No rationale provided."} </>}
           <span className="text-muted">
             {edited
               ? "Edited: only the sliders you moved override the preset; every other field is sent exactly as served."

@@ -21,8 +21,8 @@ type State = { kind: "loading" } | { kind: "ok"; data: JudgeChallengesResponse }
  * that response (SIMULATED). "Surprise me" steps through the API's fixed `surprise_order` and shows the pick number:
  * deterministic, no hidden randomness.
  *
- * TODO(#56): when #47/#56 land, the workbench's pick handler should also run POST /api/optimize with the Protect
- * payroll switch for the chosen shock. Not wired here.
+ * The workbench's `applyPreset` only changes its shock state; POST /api/optimize (with the Protect payroll switch, #56)
+ * follows through the same debounced path the sliders use. This component sends no request of its own besides the GET.
  */
 export function JudgeChallenge({
   activeId,
