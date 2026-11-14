@@ -167,7 +167,7 @@ def data_dir(tmp_path, monkeypatch):
     )
     monkeypatch.setenv("FAULTLINE_DATA_DIR", str(d))
     monkeypatch.delenv("FAULTLINE_OLLAMA_MODEL", raising=False)
-    monkeypatch.setattr(store_module, "DEFAULT_DB_PATH", tmp_path / "var" / "predictions.sqlite3")
+    monkeypatch.setenv("FAULTLINE_PREDICTIONS_DB", str(tmp_path / "var" / "predictions.sqlite3"))
     integrity.MONITOR.reset()  # earlier tests in this process wrote sealed fixtures; count only from here
     integrity._SYSTEM_CACHE.clear()  # system checks are cached per process; each test computes its own
     return d
@@ -216,7 +216,7 @@ def persist(data_dir: Path, *, pid: str = "pred_int_001", variant: str = "agent_
         recorded_at=COLLECTED,
         provenance=Provenance.RECORDED_RUN,
     )
-    PredictionStore(store_module.DEFAULT_DB_PATH).save(pred, mi)
+    PredictionStore(store_module.configured_db_path()).save(pred, mi)
     return pred
 
 
@@ -411,7 +411,7 @@ def test_a_sealed_read_inside_the_vault_is_counted_but_allowed(client, data_dir,
 
     write_case(data_dir, case_file())
     pred = persist(data_dir)
-    vault = OutcomeVault(PredictionStore(store_module.DEFAULT_DB_PATH), sealed_dir=data_dir / "sealed_outcomes")
+    vault = OutcomeVault(PredictionStore(store_module.configured_db_path()), sealed_dir=data_dir / "sealed_outcomes")
     vault.reveal(pred.prediction_id)
     check = checks(get(client, case_id=EVENT))["sealed_folder_untouched"]
     f = facts(check)
@@ -485,7 +485,7 @@ def test_prediction_for_another_case_is_rejected(client, data_dir):
 
 def test_missing_prediction_store_is_not_created(client, data_dir):
     write_case(data_dir, case_file())
-    db = store_module.DEFAULT_DB_PATH
+    db = store_module.configured_db_path()
     assert not db.exists()
     by_id = checks(get(client, case_id=EVENT, prediction_id="pred_x"))
     assert by_id["run_hashes_match"]["status"] == "NOT AVAILABLE"
@@ -495,7 +495,7 @@ def test_missing_prediction_store_is_not_created(client, data_dir):
 def test_tampered_record_flips_the_hash_check(client, data_dir):
     write_case(data_dir, case_file())
     pred = persist(data_dir)
-    with sqlite3.connect(store_module.DEFAULT_DB_PATH) as conn:
+    with sqlite3.connect(store_module.configured_db_path()) as conn:
         conn.execute("DROP TRIGGER predictions_no_update")
         conn.execute("UPDATE predictions SET p_yes = 0.9 WHERE prediction_id = ?", (pred.prediction_id,))
     check = checks(get(client, prediction_id=pred.prediction_id))["run_hashes_match"]
@@ -516,7 +516,7 @@ def test_editing_the_case_after_the_run_flips_the_gate_replay_check(client, data
 def test_forecast_saved_after_a_reveal_flips_the_order_check(client, data_dir):
     write_case(data_dir, case_file())
     first = persist(data_dir, pid="pred_int_first")
-    store = PredictionStore(store_module.DEFAULT_DB_PATH)
+    store = PredictionStore(store_module.configured_db_path())
     # Audit-log entry only; the sealed file is not read.
     store.record_reveal(first, datetime.now(UTC), sealed_provenance="SYNTHETIC")
     late = persist(data_dir, pid="pred_int_late")
@@ -620,7 +620,8 @@ def test_payroll_check_flips_when_the_solver_cuts_payroll(client, data_dir, monk
 def test_response_has_no_outcome_keys_and_never_the_sealed_canary(client, data_dir):
     write_case(data_dir, case_file())
     pred = persist(data_dir)
-    PredictionStore(store_module.DEFAULT_DB_PATH).record_reveal(pred, datetime.now(UTC), sealed_provenance="SYNTHETIC")
+    store = PredictionStore(store_module.configured_db_path())
+    store.record_reveal(pred, datetime.now(UTC), sealed_provenance="SYNTHETIC")
     for params in ({}, {"case_id": EVENT}, {"prediction_id": pred.prediction_id}):
         resp = client.get("/api/integrity", params=params)
         assert resp.status_code == 200
@@ -828,7 +829,7 @@ def test_this_route_contains_no_token_pr73_forbids():
 def test_get_never_writes_the_prediction_store(client, data_dir):
     write_case(data_dir, case_file())
     pred = persist(data_dir)
-    db = store_module.DEFAULT_DB_PATH
+    db = store_module.configured_db_path()
     before = (db.read_bytes(), db.stat().st_mtime_ns)
     assert checks(get(client, prediction_id=pred.prediction_id))["run_hashes_match"]["status"] == "PASS"
     assert (db.read_bytes(), db.stat().st_mtime_ns) == before
@@ -836,7 +837,7 @@ def test_get_never_writes_the_prediction_store(client, data_dir):
 
 def test_old_store_schema_is_not_available_and_not_migrated(client, data_dir):
     write_case(data_dir, case_file())
-    db = store_module.DEFAULT_DB_PATH
+    db = store_module.configured_db_path()
     db.parent.mkdir(parents=True, exist_ok=True)
     with sqlite3.connect(db) as conn:
         conn.execute("CREATE TABLE predictions (prediction_id TEXT PRIMARY KEY)")

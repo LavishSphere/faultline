@@ -82,7 +82,7 @@ class FakeModel:
 def world(tmp_path, monkeypatch):
     """6 committed SYNTHETIC cases (each with a market quote), outcomes sealed, configured store empty."""
     _vault, cases = scored_world(tmp_path, rows_for(6), official=monkeypatch, save=set())
-    store = PredictionStore(store_module.DEFAULT_DB_PATH, clock=Clock(AS_OF + timedelta(days=60)))
+    store = PredictionStore(store_module.configured_db_path(), clock=Clock(AS_OF + timedelta(days=60)))
     return tmp_path, store, cases
 
 
@@ -139,7 +139,7 @@ def test_every_case_and_variant_is_forecast_and_saved_before_any_reveal(world):
 def test_refuses_to_run_when_the_store_already_has_a_reveal(tmp_path, monkeypatch):
     # Real cases: logged-SYNTHETIC reveals of committed synthetic cases are exempt (#118, tests/test_case_relabel.py).
     _vault, cases = scored_world(tmp_path, rows_for(6), synthetic=False, official=monkeypatch, save=set())
-    store = PredictionStore(store_module.DEFAULT_DB_PATH, clock=Clock(AS_OF + timedelta(days=60)))
+    store = PredictionStore(store_module.configured_db_path(), clock=Clock(AS_OF + timedelta(days=60)))
     real_world = (tmp_path, store, cases)
     first, _model = run(real_world)
     rr.score_run(first.run_dir, store=store, cases=cases, out_root=tmp_path / "out")
@@ -212,7 +212,7 @@ def test_skeptic_rejection_is_not_persisted(tmp_path, monkeypatch):
     from core.temporal_gate import CaseRecord, EvidenceStore
 
     monkeypatch.setenv("FAULTLINE_DATA_DIR", str(tmp_path / "data"))
-    monkeypatch.setattr(store_module, "DEFAULT_DB_PATH", tmp_path / "var" / "predictions.sqlite3")
+    monkeypatch.setenv("FAULTLINE_PREDICTIONS_DB", str(tmp_path / "var" / "predictions.sqlite3"))
     event = "synthetic_evt_ev"
     record = CaseRecord(
         case=make_case(event, as_of=AS_OF, evidence_ids=["evid_a"]),
@@ -220,7 +220,7 @@ def test_skeptic_rejection_is_not_persisted(tmp_path, monkeypatch):
         market_quotes=(make_quote(AS_OF - timedelta(hours=1), "0.5"),),
     )
     write_committed_cases(tmp_path / "data" / "demo_cases", [record])
-    store = PredictionStore(store_module.DEFAULT_DB_PATH, clock=Clock(AS_OF + timedelta(days=60)))
+    store = PredictionStore(store_module.configured_db_path(), clock=Clock(AS_OF + timedelta(days=60)))
     # Cites, in an explicit citation, an evidence id the prompt never offered: the skeptic rejects it.
     rejected = json.dumps({**VALID, "rationale": "Orders fell (evid_a, evid_b1).", "evidence_ids": ["evid_a"]})
     model = FakeModel(store.path, answers={event: [rejected, rejected]})
@@ -235,7 +235,7 @@ def test_no_market_quote_skips_agent_plus_market_only(tmp_path, monkeypatch):
     rows = rows_for(6)
     rows[0] = (*rows[0][:4], None)  # no quote for event 0
     _vault, cases = scored_world(tmp_path, rows, official=monkeypatch, save=set())
-    store = PredictionStore(store_module.DEFAULT_DB_PATH, clock=Clock(AS_OF + timedelta(days=60)))
+    store = PredictionStore(store_module.configured_db_path(), clock=Clock(AS_OF + timedelta(days=60)))
     outcome, _ = run((tmp_path, store, cases))
     assert outcome.complete
     assert outcome.manifest["skipped"] == [
@@ -250,7 +250,7 @@ def test_no_market_quote_is_market_not_available_and_does_not_block_official(tmp
     rows = rows_for(6)
     rows[0] = (*rows[0][:4], None)
     _vault, cases = scored_world(tmp_path, rows, synthetic=False, official=monkeypatch, save=set())
-    store = PredictionStore(store_module.DEFAULT_DB_PATH, clock=Clock(AS_OF + timedelta(days=60)))
+    store = PredictionStore(store_module.configured_db_path(), clock=Clock(AS_OF + timedelta(days=60)))
     outcome, _ = run((tmp_path, store, cases))
     paths = rr.score_run(outcome.run_dir, store=store, cases=cases, out_root=tmp_path / "out")
     cards = {
@@ -282,7 +282,7 @@ def test_curated_flag_weaker_than_the_model_card_refuses_the_official_run(tmp_pa
     early = datetime(2023, 6, 1, 12, 0, tzinfo=UTC)  # before llama3.1:8b's Dec 2023 cutoff
     rows = [(f"synthetic_evt_{i:03d}", early + timedelta(days=i), i % 2, 0.6, 0.5) for i in range(5)]
     _vault, cases = scored_world(tmp_path, rows, official=monkeypatch, save=set())
-    store = PredictionStore(store_module.DEFAULT_DB_PATH, clock=Clock(early + timedelta(days=60)))
+    store = PredictionStore(store_module.configured_db_path(), clock=Clock(early + timedelta(days=60)))
     model = FakeModel(store.path)
     with pytest.raises(rr.Refused, match="contamination"):
         run((tmp_path, store, cases), model)

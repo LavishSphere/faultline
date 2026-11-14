@@ -92,7 +92,7 @@ def get_provider(settings: Annotated[Settings, Depends(get_settings)]) -> ModelP
 
 def get_prediction_store() -> PredictionStore:
     # Read at call time: the configured store is the one OutcomeVault accepts for the configured sealed folder.
-    return PredictionStore(store_module.DEFAULT_DB_PATH)
+    return PredictionStore(store_module.configured_db_path())
 
 
 # ---------------------------------------------------------------- public-mode admin gate (route level)

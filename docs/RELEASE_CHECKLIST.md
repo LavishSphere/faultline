@@ -47,6 +47,7 @@ Run `make preflight ARGS=--tests` to re-check the environment, data, recorded ru
 1. `make preflight ARGS=--tests`: no FAIL lines.
 2. The lead makes the official RECORDED RUN with `scripts/record_runs.py` against the **official** store, commits it,
    and preflight shows `recorded run ... PASS` (**PENDING #67**).
-3. Every stage or practice demo after that runs with `make demo-scratch`. Preflight run as
-   `FAULTLINE_DEMO_STORE=<scratch path> make preflight` should print `prediction store: scratch ...` as PASS.
-   On the official store it prints a WARN.
+3. Every stage or practice demo after that runs with `make demo-scratch` (it sets the `FAULTLINE_PREDICTIONS_DB`
+   setting to `services/api/var/scratch/predictions.sqlite3`; #130). Preflight run as
+   `FAULTLINE_PREDICTIONS_DB=<scratch path> make preflight` (or `FAULTLINE_DEMO_STORE=<scratch path>`) should print
+   `prediction store: scratch ...` as PASS. With the setting unset (the official store) it prints a WARN.

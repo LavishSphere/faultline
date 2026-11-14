@@ -69,7 +69,7 @@ def reveal_count(db) -> int:
 
 
 def db_path():
-    return store_module.DEFAULT_DB_PATH
+    return store_module.configured_db_path()
 
 
 def scorecard_files(tmp_path):
@@ -86,7 +86,7 @@ def compute(c: TestClient, variant: str = "agent_only", **headers):
 
 def test_get_with_nothing_recorded_is_not_available_and_creates_nothing(tmp_path, monkeypatch, local_mode):
     monkeypatch.setenv("FAULTLINE_DATA_DIR", str(tmp_path / "data"))
-    monkeypatch.setattr(store_module, "DEFAULT_DB_PATH", tmp_path / "var" / "predictions.sqlite3")
+    monkeypatch.setenv("FAULTLINE_PREDICTIONS_DB", str(tmp_path / "var" / "predictions.sqlite3"))
     resp = client().get("/api/benchmark")
     assert resp.status_code == 200
     body = resp.json()
@@ -179,7 +179,7 @@ def test_compute_returns_the_evaluator_scorecard_verbatim_and_records_it(world):
 
 def test_compute_with_no_cases_records_insufficient_data(tmp_path, monkeypatch, local_mode):
     monkeypatch.setenv("FAULTLINE_DATA_DIR", str(tmp_path / "data"))
-    monkeypatch.setattr(store_module, "DEFAULT_DB_PATH", tmp_path / "var" / "predictions.sqlite3")
+    monkeypatch.setenv("FAULTLINE_PREDICTIONS_DB", str(tmp_path / "var" / "predictions.sqlite3"))
     resp = compute(client())
     assert resp.status_code == 200, resp.text
     (item,) = resp.json()["items"]

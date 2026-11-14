@@ -63,9 +63,11 @@ web-build:              ## production build of apps/web (served by `make demo`)
 	@cd apps/web && NEXT_PUBLIC_API_BASE=http://localhost:$(API_PORT) npm run build
 
 # Scratch prediction store for stage demos (lead policy, #57). The official store is only for scripts/record_runs.py.
+# scripts/demo_api.py refuses FAULTLINE_DEMO_STORE if it names the official store, else exports it as the
+# FAULTLINE_PREDICTIONS_DB setting (#130) that every route, the evaluator and the computed-scorecards dir read.
 SCRATCH_STORE ?= $(abspath $(API_DIR))/var/scratch/predictions.sqlite3
 
-demo:                   ## API + web against local Ollama (official store; FAULTLINE_DEMO_STORE=<path> to override)
+demo:                   ## API + web against local Ollama (store = FAULTLINE_PREDICTIONS_DB, default official; FAULTLINE_DEMO_STORE=<path> for scratch)
 	@$(MAKE) -j2 demo-api demo-web
 
 demo-scratch:           ## same as demo, but on a separate scratch prediction store (use this on stage)

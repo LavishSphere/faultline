@@ -165,8 +165,8 @@ def scored_world(
         from core import store as store_module
 
         official.setenv("FAULTLINE_DATA_DIR", str(tmp_path / "data"))
-        official.setattr(store_module, "DEFAULT_DB_PATH", tmp_path / "var" / "predictions.sqlite3")
-        store = PredictionStore(store_module.DEFAULT_DB_PATH, clock=Clock(AS_OF + timedelta(days=60)))
+        official.setenv("FAULTLINE_PREDICTIONS_DB", str(tmp_path / "var" / "predictions.sqlite3"))
+        store = PredictionStore(store_module.configured_db_path(), clock=Clock(AS_OF + timedelta(days=60)))
         sealed.mkdir(parents=True, exist_ok=True)
         vault = OutcomeVault(store, clock=Clock(AS_OF + timedelta(days=90)))
     else:

@@ -192,7 +192,7 @@ def _mixed_snapshots(tmp_path, monkeypatch):
     """6 committed real cases + the committed synthetic SYN (forecast saved); one compute -> real + synthetic."""
     scored_world(tmp_path, rows_for(6), synthetic=False, official=monkeypatch)
     cases = _add_committed_synthetic_case(tmp_path)
-    store = PredictionStore(store_module.DEFAULT_DB_PATH, clock=Clock(AS_OF + timedelta(days=61)))
+    store = PredictionStore(store_module.configured_db_path(), clock=Clock(AS_OF + timedelta(days=61)))
     mi = cases.get_as_of(SYN, AS_OF).model_input("agent_only")
     store.save(_pred(mi, "syn_pred", 0.35), mi)
     out = compute_and_record("agent_only", store=store, cases=cases)
@@ -246,7 +246,7 @@ def _official_world_with_a_stage_reveal(tmp_path, monkeypatch, logged: str | Non
     that reveal (SYNTHETIC via the vault; REAL_HISTORICAL or NULL written directly)."""
     scored_world(tmp_path, rows_for(6), synthetic=False, official=monkeypatch, save=set())
     cases = _add_committed_synthetic_case(tmp_path)
-    store = PredictionStore(store_module.DEFAULT_DB_PATH, clock=Clock(AS_OF + timedelta(days=60)))
+    store = PredictionStore(store_module.configured_db_path(), clock=Clock(AS_OF + timedelta(days=60)))
     mi = cases.get_as_of(SYN, AS_OF).model_input("agent_only")
     pred = _pred(mi, "stage_syn", 0.35)
     store.save(pred, mi)
@@ -304,7 +304,7 @@ def test_a_real_reveal_still_refuses_the_official_run(tmp_path, monkeypatch):
     rows = rows_for(6)
     vault, cases = scored_world(tmp_path, rows, synthetic=False, official=monkeypatch, save={0})
     vault.reveal("pred_000")
-    store = PredictionStore(store_module.DEFAULT_DB_PATH, clock=Clock(AS_OF + timedelta(days=61)))
+    store = PredictionStore(store_module.configured_db_path(), clock=Clock(AS_OF + timedelta(days=61)))
     model = FakeModel(store.path)
     with pytest.raises(rr.Refused, match="already has a reveal"):
         _run(tmp_path, store, cases, model, variants=("agent_plus_market",))

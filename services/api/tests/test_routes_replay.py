@@ -171,7 +171,7 @@ def make_world(tmp_path: Path, monkeypatch, answers: list[str] | None = None, **
     (data / "sealed_outcomes" / f"{EVENT}.json").write_text(json.dumps(sealed_file()), encoding="utf-8")
     db = tmp_path / "var" / "predictions.sqlite3"
     monkeypatch.setenv("FAULTLINE_DATA_DIR", str(data))
-    monkeypatch.setattr(store_module, "DEFAULT_DB_PATH", db)
+    monkeypatch.setenv("FAULTLINE_PREDICTIONS_DB", str(db))
     world = World(data=data, db=db, fake=FakeOllama(answers if answers is not None else [json.dumps(ANSWER)] * 8))
     world.write_case(gate_case_file(**case_kwargs))
     return world

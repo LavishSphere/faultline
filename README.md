@@ -82,12 +82,15 @@ make preflight ARGS=--tests     # same, plus the backend pytest suite
 make demo-scratch               # API on :8000 + web on :3000, on a SCRATCH prediction store (use this on stage)
 ```
 
-Open http://localhost:3000. `make demo` does the same on the **official** prediction store
-(`services/api/var/predictions.sqlite3`) and prints a warning. Lead policy: the official RECORDED RUN is made with
-`scripts/record_runs.py` before any stage demo, and every stage run or reveal uses the scratch store
-(`services/api/var/scratch/predictions.sqlite3`, or any path via `FAULTLINE_DEMO_STORE=<path> make demo`).
-`FAULTLINE_DEMO_STORE=<path> make preflight` confirms which store is in use. Release status and evidence:
-[`docs/RELEASE_CHECKLIST.md`](docs/RELEASE_CHECKLIST.md).
+Open http://localhost:3000. The prediction store (forecasts + reveal ledger; computed scorecards sit in
+`scorecards/` next to it) is the `FAULTLINE_PREDICTIONS_DB` setting. Unset, it is the **official** store
+`services/api/var/predictions.sqlite3`: `make demo` uses it and prints a warning. Lead policy: the official RECORDED
+RUN is made with `scripts/record_runs.py` (which uses the official store unless `FAULTLINE_PREDICTIONS_DB` is set)
+before any stage demo, and every stage run or reveal uses a scratch store: `make demo-scratch`
+(`services/api/var/scratch/predictions.sqlite3`), `FAULTLINE_DEMO_STORE=<path> make demo` (refused if it names the
+official store) or `FAULTLINE_PREDICTIONS_DB=<path> make demo`. `make preflight` prints the store the setting names
+(PASS for a scratch store, WARN for the official one); prefix it with the same variable you demo with. Release
+status and evidence: [`docs/RELEASE_CHECKLIST.md`](docs/RELEASE_CHECKLIST.md).
 
 ## Working with Claude Code
 Rules for every agent: [AGENTS.md](AGENTS.md). First command of every session: `bash scripts/agent-start.sh`

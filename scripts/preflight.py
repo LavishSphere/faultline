@@ -6,9 +6,10 @@ Prints one PASS / WARN / FAIL line per check and exits 1 if any check FAILs (WAR
 Honesty rules this script follows:
 * Sealed outcomes are never parsed or printed: only "file exists" and the SHA-256 of its raw bytes.
 * A missing model, build or recorded run is reported as missing, with the honest fallback; nothing is faked.
-* The prediction store path in use is printed. Lead policy (#57): the official RECORDED RUN is made with
-  `scripts/record_runs.py` before any stage demo, and stage demos use a separate scratch store
-  (`make demo-scratch`, or FAULTLINE_DEMO_STORE=<path>). Using the official default store is a WARN.
+* The prediction store path in use (the FAULTLINE_PREDICTIONS_DB setting, #130) is printed. Lead policy (#57): the
+  official RECORDED RUN is made with `scripts/record_runs.py` before any stage demo, and stage demos use a separate
+  scratch store (`make demo-scratch`, FAULTLINE_DEMO_STORE=<path> or FAULTLINE_PREDICTIONS_DB=<path>). Using the
+  official default store is a WARN.
 
 Standard library only at import time, so it can report missing dependencies instead of crashing on them.
 """
@@ -300,24 +301,32 @@ def check_recorded_runs() -> None:
 
 
 def check_store() -> None:
-    from core import store as store_module
+    """The prediction store the API will open: the FAULTLINE_PREDICTIONS_DB setting, as `scripts/demo_api.py` resolves
+    it (FAULTLINE_DEMO_STORE, from `make demo-scratch`, wins and may not name the official store). Only the path and
+    file size are printed; the store is not opened."""
+    sys.path.insert(0, str(ROOT / "scripts"))
+    from demo_api import resolve_store
 
-    official = Path(store_module.DEFAULT_DB_PATH).resolve()
-    override = os.environ.get("FAULTLINE_DEMO_STORE", "").strip()
-    in_use = Path(override).expanduser().resolve() if override else official
+    from config import DEFAULT_PREDICTIONS_DB, same_path
+
+    in_use, refusal = resolve_store(os.environ)
+    if in_use is None:
+        report("FAIL", "prediction store", refusal or "could not resolve the prediction store")
+        return
     state = f"{in_use.stat().st_size} bytes" if in_use.exists() else "not created yet"
-    if in_use == official:
+    if same_path(in_use, DEFAULT_PREDICTIONS_DB):
         report(
             "WARN",
             "prediction store",
-            f"{in_use} ({state}) is the OFFICIAL default store. Make the official recorded run first "
-            "(scripts/record_runs.py), then demo with `make demo-scratch` or FAULTLINE_DEMO_STORE=<path>",
+            f"{in_use} ({state}) is the OFFICIAL default store (FAULTLINE_PREDICTIONS_DB unset). Make the official "
+            "recorded run first (scripts/record_runs.py), then demo with `make demo-scratch` or "
+            "FAULTLINE_PREDICTIONS_DB=<scratch path>",
         )
     else:
         report(
             "PASS",
             "prediction store",
-            f"scratch store {in_use} ({state}); official store {official} untouched",
+            f"scratch store {in_use} ({state}); official store {DEFAULT_PREDICTIONS_DB} untouched",
         )
 
 
