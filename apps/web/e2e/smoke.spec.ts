@@ -211,3 +211,43 @@ test.describe("REVEAL", () => {
     expect(overflow, "no horizontal page scroll at 390 px").toBeLessThanOrEqual(0);
   });
 });
+
+test.describe("LIVE EXPLORE", () => {
+  const ANALYZE_URL = `${E2E_API_BASE}/api/explore/analyze`;
+  const HEALTH_URL = `${E2E_API_BASE}/api/health`;
+
+  test("phone width: the screen fits 390 px with no horizontal scroll", async ({ page }) => {
+    await page.setViewportSize({ width: 390, height: 844 });
+    await page.goto("/explore/");
+    await expect(page.locator("#explore-decision")).toBeVisible();
+    await expect(page.getByText("Search powered by Tavily", { exact: true })).toBeVisible();
+    const overflow = await page.evaluate(() => document.documentElement.scrollWidth - window.innerWidth);
+    expect(overflow, "horizontal overflow in px").toBeLessThanOrEqual(0);
+  });
+
+  test("without TAVILY_API_KEY the analysis is honestly unavailable and nothing is simulated", async ({ page }) => {
+    const health = (await (await page.request.get(HEALTH_URL)).json()) as { optional_keys: { tavily_api_key: boolean } };
+    test.skip(health.optional_keys.tavily_api_key, "a Tavily key is configured on the e2e API; this case needs none");
+
+    const posts: string[] = [];
+    page.on("request", (r) => {
+      if (r.method() === "POST" && r.url().startsWith(E2E_API_BASE)) posts.push(new URL(r.url()).pathname);
+    });
+    await page.goto("/explore/");
+    await expect(page.getByText("No decision analyzed yet")).toBeVisible();
+    await page.waitForTimeout(300);
+    expect(posts, "nothing is sent on page load").toEqual([]);
+
+    await page.locator("#explore-decision").fill("Should we open a third store while our loan resets?");
+    const answered = page.waitForResponse((r) => r.url() === ANALYZE_URL);
+    await page.getByRole("button", { name: "Research and analyze" }).click();
+    const res = await answered;
+    expect(res.status()).toBe(503);
+    expect(((await res.json()) as { code: string }).code).toBe("LIVE_EXPLORE_UNAVAILABLE");
+
+    await expect(page.getByText("Live Explore unavailable", { exact: true })).toBeVisible();
+    await expect(page.getByText(/Set a valid TAVILY_API_KEY/)).toBeVisible();
+    await expect(page.getByRole("button", { name: /Confirm inputs/ })).toHaveCount(0);
+    expect(posts).toEqual(["/api/explore/analyze"]);
+  });
+});
