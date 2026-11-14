@@ -355,7 +355,7 @@ Do this on the demo laptop before going on stage (the script author could not ru
       plan $25,000 · week 20**; with the switch off, 7 cuts, same total. If C.3 differs, read the screen and tell the lead.
 - [ ] `/research`: cutoff `2026-07-01T00:00:00Z` → Apply cutoff → 4 sources shown, 2 not yet public; Sequoia shows no source.
 - [ ] `/rewind`, `/decision`, `/reveal`: are the 4 real cases listed? Does the DECISION run complete? Is the Reveal button enabled?
-      For each that isn't, rehearse the "if still pending" line.
+      For each that isn't, rehearse that step's "Say instead" line.
 - [ ] `/reveal`: the benchmark and both scorecards read `NOT AVAILABLE` (nothing officially scored yet). Never read a score that isn't on screen.
 - [ ] `/explore`: is `TAVILY_API_KEY` set in `.env` and the local model running? If not, use the 5-second line.
 - [ ] Is Ollama running with `llama3.1:8b` (`/api/health` shows `model_ready: true`)? If not, the DECISION screen must
