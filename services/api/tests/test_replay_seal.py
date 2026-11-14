@@ -370,7 +370,8 @@ def test_save_rejects_citations_outside_the_snapshot(world):
         "INSERT OR REPLACE INTO predictions SELECT prediction_id, event_id, as_of, agent_model, model_digest, variant, "
         "0.99, decision, rationale, evidence_ids, prompt_sha256, snapshot_sha256, temperature, seed, recorded_at, "
         "provenance, prompt_text, snapshot_json, persisted_at, persist_seq, market_baseline_p_yes, "
-        "market_baseline_ref, contamination_flag, synthetic, case_sha256, record_sha256 FROM predictions",
+        "market_baseline_ref, contamination_flag, synthetic, case_sha256, record_sha256, gated_prompt_sha256, "
+        "attempts, transcript_sha256, num_ctx, num_predict, final_prompt_text FROM predictions",
         "UPDATE audit_log SET seq = seq + 100",
         "DELETE FROM audit_log",
         "INSERT OR REPLACE INTO audit_log (seq, kind, prediction_id, event_id, at) "
@@ -388,7 +389,8 @@ def test_save_rejects_citations_outside_the_snapshot(world):
         "INSERT INTO predictions SELECT 'forged', event_id, as_of, agent_model, model_digest, variant, p_yes, "
         "decision, rationale, evidence_ids, prompt_sha256, snapshot_sha256, temperature, seed, recorded_at, "
         "provenance, prompt_text, snapshot_json, persisted_at, 0, market_baseline_p_yes, market_baseline_ref, "
-        "contamination_flag, synthetic, case_sha256, record_sha256 FROM predictions",
+        "contamination_flag, synthetic, case_sha256, record_sha256, gated_prompt_sha256, attempts, "
+        "transcript_sha256, num_ctx, num_predict, final_prompt_text FROM predictions",
     ],
     ids=[
         "update",
@@ -655,7 +657,8 @@ def test_reserved_low_seq_cannot_backdate_a_later_prediction(world):
             "INSERT INTO predictions SELECT 'forged', event_id, as_of, agent_model, model_digest, variant, 1.0, "
             "decision, rationale, evidence_ids, prompt_sha256, snapshot_sha256, temperature, seed, recorded_at, "
             "provenance, prompt_text, snapshot_json, persisted_at, ?, market_baseline_p_yes, market_baseline_ref, "
-            "contamination_flag, synthetic, case_sha256, record_sha256 FROM predictions WHERE prediction_id = ?",
+            "contamination_flag, synthetic, case_sha256, record_sha256, gated_prompt_sha256, attempts, "
+            "transcript_sha256, num_ctx, num_predict, final_prompt_text FROM predictions WHERE prediction_id = ?",
             (reserved, rec.prediction.prediction_id),
         )
     assert store.get("forged") is None
@@ -678,7 +681,8 @@ def test_replacing_a_prediction_with_a_fresh_persist_entry_is_refused(world):
                 "INSERT OR REPLACE INTO predictions SELECT prediction_id, event_id, as_of, agent_model, model_digest, "
                 "variant, 0.99, decision, rationale, evidence_ids, prompt_sha256, snapshot_sha256, temperature, seed, "
                 "recorded_at, provenance, prompt_text, snapshot_json, persisted_at, ?, market_baseline_p_yes, "
-                "market_baseline_ref, contamination_flag, synthetic, case_sha256, record_sha256 FROM predictions",
+                "market_baseline_ref, contamination_flag, synthetic, case_sha256, record_sha256, gated_prompt_sha256, "
+                "attempts, transcript_sha256, num_ctx, num_predict, final_prompt_text FROM predictions",
                 (newest,),
             )
     assert store.get("pred_001").p_yes == 0.6

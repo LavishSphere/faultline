@@ -1,8 +1,9 @@
 # FAULTLINE Evaluation Protocol (Blind Replay)
 
-**Status:** Wave 1 (issue #24). The integrity core exists: temporal gate, provenance hashes, SQLite prediction
-store, sealed-outcome vault, scoring. **Not built yet:** the model provider and the replay run/reveal routes
-(Wave 2). **Real cases:** none on `main` yet (issue #20), so any benchmark today must report `INSUFFICIENT DATA`.
+**Status:** Wave 2. The integrity core (issue #24: temporal gate, provenance hashes, SQLite prediction store,
+sealed-outcome vault, scoring), the local model provider (#36) and the HTTP routes `GET /api/cases`,
+`GET /api/cases/{case_id}/evidence`, `POST /api/replay/run` and `POST /api/replay/{prediction_id}/reveal`
+(#44 part A, §9) exist. **Not built yet:** the benchmark compute/read routes and committed recorded runs (#44 part B). **Real cases:** none on `main` yet (issue #20), so any benchmark today must report `INSUFFICIENT DATA`.
 
 Sources of truth: SPEC §3.1, §5, §6, §10 and MATH_MODEL §6, §7, §9. If this document and MATH_MODEL disagree,
 MATH_MODEL wins and this document is the bug.
@@ -63,9 +64,10 @@ data/sealed_outcomes/<event_id>.json ─────────────► 
 | **Forecast before outcome (per event):** a prediction counts only if it was persisted before the FIRST reveal of any prediction for the same event (any `as_of`, any variant). This is compared by position in the append-only `audit_log`, not by clock. `RevealedOutcome` carries `persist_seq`, `persisted_at`, `event_first_reveal_seq` and `event_first_revealed_at` | `build_scorecard`, `RevealedOutcome.persisted_before_outcome_revealed` | `test_peek_then_predict_is_excluded`, `test_peek_through_another_variant_is_excluded` |
 | **No caller choice of runs or of the comparison:** `build_scorecard(vault, *, agent_variant, cases=None)` takes no contexts and no reveals. The population is every `(event_id, as_of)` with a persisted prediction of any variant (plus, if `cases` is given, every case at its cutoff, which can only add `no_persisted_prediction` rows). Each forecast's market baseline, contamination flag and synthetic flag are the ones the gate fixed in its `ModelInput` and the store persisted with the forecast, before any reveal. So after outcomes are known a caller cannot drop events, invent a market price or relabel losers as contaminated. More than one pre-reveal prediction for a key is excluded (`multiple_predictions`), never chosen | `build_scorecard`, `ModelInput`, `PredictionStore.save` | `test_cherry_picking_runs_is_impossible`, `test_duplicate_predictions_for_one_snapshot_are_excluded_not_chosen`, `test_post_hoc_context_manipulation_has_no_effect`, `test_scorecard_takes_no_caller_contexts` |
 | **Market baseline rule (fixed, pre-reveal):** if the case's `market_quote_id` is `"<venue>:<market_id>"`, the baseline is that market's selected quote (absent or stale → NOT AVAILABLE, no fallback); otherwise the only selected quote when exactly one market has one; otherwise NOT AVAILABLE. Contamination and synthetic flags come from the case definition | `GatedSnapshot.market_baseline` | `test_market_baseline_follows_the_fixed_rule`, `test_single_market_is_the_baseline_and_context_comes_from_the_case` |
-| **OFFICIAL requires the committed cases and a clean run.** The label `OFFICIAL: Computed from N historical cases` is given only if ALL hold, otherwise the label is `ILLUSTRATIVE: Historical cases, not an official run` and `official_blockers` lists every failed condition: (1) `cases` is `EvidenceStore.from_dir()` of the configured case directory; (2) the vault uses the configured sealed folder (hence the configured store); (3) no exclusion for an operator-controllable reason (`no_persisted_prediction`, `multiple_predictions`, `persisted_after_outcome_revealed`, `context_mismatch`) on any real or uncommitted case, so every committed real case at its cutoff has exactly one forecast and skipping, re-running or peeking at a loser cannot drop it; (4) no ignored post-reveal forecast on a real case; (5) every scored forecast was persisted before the FIRST reveal anywhere in the store (no cross-event leakage) | `build_scorecard` | `test_real_cases_without_committed_cases_are_not_official`, `test_in_memory_case_store_is_not_official`, `test_saving_only_winners_is_not_official`, `test_dropping_a_loser_by_rerun_or_peek_is_not_official`, `test_forecast_saved_after_another_events_reveal_is_not_official`, `test_synthetic_committed_cases_without_forecasts_do_not_block_official` |
-| **Frozen case data:** every `ModelInput` carries `case_sha256` (canonical JSON of the validated case record: case, evidence, quotes). With `cases`, each remaining forecast is re-derived via `cases.get_as_of(event_id, as_of).model_input(variant)`; its prompt and snapshot hashes and every frozen context field (market baseline and ref, contamination, synthetic, `case_sha256`) must match, else the key is excluded `context_mismatch` (not revealed). Any edit to a committed case file after the run, even to an item the model never saw, or a forecast made from script-built case data, is caught | `build_scorecard`, `case_sha256` | `test_forecast_made_from_other_case_data_is_context_mismatch`, `test_editing_a_committed_case_after_the_run_is_context_mismatch`, `test_any_change_to_a_committed_case_file_after_the_run_is_context_mismatch`, `test_case_content_hash_is_frozen_into_the_model_input` |
-| `save(prediction, model_input)` takes the gate's `ModelInput` and requires `event_id`, `as_of`, `variant`, `prompt_sha256` and `snapshot_sha256` to match it (both are recomputed from its text). It accepts only `agent_only` / `agent_plus_market`; the snapshot's quotes must agree with the variant; cited `evidence_ids` must be in the snapshot | `PredictionStore.save` | `test_save_rejects_*`, `test_save_requires_the_gate_model_input` |
+| **OFFICIAL requires the committed cases and a clean run.** The label `OFFICIAL: Computed from N historical cases` is given only if ALL hold, otherwise the label is `ILLUSTRATIVE: Historical cases, not an official run` and `official_blockers` lists every failed condition: (1) `cases` is `EvidenceStore.from_dir()` of the configured case directory; (2) the vault uses the configured sealed folder (hence the configured store); (3) no exclusion for an operator-controllable reason (`no_persisted_prediction`, `multiple_predictions`, `persisted_after_outcome_revealed`, `context_mismatch`) on any case that is not a **committed SYNTHETIC case**, so every committed real case at its cutoff has exactly one forecast and skipping, re-running or peeking at a loser cannot drop it; (4) no ignored post-reveal forecast on a case that is not a committed SYNTHETIC case; (5) every scored forecast was persisted before the FIRST counted reveal anywhere in the store (no cross-event leakage, `first_counted_reveal`). A **committed SYNTHETIC case** (`committed_synthetic_events`, #102/#118) is a case in `cases` that says `synthetic: true` with provenance SYNTHETIC AND for which no stored forecast froze `synthetic=False`; a case file relabelled synthetic after a real-context forecast was saved is therefore NOT one (it stays real, see the case-set row). **Logged-SYNTHETIC reveal exemption** (condition 5, and the same function in the `scripts/record_runs.py` pre-flight, §10): a reveal is skipped only if ALL hold: (a) it was LOGGED with sealed provenance SYNTHETIC (`audit_log.sealed_provenance`, written by `OutcomeVault.reveal` from the sealed file it read); (b) `cases` is `EvidenceStore.from_dir()` of the configured case directory; (c) its event is a committed SYNTHETIC case with at least one stored forecast, i.e. EVERY stored forecast for it froze `synthetic=True`. Such an answer is a fictional draw. Reveals logged as REAL_HISTORICAL, or before #102 (NULL), always count. `reveal()` refuses, before logging, a sealed file whose provenance disagrees with the forecast's frozen case (`SealedOutcomeInvalid`; synthetic case ↔ SYNTHETIC, real case ↔ REAL_HISTORICAL) | `build_scorecard`, `committed_synthetic_events`, `first_counted_reveal` | `test_real_cases_without_committed_cases_are_not_official`, `test_in_memory_case_store_is_not_official`, `test_saving_only_winners_is_not_official`, `test_dropping_a_loser_by_rerun_or_peek_is_not_official`, `test_forecast_saved_after_another_events_reveal_is_not_official`, `test_synthetic_committed_cases_without_forecasts_do_not_block_official`, `test_revealing_the_synthetic_fallback_does_not_block_official`, `test_a_real_reveal_still_blocks_official_alongside_a_synthetic_one`, `test_synthetic_case_with_a_real_sealed_file_is_never_revealed`, `test_only_reveals_logged_as_synthetic_are_exempt`, `test_relabelled_case_blocks_official_without_a_case_set_too`, `test_relabelling_a_peeked_real_case_keeps_the_peek_blocker`, `test_a_relabelled_case_is_not_exempt_from_the_late_check` |
+| **Real and synthetic cases are separate case sets, never pooled (#102).** `build_scorecard(..., case_set="real" \| "synthetic")` fixes the population BEFORE any reveal and keeps only that set's keys: a case in `cases` is synthetic iff it is a committed SYNTHETIC case (`synthetic: true` with provenance SYNTHETIC AND no stored forecast for it froze `synthetic=False`, #118); an event only in the store is synthetic iff every stored forecast froze `synthetic=True`. So a real case relabelled synthetic after its forecast was saved stays in the real set, where the edit is `context_mismatch` and blocks OFFICIAL (it used to leave the real card silently). A remaining forecast whose frozen `synthetic` flag is the other set's is excluded `context_mismatch` and not revealed. The other set's keys are not in the card at all, so a real card is identical with or without synthetic cases present. Without `case_set`, a mixed population raises before anything is revealed (the post-reveal checks are assertions only). `POST /api/benchmark/compute` and `scripts/record_runs.py` record one card per set present (real first); each card and `ScorecardRecord` carries `case_set`; `GET /api/benchmark` serves real cards before synthetic ones. A synthetic card is SYNTHETIC: ILLUSTRATIVE at n ≥ 5, INSUFFICIENT DATA below, never OFFICIAL (`verify_snapshot` refuses one labeled OFFICIAL), and its `market_label` says SYNTHETIC when its baselines are synthetic quotes. A REAL_HISTORICAL or `case_set: "real"` card has no `synthetic:` market ref and `market_label` = `MARKET_LABEL`, and a snapshot's `cases_sha256` lists only cases that are in its card (scored or excluded), so it agrees with `case_set` (`verify_snapshot`, #118) | `build_scorecard`, `routes/benchmark.py` | `test_relabelling_a_real_case_as_synthetic_after_the_run_blocks_official`, `test_relabelled_case_in_a_benchmark_compute_stays_in_the_real_snapshot`, `test_real_card_with_synthetic_market_refs_is_refused`, `test_real_case_set_card_cannot_carry_the_synthetic_market_label`, `test_computed_snapshot_cases_sha256_must_agree_with_its_case_set`, `test_mixed_case_dir_does_not_raise_and_scores_each_set_separately`, `test_real_card_is_identical_with_and_without_the_synthetic_case`, `test_benchmark_compute_and_get_serve_real_cards_before_synthetic_ones`, `test_record_runs_scores_a_mixed_case_dir_as_two_sets`, `test_mixed_populations_fail_before_any_reveal`, `test_a_forecast_whose_context_is_in_the_other_population_is_never_revealed`, `test_forged_snapshot_is_not_served[official_in_the_synthetic_case_set]` |
+| **Frozen case data:** every `ModelInput` carries `case_sha256` (canonical JSON of the validated case record: case, evidence, quotes). With `cases`, each remaining forecast is re-derived via `cases.get_as_of(event_id, as_of).model_input(variant)`; its prompt and snapshot hashes and every frozen context field (market baseline and ref, contamination, synthetic, `case_sha256`) must match, else the key is excluded `context_mismatch` (not revealed). Any edit to a committed case file after its forecast was saved, even to an item the model never saw, or relabelling a real case `synthetic: true` / SYNTHETIC (it stays in the real set, #118), or a forecast made from script-built case data, is caught | `build_scorecard`, `case_sha256` | `test_forecast_made_from_other_case_data_is_context_mismatch`, `test_relabelling_a_real_case_as_synthetic_after_the_run_blocks_official`, `test_editing_a_committed_case_after_the_run_is_context_mismatch`, `test_any_change_to_a_committed_case_file_after_the_run_is_context_mismatch`, `test_case_content_hash_is_frozen_into_the_model_input` |
+| `save(prediction, model_input, final_prompt=...)` takes the gate's `ModelInput` and requires `event_id`, `as_of`, `variant`, the gated prompt hash (`gated_prompt_sha256`, or `prompt_sha256` on records without run-audit fields) and `snapshot_sha256` to match it (both are recomputed from its text); `prompt_sha256` and `transcript_sha256` must hash `final_prompt`, the exact message the model answered, which must be the gated prompt (`attempts == 1`) or the gated prompt, unchanged, followed by exactly the provider's repair instruction (`attempts == 2`: `agents.local_ollama.is_repair_instruction`, the fixed header and footer of `REPAIR_INSTRUCTION` with only `- ...` problem lines between them). `attempts` must be 1 or 2 (also a table CHECK constraint). It accepts only `agent_only` / `agent_plus_market`; the snapshot's quotes must agree with the variant; cited `evidence_ids` must be in the snapshot | `PredictionStore.save` | `test_save_rejects_*`, `test_save_requires_the_gate_model_input`, `test_save_refuses_a_model_prompt_that_does_not_match_its_hashes`, `test_attempts_other_than_1_or_2_are_refused`, `test_forged_repair_suffix_with_recomputed_hashes_is_caught_by_verify_and_reveal`, `test_repair_attempt_recomputes_every_hash` |
 | Rows are append-only and edits are **evident**. Triggers abort UPDATE and DELETE on `predictions` and `audit_log`; an INSERT that reuses a prediction id (this blocks `INSERT OR REPLACE`); any `audit_log` row whose `seq` is chosen by the caller or is not greater than every existing `seq` (no backdating a persist, no early fake reveal); a reveal entry naming a prediction that does not exist; and a prediction whose `persist_seq` is not the newest `audit_log` entry and its own persist entry (so a low `seq` reserved before a reveal cannot be used for a forecast saved after it). `record_sha256` covers the whole forecast, its scoring context, `persisted_at` and `persist_seq`, so an edit made after dropping the triggers is caught by `verify` and refused by `reveal` | `core/store.py` | `test_predictions_and_audit_log_are_append_only`, `test_reveal_refuses_when_stored_record_was_tampered`, `test_reserved_low_seq_cannot_backdate_a_later_prediction`, `test_replacing_a_prediction_with_a_fresh_persist_entry_is_refused` |
 | Scoring matches MATH_MODEL §9 fixtures exactly; bootstrap is deterministic for a seed; B and the seed cannot be overridden through `build_scorecard`; display rules of MATH_MODEL §6 (caveat at n = 29, none at n = 30) | `core/evaluator.py` | `test_scoring.py` |
 
@@ -86,7 +88,9 @@ tie rule, B and the bootstrap pairing.
   contamination either.
 - **Correctness of curated dates.** The gate trusts `available_at` and `retrospective_unverified` as curated.
   If a page was revised after `as_of` and the curator did not flag it, revised text can pass. Archive
-  snapshots are the mitigation (issue #20 / `docs/DATA_PROVENANCE.md`).
+  snapshots are the mitigation (issue #20 / `docs/DATA_PROVENANCE.md`). Output of `scripts/tavily_curate.py`
+  and Live Explore is today's text, which may have been revised since `as_of`, and is never evidence until its
+  `available_at` is proven from an archive capture.
 - **`content_sha256` is not recomputed** by the gate (its exact input bytes are a curation choice); the
   snapshot hash covers the text actually given to the model.
 - **OS-level isolation.** The sealed directory is protected by code structure, path checks and tests, not
@@ -107,7 +111,11 @@ tie rule, B and the bootstrap pairing.
 - **Curator levers (governance, not code).** Whoever writes the case files chooses the events, evidence,
   `market_quote_id` and `contamination_flag`. These choices are protected by process: case files are committed
   and PR-reviewed BEFORE any official run, and frozen for it (`case_sha256` in every forecast; any later edit
-  is `context_mismatch` and blocks OFFICIAL). Every published scorecard includes the exclusions by reason with
+  is `context_mismatch` and blocks OFFICIAL, including relabelling a real case `synthetic: true`, which keeps it
+  in the real set because its stored forecast froze `synthetic=False`, #118). Limit: the evaluator sees only
+  stored forecasts, so a real case with NO stored forecast (e.g. every variant failed) that is relabelled
+  synthetic leaves the real card without a blocker; the run manifest's per-case `case_sha256` list and commit
+  review are what show that edit. Every published scorecard includes the exclusions by reason with
   event ids and the `official_blockers`. At load, a committed case whose `market_quote_id` names no market in
   the file, or that has quotes for 2+ markets without one, is refused.
 - **Contamination flags are hand-set.** TODO (follow-up now that PR #40 is merged): derive the case's
@@ -136,7 +144,14 @@ tie rule, B and the bootstrap pairing.
 - **`snapshot_sha256`** = SHA-256 (hex) of the canonical JSON of exactly
   `{"evidence": [...], "market_quotes": [...]}`, the projected items given to the model for that variant.
   `market_quotes` is `[]` for `agent_only`.
-- **`prompt_sha256`** = SHA-256 (hex) of the final rendered prompt string, UTF-8.
+- **`prompt_sha256`** = SHA-256 (hex), UTF-8, of the exact message the model answered on the attempt that
+  validated (#44): the gated prompt itself when `attempts == 1`; the gated prompt, unchanged, followed by
+  exactly `agents.local_ollama.repair_instruction(problems)` when `attempts == 2` (the fixed header and footer of
+  `REPAIR_INSTRUCTION`, only `- <problem>` lines between them; any other suffix, and any other `attempts` value,
+  is refused by `save` and flagged by `verify`). **`gated_prompt_sha256`** = SHA-256 of the gate's
+  rendered prompt (`ModelInput.prompt_sha256`). **`transcript_sha256`** = SHA-256 of the canonical JSON of the
+  chat messages of that call (`[{"role": "user", "content": <that message>}]`). Records saved without a model
+  provider (core tests) have no run-audit fields and their model prompt is the gated prompt.
 - **`record_sha256`** = SHA-256 (hex) of the canonical JSON of
   `{"prediction": <Prediction as JSON, timestamps in UTC>, "context": {"market_baseline_p_yes",
   "market_baseline_ref", "contamination_flag", "synthetic", "case_sha256"}, "persisted_at": <ISO UTC>, "persist_seq": <int>}`.
@@ -144,7 +159,10 @@ tie rule, B and the bootstrap pairing.
   input hashes and the pre-reveal scoring context.
 - Stored with each prediction: model id, Ollama digest when available, variant, temperature, seed,
   `recorded_at` (caller), `persisted_at` (store clock), `persist_seq` (position in `audit_log`), the scoring
-  context from the `ModelInput` (never shown to the model), the exact prompt text and snapshot JSON. `PredictionStore.verify(prediction_id)` recomputes all three hashes and
+  context from the `ModelInput` (never shown to the model), the gated prompt text, the exact message the model
+  answered, the snapshot JSON, and the run's `attempts`, `num_ctx` and `num_predict`.
+  `PredictionStore.verify(prediction_id)` recomputes every hash (prompt, gated prompt, transcript, snapshot,
+  record), checks that a repair prompt is the gated prompt plus exactly the provider's repair instruction, and
   checks the `audit_log` persist entry.
 - Prompt template version: `replay-v1` (printed in every prompt). Changing the template changes every
   `prompt_sha256`, which is intended.
@@ -160,14 +178,17 @@ tie rule, B and the bootstrap pairing.
   95% percentile CI of $\overline{\text{Brier}}_{agent} - \overline{\text{Brier}}_{market}$. Algorithm:
   `idx = numpy.random.default_rng(seed).integers(0, n, size=(B, n))`, mean of the paired differences per
   resample, numpy linear-interpolation percentiles 2.5 and 97.5.
-- **Which predictions count.** `build_scorecard(vault, *, agent_variant=..., cases=None)` takes the vault,
-  not contexts or reveals. The keys are every `(event_id, as_of)` with a persisted prediction of any variant,
-  plus (with `cases`) every case at its cutoff. For each key it reads every persisted prediction for
+- **Which predictions count.** `build_scorecard(vault, *, agent_variant=..., cases=None, case_set=None)` takes
+  the vault, not contexts or reveals. The keys are every `(event_id, as_of)` with a persisted prediction of any
+  variant, plus (with `cases`) every case at its cutoff, restricted to `case_set` when given (real and synthetic
+  cases are scored as separate sets, never pooled; see §5). For each key it reads every persisted prediction for
   `(event_id, as_of, agent_variant)` from the store. Let $s_0$ be the `audit_log` position of the first reveal
   of any prediction for that event, read once before scoring starts. The market baseline, contamination flag
   and synthetic flag used below are the persisted pre-reveal context of the chosen prediction. Each key is then
   decided in this order:
-  1. No persisted prediction → excluded, `no_persisted_prediction`.
+  1. No persisted prediction → excluded, `no_persisted_prediction`. Exception (with `cases`): for
+     `agent_plus_market`, if the gate has no quote within 24h before `as_of` the variant cannot run at all, so the
+     key is excluded `market_not_available` instead (not an operator reason, so it does not block OFFICIAL).
   2. Predictions persisted at a position $> s_0$ are listed in `ignored_predictions` with reason
      `persisted_after_outcome_revealed`. If none persisted before $s_0$ remain, the key is excluded with
      that reason.
@@ -242,3 +263,136 @@ file, is refused at load. Case files must not be hard links.
   nothing; (3) call `build_scorecard(vault, cases=EvidenceStore.from_dir())` once, which reveals and scores;
   (4) publish the scorecard with its exclusions and `official_blockers`.
 - Recorded demo runs are labeled `RECORDED RUN` and carry model id, digest, temperature, seed and both hashes.
+
+---
+
+## 9. HTTP routes (#44 part A)
+
+| Route | Boundary | What it does |
+|---|---|---|
+| `GET /api/cases` | pre-reveal | `EvidenceStore.public_case` per case file: `evidence_ids` lists only items the gate admits at the cutoff |
+| `GET /api/cases/{case_id}/evidence?as_of=` | pre-reveal | `EvidenceStore.get_as_of`: the prompt projection of admitted evidence, the selected as-of quote per market, the market baseline at the cutoff (or NOT AVAILABLE), exclusion counts by reason (no ids). `as_of` defaults to, and may not be later than, the case cutoff (422) |
+| `POST /api/replay/run` `{case_id, variant}` | pre-reveal; admin-only in public mode | gate, provider, skeptic, then `PredictionStore.save(..., final_prompt=...)`; nothing is saved on any provider error or skeptic rejection. A run saved after a reveal is not refused but flagged from `audit_log`: `event_first_reveal_seq` / `persisted_after_event_reveal` (this event) and `store_first_reveal_seq` / `persisted_after_any_reveal` (anywhere), plus an `audit_note` |
+| `POST /api/replay/{prediction_id}/reveal` | post-reveal; admin-only in public mode | `OutcomeVault.reveal`, per-prediction Brier / log loss / accuracy at 0.5, naive and market baselines from the stored pre-reveal context |
+
+**Public mode:** run and reveal both change state, so with `FAULTLINE_MODE` anything but unset/`local` they need
+`Authorization: Bearer <FAULTLINE_ADMIN_TOKEN>` (at least 32 characters), checked by a route dependency so it holds
+with or without the edge middleware of #28. No bearer token: 401; wrong or unconfigured token: 403; body
+`{code: "ADMIN_TOKEN_REQUIRED", message}`. An early public reveal would otherwise mark the event revealed and
+disqualify every later admin run on it (`tests/test_routes_replay_admin.py`). The case routes stay public.
+
+Both pre-reveal case routes run a strict pre-scan before the gate loads anything: a case file with an
+outcome-like key anywhere (except `case.resolution_rule` and a quote's `outcome: "YES"`) is refused, not
+stripped; top-level keys are allow-listed; the file name must be `<event_id>.json`; files resolving outside
+`demo_cases/` are refused unread. `tests/test_routes_replay.py` requires every `/api/cases*` and `/api/replay*`
+route to be classified pre- or post-reveal, walks every pre-reveal response schema and body (before and after a
+reveal) for outcome keys, the canary and sealed values, and checks that no pre-reveal request opens a file under
+`sealed_outcomes/`.
+
+## 10. Benchmark routes and recorded runs (#44 part B)
+
+Scoring reveals outcomes, so computing a scorecard and reading one are separate routes (`routes/benchmark.py`).
+
+| Route | Boundary | Gate | Does |
+|---|---|---|---|
+| `POST /api/benchmark/compute` `{"agent_variant": "agent_only" \| "agent_plus_market"}` | **reveals** (each reveal logged in `audit_log`) | admin token in public mode (§9) | `build_scorecard(OutcomeVault(<configured store>), agent_variant, cases=EvidenceStore.from_dir())`, then writes the Scorecard unchanged as a `RECORDED_RUN` snapshot to `services/api/var/scorecards/` and returns it |
+| `GET /api/benchmark` | post-reveal content, **read-only** (never reveals) | none | serves verified recorded snapshots (below). It never builds a vault, never opens the SQLite store and never touches the sealed folder |
+
+- **Response (both routes):** `{"status": "AVAILABLE" | "NOT AVAILABLE", "provenance": "RECORDED_RUN", "items": [Scorecard],
+  "records": [{agent_variant, recorded_at, source, origin, run_id, file, scorecard_sha256, snapshot_sha256, agent_models}],
+  "notes": [str]}`. `records[i]` describes `items[i]`. GET lists the newest **committed** snapshot per variant
+  (`data/recorded_runs/scorecards/`, `origin: "committed"`) first, then the newest **computed** one per variant
+  (`var/scorecards/`, `origin: "computed"`), each in the order `agent_only`, `agent_plus_market`. The first item for a
+  variant is the one to show, so one admin compute on an empty server cannot hide the committed card. Each Scorecard is
+  the evaluator's, verbatim. Nothing recorded → `status: "NOT AVAILABLE"`, `items: []`.
+- **Admin gate:** `routes.replay.require_admin_in_public_mode`, the same check as run and reveal (§9): 401 without a
+  bearer token, 403 for a wrong or unconfigured token, body `{"code": "ADMIN_TOKEN_REQUIRED", "message"}`. It runs
+  before the body is read, so an unauthenticated caller learns nothing about the request schema.
+- **Snapshot file** `<variant>--<UTC>--<sha12>.json`: `{schema_version, provenance: "RECORDED_RUN", source, run_id,
+  recorded_at, agent_variant, agent_models, cases_sha256, scorecard, scorecard_sha256, snapshot_sha256}`.
+  `scorecard_sha256` = SHA-256 of the canonical JSON (§5) of `scorecard`; `snapshot_sha256` = SHA-256 of the canonical JSON
+  of the whole file without `snapshot_sha256`.
+- **What GET serves (`verify_snapshot`).** A file that fails any of these checks is not served, and a note names it.
+  - **Both hashes** recompute from the stored JSON.
+  - **Display rules** (§6), re-applied to the card's own `per_event` rows:
+    - `n < 5` → `INSUFFICIENT DATA: No valid comparison`, with no summary and no CI;
+    - SYNTHETIC → `ILLUSTRATIVE: Synthetic demo fixtures`;
+    - REAL_HISTORICAL with blockers → `ILLUSTRATIVE: Historical cases, not an official run ...`;
+    - `OFFICIAL: Computed from {n} historical cases` only for REAL_HISTORICAL with `official_blockers == []` and n ≥ 5;
+    - the caveat, the summary and the bootstrap CI recompute exactly;
+    - the verdict is `agent better than market` iff the CI upper bound < 0;
+    - naive scores are those of p = 0.5;
+    - the counts and `exclusions_by_reason` match the exclusions.
+  - **No dry-run model:** `ollama/dry-run-mock` is never in `agent_models`.
+  - **Committed snapshots** also need all of the following:
+    - `runs/<run_id>/manifest.json` exists, with `dry_run: false` and `phase: "scored"`;
+    - the manifest's `scorecards[]` lists this file with this `scorecard_sha256`;
+    - every row of that run verifies (`verify_run`);
+    - every `per_event[].prediction_ids` entry is one of that run's rows for this variant and event;
+    - each event's agent and market Brier, log loss and accuracy recompute from those rows' `p_yes` and market baseline;
+    - `agent_models` and `provenance` agree with the rows.
+  - **Case set agreement (#118, both origins):** a REAL_HISTORICAL or `case_set: "real"` card has no per-event
+    market ref starting `synthetic:` and its `market_label` is the real one; every `cases_sha256` key is an event
+    of the card (in `per_event` or `exclusions`), so a snapshot cannot list the other set's cases. That every
+    committed case of the set is listed is not checked (GET does not read the case files).
+  - **Limits of these checks.** Hashes are not signatures. Someone who rewrites rows, manifest and snapshot
+    consistently (with new forecasts) is caught only by review of the commit. A computed snapshot (`var/`) is checked
+    against the display rules but not against the store, because GET never opens the store.
+- **Errors:** invalid case or outcome data → 500 `DATA_INVALID` (exception text is not echoed); a bad body → 422
+  `VALIDATION_ERROR` (`hosted_comparator` is refused).
+
+**Official run script** (`scripts/record_runs.py`, lead only; §8 made executable):
+
+1. **Pre-flight, before any model call.**
+   - Refuse if the configured store has any reveal, with one exemption, decided by the evaluator's own function
+     (`core.evaluator.first_counted_reveal`, the same rule as OFFICIAL condition (5), §3, so the two cannot drift;
+     lead decision on #118): a reveal is ignored only if it was LOGGED with sealed provenance SYNTHETIC, the cases
+     are `EvidenceStore.from_dir()` of the configured directory, and its event is a committed SYNTHETIC case every
+     stored forecast of which froze `synthetic=True` (e.g. the fallback revealed on stage). A real reveal, a reveal
+     logged before #102 (NULL), or a reveal of a case relabelled synthetic after a real forecast still refuses. The
+     same check runs again before each model call during the run.
+   - The exemption covers the reveal only. The stage forecast is still a forecast for that case x variant, so the
+     next check refuses a run that includes that variant (follow-up on #118).
+   - Refuse if the store already holds a forecast for a committed case x variant, except the run being resumed with
+     `--resume RUN_ID`.
+   - Refuse if a case's curated `contamination_flag` is weaker than
+     `agents.model_cards.contamination_flag(model, as_of + horizon_days)` (severity `unlikely` < `unknown` < `likely`).
+     The case file must be fixed in a reviewed PR first.
+2. **Forecast** every committed case at its cutoff, for every variant: gate → `model_input` →
+   `LocalOllamaProvider.forecast` → skeptic → `PredictionStore.save(prediction, mi, final_prompt=result.final_prompt)`.
+   - The Prediction is built by `routes.replay.prediction_from_result`, exactly as `POST /api/replay/run` builds it.
+     `prompt_sha256` hashes what the model answered (incl. a repair turn), and `gated_prompt_sha256` hashes the
+     gate's prompt; the Prediction also records `attempts`, `transcript_sha256`, `num_ctx` and `num_predict`.
+   - `MODEL_UNAVAILABLE` stops the run (exit 3; resume later).
+   - These are recorded as `failed` and never persisted: invalid output, an over-long or unverified prompt, a skeptic
+     rejection, and a model prompt the store refuses (`FINAL_PROMPT_NOT_GATED`, with the store's reason).
+   - `agent_plus_market` with no quote within 24h is `skipped`. The evaluator then scores that key as
+     `market_not_available` (§6 step 1), which does not block OFFICIAL.
+3. **Write rows.** Each saved forecast becomes a `RECORDED_RUN` row
+   (`data/recorded_runs/runs/<run_id>/rows/<prediction_id>.json`).
+   - The row holds:
+     - the Prediction;
+     - the exact gated prompt and snapshot JSON;
+     - the scoring context, `persisted_at` / `persist_seq` / `record_sha256`;
+     - the model call: tag, digest, temperature, seed, `num_ctx`, `num_predict`, `attempts`, `final_prompt_suffix`,
+       `final_prompt_sha256`, `transcript_sha256`, raw output and its hash, and token counts;
+     - the skeptic warnings, both contamination flags and `row_sha256`.
+   - `verify_row` applies the store's own rule (`core.store.model_prompt_problems`): the suffix is empty for attempt 1
+     or exactly the provider's repair instruction for attempt 2. It also requires the raw output to parse to exactly the
+     recorded p_yes, decision, rationale and evidence ids.
+   - `manifest.json` lists the cases with their `case_sha256`, the rows, skips and failures, and `rows_sha256`.
+4. **Score.** This happens only if nothing failed, or explicitly with `--score RUN_ID`, and at most once per run.
+   - Every row is re-verified and compared with the store's copy (prompt, model prompt, snapshot, prediction,
+     `record_sha256`).
+   - Each variant is then scored once (this reveals), and the snapshots are written to
+     `data/recorded_runs/scorecards/`.
+   - `--forecast-only` stops after step 3, so the rows can be committed before anything is revealed.
+   - An unknown run id for `--score` / `--resume` is a clean refusal (exit 2).
+
+`--dry-run` uses the #40 provider over a mocked transport (`ollama/dry-run-mock`). It writes to a scratch store and
+folder, labels rows `SIMULATED` and never scores. `tests/test_record_runs.py` checks every committed row and snapshot
+with the same `verify_snapshot(..., origin="committed")` GET uses.
+
+**Not covered here:** the curated `contamination_flag` is still what the gate freezes into the scoring context (§4 TODO).
+The script only refuses an official run when the curated flag is weaker than the model card. Deriving the flag inside
+`ModelInput` needs a model-aware gate or store change (follow-up).
