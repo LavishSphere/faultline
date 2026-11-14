@@ -42,7 +42,7 @@ from pydantic import AwareDatetime, BaseModel, ConfigDict, ValidationError
 from config import get_settings
 from core import store as store_module
 from core.store import PredictionStore, StoredPrediction
-from core.temporal_gate import PROMPT_VARIANTS, EvidenceStore
+from core.temporal_gate import PROMPT_VARIANTS, EvidenceStore, MarketNotAvailable
 from errors import FaultlineError
 from markets.base import MARKET_LABEL
 from models import ErrorCode, ForecastVariant, Identifier, Prediction, Provenance
@@ -478,6 +478,19 @@ def _first_reveal_not_exempt(store: PredictionStore, all_recs: Sequence[StoredPr
     return min((m for m in marks if m is not None), key=lambda m: m.seq, default=None)
 
 
+def _gate_has_no_market(cases: EvidenceStore, event_id: str, as_of: datetime, variant: str) -> bool:
+    """True iff ``variant`` is agent_plus_market and the gate has no quote within 24h before ``as_of``."""
+    if variant != "agent_plus_market":
+        return False
+    try:
+        cases.get_as_of(event_id, as_of).model_input(variant)  # type: ignore[arg-type]
+    except MarketNotAvailable:
+        return True
+    except (LookupError, ValueError):
+        return False
+    return False
+
+
 def build_scorecard(
     vault: OutcomeVault,
     *,
@@ -492,7 +505,8 @@ def build_scorecard(
       * the market baseline, contamination flag and synthetic flag of each prediction are the ones the gate
         fixed in its ``ModelInput`` and the store persisted with it, before any reveal.
     Per key, for ``agent_variant``:
-      * none persisted -> excluded ``no_persisted_prediction``;
+      * none persisted -> excluded ``no_persisted_prediction``, except, with ``cases``, an ``agent_plus_market``
+        key whose gate snapshot has no quote within 24h (the variant cannot run) -> ``market_not_available``;
       * persisted after the event's first reveal (any as_of, any variant) -> ignored, and if nothing else is
         left the key is excluded ``persisted_after_outcome_revealed``;
       * more than one persisted before that reveal -> excluded ``multiple_predictions`` (no choosing);
@@ -543,7 +557,11 @@ def build_scorecard(
                 )
         reason: ExclusionReason | None = None
         ids = [r.prediction.prediction_id for r in recs]
-        if not recs:
+        if not recs and cases is not None and _gate_has_no_market(cases, event_id, as_of, agent_variant):
+            # agent_plus_market cannot run without a quote within 24h: not an operator choice, so it is not
+            # reported as a skipped forecast (which would block OFFICIAL).
+            reason = "market_not_available"
+        elif not recs:
             reason = "no_persisted_prediction"
         elif not before:
             reason = "persisted_after_outcome_revealed"
