@@ -1,0 +1,354 @@
+{
+  "provenance": "ILLUSTRATIVE",
+  "label": "ILLUSTRATIVE: hypothetical shocks for the SYNTHETIC demo business, not forecasts",
+  "description": "Judge's Challenge on CASCADE (issue #123): named surprise shocks a judge can throw at the SYNTHETIC demo business. Each shock is a core.financials.ScenarioShock built from explore_shock_guidance.json parameters with that file's mapping_to_scenario_shock, and every parameter lies inside the cited category's [min, max]. The shocks are inputs; every number shown for them comes from POST /api/simulate (SIMULATED).",
+  "issue": 123,
+  "guidance_file": "explore_shock_guidance.json",
+  "surprise_me": "Deterministic: 'Surprise me' steps through surprise_order in sequence (pick k uses entry (k - 1) mod n) and shows the pick number. No hidden randomness.",
+  "surprise_order": [
+    "judge-supplier-insolvency",
+    "judge-rate-150bp",
+    "judge-flood-demand-halves",
+    "judge-hot-cpi",
+    "judge-distributor-strike",
+    "judge-plant-closure",
+    "judge-fed-100bp",
+    "judge-deli-recall"
+  ],
+  "not_included": [
+    {
+      "idea": "Biggest customer pays 30 days late",
+      "reason": "ScenarioShock has no receivables-timing field (the demo business is paid at the till); mapping it to a demand drop would misstate the cash effect."
+    }
+  ],
+  "challenges": [
+    {
+      "id": "judge-distributor-strike",
+      "name": "Key distributor's dock strike",
+      "description": "The primary distributor's warehouse staff walk out for four weeks from week 2; nothing ships on its lines.",
+      "provenance": "ILLUSTRATIVE",
+      "guidance": {
+        "category": "distributor-strike",
+        "values": {
+          "supplier": {
+            "availability_during_outage": 0.0,
+            "start_week": 2,
+            "duration_weeks": 4,
+            "dependent_share": 0.6
+          }
+        }
+      },
+      "range_citation": "explore_shock_guidance.json · distributor-strike: supplier.availability_during_outage 0% in [0%, 50%]; supplier.start_week wk 2 in [wk 1, wk 8]; supplier.duration_weeks 4 wk in [1 wk, 4 wk]; supplier.dependent_share 60% in [20%, 60%]",
+      "shock": {
+        "name": "Key distributor's dock strike",
+        "supplier": {
+          "availability": [
+            1.0,
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            1.0,
+            1.0,
+            1.0,
+            1.0,
+            1.0,
+            1.0,
+            1.0,
+            1.0,
+            1.0,
+            1.0,
+            1.0,
+            1.0,
+            1.0,
+            1.0,
+            1.0,
+            1.0,
+            1.0,
+            1.0,
+            1.0,
+            1.0,
+            1.0
+          ],
+          "dependent_share": 0.6
+        }
+      }
+    },
+    {
+      "id": "judge-rate-150bp",
+      "name": "Rate shock +150bp",
+      "description": "The lender reprices the floating term loan and the revolver +150bp from week 1.",
+      "provenance": "ILLUSTRATIVE",
+      "guidance": {
+        "category": "credit-tightening",
+        "values": {
+          "rate": {
+            "delta_rate": 0.015,
+            "start_week": 1
+          }
+        }
+      },
+      "range_citation": "explore_shock_guidance.json · credit-tightening: rate.delta_rate 150bp in [25bp, 150bp]; rate.start_week wk 1 in [wk 1, wk 13]",
+      "shock": {
+        "name": "Rate shock +150bp",
+        "rate": {
+          "delta_rate": 0.015,
+          "start_week": 1
+        }
+      }
+    },
+    {
+      "id": "judge-fed-100bp",
+      "name": "Surprise Fed hike +100bp",
+      "description": "A surprise hike plus a follow-up move add +100bp to floating debt from week 1.",
+      "provenance": "ILLUSTRATIVE",
+      "guidance": {
+        "category": "central-bank-rate-surprise",
+        "values": {
+          "rate": {
+            "delta_rate": 0.01,
+            "start_week": 1
+          }
+        }
+      },
+      "range_citation": "explore_shock_guidance.json · central-bank-rate-surprise: rate.delta_rate 100bp in [25bp, 100bp]; rate.start_week wk 1 in [wk 1, wk 7]",
+      "shock": {
+        "name": "Surprise Fed hike +100bp",
+        "rate": {
+          "delta_rate": 0.01,
+          "start_week": 1
+        }
+      }
+    },
+    {
+      "id": "judge-flood-demand-halves",
+      "name": "Flood: demand halves for three weeks",
+      "description": "A flood closes the high street from week 3: footfall halves for three weeks and deliveries run at half volume for two.",
+      "provenance": "ILLUSTRATIVE",
+      "guidance": {
+        "category": "local-disruption",
+        "values": {
+          "demand": {
+            "delta": 0.5,
+            "start_week": 3,
+            "duration_weeks": 3,
+            "recovery_weeks": 2
+          },
+          "supplier": {
+            "availability_during_outage": 0.5,
+            "start_week": 3,
+            "duration_weeks": 2,
+            "dependent_share": 0.4
+          }
+        }
+      },
+      "range_citation": "explore_shock_guidance.json · local-disruption: demand.delta 50% in [10%, 60%]; demand.start_week wk 3 in [wk 1, wk 20]; demand.duration_weeks 3 wk in [1 wk, 3 wk]; demand.recovery_weeks 2 wk in [0 wk, 2 wk]; supplier.availability_during_outage 50% in [0%, 80%]; supplier.start_week wk 3 in [wk 1, wk 20]; supplier.duration_weeks 2 wk in [1 wk, 2 wk]; supplier.dependent_share 40% in [20%, 60%]",
+      "shock": {
+        "name": "Flood: demand halves for three weeks",
+        "demand": {
+          "delta": 0.5,
+          "start_week": 3,
+          "end_week": 5,
+          "recovery_weeks": 2
+        },
+        "supplier": {
+          "availability": [
+            1.0,
+            1.0,
+            0.5,
+            0.5,
+            1.0,
+            1.0,
+            1.0,
+            1.0,
+            1.0,
+            1.0,
+            1.0,
+            1.0,
+            1.0,
+            1.0,
+            1.0,
+            1.0,
+            1.0,
+            1.0,
+            1.0,
+            1.0,
+            1.0,
+            1.0,
+            1.0,
+            1.0,
+            1.0,
+            1.0
+          ],
+          "dependent_share": 0.4
+        }
+      }
+    },
+    {
+      "id": "judge-supplier-insolvency",
+      "name": "Primary supplier goes bust",
+      "description": "The primary distributor enters administration in week 2; ten weeks to on-board a replacement while the administrator keeps 10% of deliveries going.",
+      "provenance": "ILLUSTRATIVE",
+      "guidance": {
+        "category": "supplier-insolvency",
+        "values": {
+          "supplier": {
+            "availability_during_outage": 0.1,
+            "start_week": 2,
+            "duration_weeks": 10,
+            "dependent_share": 0.5
+          }
+        }
+      },
+      "range_citation": "explore_shock_guidance.json · supplier-insolvency: supplier.availability_during_outage 10% in [0%, 30%]; supplier.start_week wk 2 in [wk 1, wk 8]; supplier.duration_weeks 10 wk in [3 wk, 12 wk]; supplier.dependent_share 50% in [20%, 60%]",
+      "shock": {
+        "name": "Primary supplier goes bust",
+        "supplier": {
+          "availability": [
+            1.0,
+            0.1,
+            0.1,
+            0.1,
+            0.1,
+            0.1,
+            0.1,
+            0.1,
+            0.1,
+            0.1,
+            0.1,
+            1.0,
+            1.0,
+            1.0,
+            1.0,
+            1.0,
+            1.0,
+            1.0,
+            1.0,
+            1.0,
+            1.0,
+            1.0,
+            1.0,
+            1.0,
+            1.0,
+            1.0
+          ],
+          "dependent_share": 0.5
+        }
+      }
+    },
+    {
+      "id": "judge-deli-recall",
+      "name": "Deli line food-safety recall",
+      "description": "A recalled deli line (15% of sales) is off the shelf for six weeks from week 1.",
+      "provenance": "ILLUSTRATIVE",
+      "guidance": {
+        "category": "product-recall",
+        "values": {
+          "supplier": {
+            "availability_during_outage": 0.0,
+            "start_week": 1,
+            "duration_weeks": 6,
+            "dependent_share": 0.15
+          }
+        }
+      },
+      "range_citation": "explore_shock_guidance.json · product-recall: supplier.availability_during_outage 0% in [0%, 50%]; supplier.start_week wk 1 in [wk 1, wk 8]; supplier.duration_weeks 6 wk in [1 wk, 6 wk]; supplier.dependent_share 15% in [2%, 15%]",
+      "shock": {
+        "name": "Deli line food-safety recall",
+        "supplier": {
+          "availability": [
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            1.0,
+            1.0,
+            1.0,
+            1.0,
+            1.0,
+            1.0,
+            1.0,
+            1.0,
+            1.0,
+            1.0,
+            1.0,
+            1.0,
+            1.0,
+            1.0,
+            1.0,
+            1.0,
+            1.0,
+            1.0,
+            1.0,
+            1.0
+          ],
+          "dependent_share": 0.15
+        }
+      }
+    },
+    {
+      "id": "judge-hot-cpi",
+      "name": "Hot CPI print",
+      "description": "Inflation runs hot: +75bp on floating debt from week 4 and a long 5% demand squeeze from week 2.",
+      "provenance": "ILLUSTRATIVE",
+      "guidance": {
+        "category": "inflation-surprise",
+        "values": {
+          "rate": {
+            "delta_rate": 0.0075,
+            "start_week": 4
+          },
+          "demand": {
+            "delta": 0.05,
+            "start_week": 2,
+            "duration_weeks": 16,
+            "recovery_weeks": 6
+          }
+        }
+      },
+      "range_citation": "explore_shock_guidance.json · inflation-surprise: rate.delta_rate 75bp in [25bp, 75bp]; rate.start_week wk 4 in [wk 1, wk 8]; demand.delta 5% in [1%, 5%]; demand.start_week wk 2 in [wk 1, wk 4]; demand.duration_weeks 16 wk in [8 wk, 16 wk]; demand.recovery_weeks 6 wk in [0 wk, 6 wk]",
+      "shock": {
+        "name": "Hot CPI print",
+        "rate": {
+          "delta_rate": 0.0075,
+          "start_week": 4
+        },
+        "demand": {
+          "delta": 0.05,
+          "start_week": 2,
+          "end_week": 17,
+          "recovery_weeks": 6
+        }
+      }
+    },
+    {
+      "id": "judge-plant-closure",
+      "name": "Local plant closes",
+      "description": "The area's largest employer shuts in week 3: demand falls 25% for twelve weeks, then recovers over eight.",
+      "provenance": "ILLUSTRATIVE",
+      "guidance": {
+        "category": "regional-economic-slowdown",
+        "values": {
+          "demand": {
+            "delta": 0.25,
+            "start_week": 3,
+            "duration_weeks": 12,
+            "recovery_weeks": 8
+          }
+        }
+      },
+      "range_citation": "explore_shock_guidance.json · regional-economic-slowdown: demand.delta 25% in [5%, 25%]; demand.start_week wk 3 in [wk 1, wk 6]; demand.duration_weeks 12 wk in [4 wk, 12 wk]; demand.recovery_weeks 8 wk in [0 wk, 8 wk]",
+      "shock": {
+        "name": "Local plant closes",
+        "demand": {
+          "delta": 0.25,
+          "start_week": 3,
+          "end_week": 14,
+          "recovery_weeks": 8
+        }
+      }
+    }
+  ]
+}

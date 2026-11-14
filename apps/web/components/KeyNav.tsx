@@ -13,7 +13,12 @@ function isEditable(target: EventTarget | null): boolean {
   return target.getAttribute("role") === "slider";
 }
 
-/** ← / → move between presenter screens. Ignored while typing or adjusting a control. */
+/** True while a modal (e.g. the evidence drawer) is open: arrow keys belong to it, not to screen navigation. */
+function dialogOpen(): boolean {
+  return typeof document !== "undefined" && document.querySelector("dialog[open]") !== null;
+}
+
+/** ← / → move between presenter screens. Ignored while typing, adjusting a control, or while a dialog is open. */
 export function KeyNav() {
   const router = useRouter();
   const pathname = usePathname();
@@ -28,7 +33,7 @@ export function KeyNav() {
 
     function onKey(e: KeyboardEvent) {
       if (e.defaultPrevented || e.altKey || e.ctrlKey || e.metaKey || e.shiftKey) return;
-      if (isEditable(e.target)) return;
+      if (isEditable(e.target) || dialogOpen()) return;
       if (e.key === "ArrowRight" && next) {
         e.preventDefault();
         router.push(stepHref(next));

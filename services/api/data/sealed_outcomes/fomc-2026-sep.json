@@ -1,0 +1,8 @@
+{
+  "event_id": "fomc-2026-sep",
+  "outcome": "NO",
+  "resolved_at": "2026-09-16T18:00:00Z",
+  "source_url": "https://www.federalreserve.gov/newsevents/pressreleases/monetary20260916a.htm",
+  "provenance": "REAL_HISTORICAL",
+  "notes": "Settled by docs/CASES.md rule 3 (hold = YES). This statement (https://www.federalreserve.gov/newsevents/pressreleases/monetary20260916a.htm, 'For release at 2:00 p.m. EDT') says: \"The Committee decided to raise the target range for the federal funds rate by 1/4 percentage point to 3-3/4 to 4 percent, in support of the Federal Reserve's dual mandate. The Committee is continuing its policy of maintaining ample reserves in the banking system.\" Range in effect before the meeting, from the previous scheduled meeting's statement (https://www.federalreserve.gov/newsevents/pressreleases/monetary20260729a.htm): \"The Committee decided to maintain the target range for the federal funds rate at 3-1/2 to 3-3/4 percent, in support of the Federal Reserve's dual mandate. The Committee is continuing its policy of maintaining ample reserves in the banking system.\" Compared bounds: before 3-1/2 to 3-3/4 percent, after 3-3/4 to 4 percent. No unscheduled 2026 FOMC meeting is listed on https://www.federalreserve.gov/monetarypolicy/fomccalendars.htm. Fetched 2026-11-13T17:38:50+00:00."
+}

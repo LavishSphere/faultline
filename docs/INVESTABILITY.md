@@ -38,8 +38,8 @@ summary page; the full reports are paid and were not read, so their methods are 
   is "the summed employment of all associated establishments", and employment is counted "in the pay period including
   March 12" [S1, S1a]. 2022 is the latest year on the SUSB tables page [S1a].
 - **M6 and M7 are not our market.** Both define "financial planning software" broadly: their segment lists include
-  wealth management, personal banking and individual users, alongside SMEs. They agree with each other (about
-  $5.6–5.7 billion, global) but are context for the category, not a figure for SMB decision testing. No source read
+  wealth management, personal banking and individual users, alongside SMEs. They differ: for 2025 Polaris prints USD 6.54 billion and TBRC $5.69 billion, so the category
+  size itself is uncertain. Both are context for the category, not a figure for SMB decision testing. No source read
   for this brief isolates FP&A software for small businesses, so that figure is **NOT AVAILABLE**.
 - **M5 is a single third-party estimate** for the advisory spend our first customers already make. Its page prints no
   publication year ("Last Updated: Nov 11") and labels the 7.00% CAGR as both 2025–2035 and 2026–2035.
@@ -79,7 +79,7 @@ List prices were read on each vendor's public pricing page on 2026-11-13 [S7–S
 |---|---|---|
 | Spreadsheets | Free-form models (our description, not a cited claim): no built-in record of what was known when | No price (already owned) |
 | Float [S7] | "13-week cash flow", "36-month forecasts", "8 scenarios" (Growth); accountancy firms, bookkeepers and fractional finance leaders are told to "Talk to us about specific pricing" | Growth: $265/mo billed monthly, $215/mo billed annually |
-| Fathom [S8] | "Three-way cash flow forecasting"; "Budgets, scenarios and what-ifs"; a Portfolio plan "designed for accounting firms" | Pro: "$450/ month" with "25 companies included" ("$18.00 per company") |
+| Fathom [S8] | "Three-way cash flow forecasting"; "Budgets, scenarios and what-ifs"; a Portfolio plan "designed for accounting firms" | Pro, 25-company (Gold) tier: "$450/ month" with "25 companies included" ("$18.00 per company") |
 | LivePlan [S9] | Premium: "Auto-updating profit & cash forecasting"; "Run up to 10 versions of your forecast" | Standard $15/mo, Premium $30/mo, paid annually |
 | QuickBooks Online [S10] | "Conversational forecasting": "Run "what-if" scenarios to see how a price change, a new hire, or any big decision will impact your business" (Plus, marked BETA) | Not recorded |
 | Bank tools [S11] | Bank of America CashPro Forecasting: "cash forecasting in minutes, not days", for "Corporations & Institutions" | "available at no cost to CashPro users" |
