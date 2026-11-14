@@ -1,7 +1,7 @@
 # FAULTLINE: 2-minute demo script and finance Q&A prep
 
 **Presenter (finance voice):** Yaseen. **Length:** 280 spoken words on the main path (the **Say** lines of steps 0–7), about 112 s at 150 words a minute, inside the 90–120 s target (SPEC §2). **Measured with a stopwatch:** NOT YET TIMED. Write the time of the first full run-through here.
-**Status of this script:** written 2026-11-13 against `main` at commit `1190671` and updated on 2026-11-14 against `4a1f2c2` (after the DECISION screen #134, the optimizer endpoint and Protect payroll switch #127, and the LIVE EXPLORE screen #135 merged). Every number below came from the API running locally (calls listed in [Where the numbers come from](#where-the-numbers-come-from)).
+**Status of this script:** written 2026-11-13 against `main` at commit `1190671` and updated on 2026-11-14 against `4a1f2c2` (after the DECISION screen #134, the optimizer endpoint and Protect payroll switch #127, and the LIVE EXPLORE screen #135 merged); the recovery-plan numbers (step 3) were re-run against `80deee2`, after the optimizer tie-break #136. Every number below came from the API running locally (calls listed in [Where the numbers come from](#where-the-numbers-come-from)).
 The web app itself was **not** run while writing this (Node.js was not installed on the writing machine), so the
 click paths and on-screen labels were read from the `apps/web` code. Do the [dry-run checklist](#dry-run-checklist)
 before going on stage.
@@ -91,12 +91,13 @@ Seconds are estimates at 150 spoken words a minute, plus pauses for clicks. If y
 - **Say (numbers are from the running API on `main`, see below):** "A fictional three-store grocer, labeled synthetic. No shock: it ends the half-year at 63,000. A bad quarter: rates up two points, demand down a fifth, main supplier out three weeks. Cash falls below our 25,000 floor in week 20 and ends at 13,950: 49,050 worse."
 - **Then click:** the **Protect payroll** switch in C.1 (off by default).
   **Say:** "Now, Protect payroll. The optimizer must keep cash above the floor without cutting wages, or say NO FEASIBLE PLAN. Protecting people's jobs is a hard limit in the maths."
-  Then read the plan **only from panel C.3 Recovery plan**. On 2026-11-14 the API gave, for the bad quarter with
-  Protect payroll on: **Chosen actions (6)**, all purchase cuts in weeks 18–24, together $11,050; **Min cash after
-  plan $25,000 · week 20** (exactly the floor); objective 550; no payroll cut (see
-  [Where the numbers come from](#where-the-numbers-come-from)). With the switch off, the plan costs the same (7
-  purchase cuts, the same $11,050, objective 550): payroll is the costliest lever, so the optimizer doesn't use it
-  here anyway. So don't say the switch changed this plan; its point is the guarantee. (Capex is 0 in the demo
+  Then read the plan **only from panel C.3 Recovery plan**. On 2026-11-14 (after the tie-break #136) the API gave,
+  for the bad quarter with Protect payroll on: **Chosen actions (7)**, all purchase cuts, week 18 ($1,126.92) and
+  weeks 19–24 ($1,653.85 each), together $11,050; **Min cash after plan $25,000 · week 20** (exactly the floor);
+  objective 550; no payroll cut (see [Where the numbers come from](#where-the-numbers-come-from)). With the switch
+  off the API returns the **same plan**: the same 7 cuts in the same weeks, the same $11,050, objective 550. Payroll
+  is the costliest lever, so the optimizer doesn't use it here anyway. So don't say the switch changed this plan;
+  its point is the guarantee. (Capex is 0 in the demo
   business and the revolver must be repaid by week 26, so neither fixes the bad quarter on its own.)
 - **On screen:** `SIMULATED` (computed by the deterministic engine) and `SYNTHETIC` (fictional business) on C.0 and C.2.
   The dependency network shows Δ = scenario − baseline at each node's peak week.
@@ -189,18 +190,20 @@ The other three named scenarios, each sent the same way (`scenario_id` + the ser
 | `supplier-outage-3wk` | 42,000 (26) | −21,000 |
 | `bad-quarter` | 13,950 (26) | −49,050 |
 
-The recovery plan (step 3), from `POST /api/optimize` on 2026-11-14 at `38c595a`, body `{"scenario_id": "bad-quarter",
-"shock": <the served bad-quarter shock>, "protect_payroll": true | false}`. Both answers have `"status": "OPTIMAL"`,
-`"provenance": "SIMULATED"`, `"business_provenance": "SYNTHETIC"`:
+The recovery plan (step 3), from `POST /api/optimize` on 2026-11-14 at `80deee2` (after the optimizer tie-break
+#136; FastAPI `TestClient`, same app as uvicorn), body `{"scenario_id": "bad-quarter", "shock": <the served
+bad-quarter shock>, "protect_payroll": true | false}`. Both answers have `"status": "OPTIMAL"`,
+`"provenance": "SIMULATED"`, `"business_provenance": "SYNTHETIC"`, and the two plans are identical (same actions,
+weeks and amounts):
 
 | Field | `protect_payroll: true` | `protect_payroll: false` |
 |---|---|---|
-| `actions` | 6 purchase cuts: weeks 18 (1,126.92), 19, 20 (1,653.85 each), 21 (3,307.69), 23, 24 (1,653.85 each) | 7 purchase cuts: week 18 (1,126.92), weeks 19–24 (1,653.85 each) |
+| `actions` | 7 purchase cuts: week 18 (1,126.92), weeks 19–24 (1,653.85 each) | 7 purchase cuts: week 18 (1,126.92), weeks 19–24 (1,653.85 each) |
 | sum of purchase cuts | 11,050 | 11,050 |
 | payroll cut, revolver draw, backup supplier, capex, expansion | none | none |
 | `min_cash` / `min_cash_week` | 25,000 / week 20 | 25,000 / week 20 |
 | `objective` (`disruption_cost`) | 550 (552.50) | 550 (552.50) |
-| `binding_constraints` | liquidity floor, weeks 20, 21, 22, 24, 25, 26 | liquidity floor, weeks 20–26 |
+| `binding_constraints` | liquidity floor, weeks 20–26 | liquidity floor, weeks 20–26 |
 
 Other calls used in this script:
 
@@ -351,8 +354,9 @@ Do this on the demo laptop before going on stage (the script author could not ru
       "-$49,050 vs baseline $63,000", **Ending cash $13,950**, runway still more than 26 weeks. If any figure differs,
       say the on-screen figure and tell the lead (the engine or data changed after this script).
 - [ ] Badges on C.0 and C.2 read `SIMULATED` and `SYNTHETIC`.
-- [ ] Protect payroll: toggle it. C.3 should list 6 purchase cuts (weeks 18–24, together $11,050) and **Min cash after
-      plan $25,000 · week 20**; with the switch off, 7 cuts, same total. If C.3 differs, read the screen and tell the lead.
+- [ ] Protect payroll: toggle it. C.3 should list 7 purchase cuts (week 18, then weeks 19–24, together $11,050) and
+      **Min cash after plan $25,000 · week 20**; with the switch off, the same 7 cuts in the same weeks. If C.3
+      differs, read the screen and tell the lead.
 - [ ] `/research`: cutoff `2026-07-01T00:00:00Z` → Apply cutoff → 4 sources shown, 2 not yet public; Sequoia shows no source.
 - [ ] `/rewind`, `/decision`, `/reveal`: are the 4 real cases listed? Does the DECISION run complete? Is the Reveal button enabled?
       For each that isn't, rehearse that step's "Say instead" line.
