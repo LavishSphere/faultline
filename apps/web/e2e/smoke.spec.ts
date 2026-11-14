@@ -16,8 +16,12 @@ const RESEARCH_CUTOFF = "2026-07-01T00:00:00Z";
 const RESEARCH_EXPECTED_HELD_BACK = 2;
 
 /** Same display formatting as components/FinancialReadout.tsx ("usd"): formatting only, no arithmetic. */
+// lib/format.ts `usd`: whole dollars, except a value on a half dollar (x.50) shows its cents (F20, #157).
 const USD = new Intl.NumberFormat("en-US", { style: "currency", currency: "USD", maximumFractionDigits: 0 });
-const usd = (n: number) => USD.format(Math.round(n) || 0);
+const CENTS = new Intl.NumberFormat("en-US", { style: "currency", currency: "USD", minimumFractionDigits: 2, maximumFractionDigits: 2 });
+const usd = (n: number) => (Math.abs((Math.abs(n) % 1) - 0.5) < 0.005 ? CENTS.format(n) : USD.format(Math.round(n) || 0));
+/** lib/format.ts `usdCentsFloor`: dollars and cents, rounded down (a ceiling is never rounded up, F4). */
+const usdCentsFloor = (n: number) => CENTS.format(Math.floor(n * 100 + 1e-9) / 100);
 
 const isSimulate = (r: Request) => r.method() === "POST" && r.url() === SIMULATE_URL;
 
@@ -149,7 +153,11 @@ test.describe("REVEAL", () => {
       records: { agent_variant: string }[];
     };
 
-    await expect(page.getByText(`status: ${api.status} · provenance: ${api.provenance}`, { exact: true })).toBeVisible();
+    // F19 (#157): with no scorecard served the line says none is recorded instead of implying a recorded run exists.
+    expect(api.provenance).toBe("RECORDED_RUN");
+    const provenanceText = api.status === "NOT AVAILABLE" ? "RECORDED RUN (none recorded yet)" : api.provenance;
+    expect(api.status === "NOT AVAILABLE", "NOT AVAILABLE exactly when no item is served").toBe(api.items.length === 0);
+    await expect(page.getByText(`status: ${api.status} · provenance: ${provenanceText}`, { exact: true })).toBeVisible();
     for (const note of api.notes) await expect(page.getByText(note, { exact: true }).first()).toBeVisible();
 
     // #124: both variants side by side, each showing the FIRST item the API served for it, verbatim.
@@ -219,8 +227,8 @@ test.describe("DECISION · ACT / WAIT / HEDGE", () => {
     r.method() === "POST" &&
     r.url() === DECISION_URL &&
     (r.postDataJSON() as { frame_id?: string } | null)?.frame_id === frameId;
-  /** Same display formatting as components/decision/SplitView.tsx: formatting only, no arithmetic. */
-  const USD2 = new Intl.NumberFormat("en-US", { style: "currency", currency: "USD", maximumFractionDigits: 2 });
+  /** Same display formatting as components/decision/SplitView.tsx (whole dollars as on CASCADE, F13): no arithmetic. */
+  const USD2 = { format: usd };
 
   test("payoffs equal the API for every policy; the forecast-insensitive caveat is shown verbatim", async ({ page }) => {
     await page.goto("/decision/");
@@ -242,8 +250,8 @@ test.describe("DECISION · ACT / WAIT / HEDGE", () => {
     expect(body.policies.map((p) => p.name)).toEqual(["ACT", "WAIT", "HEDGE"]);
     for (const p of body.policies) {
       const col = page.locator(`[data-policy="${p.name}"]`);
-      await expect(col.getByText(USD2.format(p.value_if_yes), { exact: true })).toBeVisible();
-      await expect(col.getByText(USD2.format(p.value_if_no), { exact: true })).toBeVisible();
+      await expect(col.getByText(USD2.format(p.value_if_yes), { exact: true }).first()).toBeVisible();
+      await expect(col.getByText(USD2.format(p.value_if_no), { exact: true }).first()).toBeVisible();
       await expect(col.getByText(/^SIMULATED/).first()).toBeVisible();
     }
 
@@ -434,7 +442,7 @@ test.describe("LIVE EXPLORE", () => {
       await expect(page.getByTestId("explore-plan-min-cash")).toHaveText(usd(direct.min_cash));
     } else if (direct.status === "NO FEASIBLE PLAN") {
       await expect(page.getByTestId("explore-max-feasible-floor")).toHaveText(
-        direct.max_feasible_cash_floor === null ? "NOT AVAILABLE" : usd(direct.max_feasible_cash_floor),
+        direct.max_feasible_cash_floor === null ? "NOT AVAILABLE" : usdCentsFloor(direct.max_feasible_cash_floor),
       );
     }
 

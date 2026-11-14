@@ -101,7 +101,9 @@ export function Scorecard({ revealedPredictionId = null }: { revealedPredictionI
           {data ? (
             <div className="flex flex-col gap-1.5">
               <p className="font-mono text-[10.5px] uppercase tracking-[0.1em] text-text-2">
-                status: {data.status} · provenance: {data.provenance}
+                {/* F19 (#157): with no item served (status NOT AVAILABLE) no recorded run exists to label. */}
+                status: {data.status} · provenance:{" "}
+                {data.status === "NOT AVAILABLE" ? "RECORDED RUN (none recorded yet)" : data.provenance}
               </p>
               {data.notes.length ? (
                 <ul className="flex flex-col gap-1" aria-label="Notes from the API">

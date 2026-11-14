@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { Field, Panel } from "../Panel";
 import type { ApiResult } from "@/lib/api";
+import { usd } from "@/lib/format";
 import {
   DECISION_FRAMES_PATH,
   DECISION_PATH,
@@ -35,9 +36,12 @@ export interface ProbabilityInput {
 }
 
 const CODES: Record<string, string> = { ACT: "B.4", WAIT: "B.5", HEDGE: "B.6" };
-const USD = new Intl.NumberFormat("en-US", { style: "currency", currency: "USD", maximumFractionDigits: 2 });
-const fmtUsd = (v: number | null) => (v === null ? undefined : USD.format(v));
-const fmtP = (p: number) => p.toFixed(4);
+/** Whole dollars as on CASCADE (cents only on a half dollar, lib/format.ts); F13. */
+const fmtUsd = (v: number | null) => (v === null ? undefined : usd(v));
+/** A probability to 3 decimals, as on B.2 (F13). */
+const fmtP = (p: number) => p.toFixed(3);
+/** The break-even p* keeps 4 decimals: it is a threshold, compared with p, so it is not rounded onto p's grid. */
+const fmtPStar = (p: number) => p.toFixed(4);
 
 type Load<T> = { kind: "loading" } | { kind: "done"; result: ApiResult<T> };
 
@@ -137,6 +141,8 @@ export function SplitView({
         ) : null}
       </div>
 
+      <FramesStatus status={frames.result.data.status} />
+
       {frame === null ? (
         <Panel code="B.4-6" title="ACT / WAIT / HEDGE" provenance="NOT AVAILABLE">
           <p className="font-mono text-sm uppercase tracking-[0.08em] text-muted">Choose a decision frame</p>
@@ -184,7 +190,7 @@ export function SplitView({
                   </span>
                 ) : null}
               </div>
-              <Feasibility v={v} />
+              <Feasibility v={v} checks={values?.constraints_checked ?? []} />
               <dl className="mt-3">
                 <Field label="V(a, YES) · min cash" preserveCase value={fmtUsd(v?.value_if_yes ?? null)} />
                 <Field label="V(a, NO) · min cash" preserveCase value={fmtUsd(v?.value_if_no ?? null)} />
@@ -222,19 +228,50 @@ export function SplitView({
       <p className="font-mono text-[11px] leading-relaxed text-muted">
         {values ? values.payoff : "lowest simulated cash balance"} · from POST {DECISION_PATH} (core.decision,
         MATH_MODEL §8), one request per probability. SIMULATED payoffs of a SYNTHETIC business, never trading P&amp;L.
-        {frame?.not_modelled_note ? ` ${frame.not_modelled_note}` : ""}
+        {/* F12: say when the not-modelled note applies, so it does not read like an error before any reveal. */}
+        {frame?.not_modelled_note
+          ? ` If NO turns out to be an outcome this frame does not model${frame.no_state_models ? ` (it models NO as: ${frame.no_state_models})` : ""}, the reveal shows “${frame.not_modelled_note}”.`
+          : ""}
       </p>
+      {values && values.constraints_checked.length ? (
+        <p className="font-mono text-[11px] leading-relaxed text-muted" data-testid="feasibility-meaning">
+          Feasible in both states = every check below holds in every week, in both outcomes (POST {DECISION_PATH}{" "}
+          constraints_checked): {values.constraints_checked.join("; ")}.
+        </p>
+      ) : null}
     </div>
   );
 }
 
-function Feasibility({ v }: { v: PolicyResult | null }) {
+/**
+ * F21: the frames' sign-off status exactly as GET /api/decision/frames serves it. The summary line is the text up to
+ * its first ": " (the status headline, e.g. who signed off and when); the full text is one click away.
+ */
+function FramesStatus({ status }: { status: string }) {
+  const text = status.trim();
+  if (!text) {
+    return <p className="font-mono text-[11px] text-muted">Frames status: NOT AVAILABLE (GET {DECISION_FRAMES_PATH} sent none)</p>;
+  }
+  const cut = text.indexOf(": ");
+  const head = cut > 0 && cut <= 140 ? text.slice(0, cut) : null;
+  return (
+    <details className="rounded-md border border-line px-3 py-2" data-testid="frames-status">
+      <summary className="cursor-pointer font-mono text-[11px] leading-relaxed text-text-2">
+        <span className="kicker">Frames status</span> {head ?? "from GET /api/decision/frames"}
+      </summary>
+      <p className="mt-2 text-xs leading-relaxed text-muted">{text}</p>
+    </details>
+  );
+}
+
+function Feasibility({ v, checks }: { v: PolicyResult | null; checks: string[] }) {
   if (!v) {
     return <p className="mt-3 font-mono text-[10px] uppercase tracking-[0.14em] text-muted">Feasibility: not available</p>;
   }
   const ok = v.feasible_in_both;
   return (
     <p
+      title={checks.length ? `Checked in every week of both outcomes: ${checks.join("; ")}` : undefined}
       className={`mt-3 inline-flex w-fit items-center gap-1.5 rounded border px-1.5 py-0.5 font-mono text-[10px] uppercase tracking-[0.14em] ${
         ok ? "border-viable/60 text-viable" : "border-fail/60 bg-fail/10 text-fail"
       }`}
@@ -298,7 +335,7 @@ function Recommendation({
         </p>
         <p className="text-xs leading-relaxed text-text-2">
           {d.break_even.status === "AVAILABLE" && d.break_even.p_star !== null
-            ? `Break-even p* = ${fmtP(d.break_even.p_star)} between ${d.break_even.policies.join(" and ")}.`
+            ? `Break-even p* = ${fmtPStar(d.break_even.p_star)} between ${d.break_even.policies.join(" and ")}.`
             : d.break_even.note}
         </p>
       </div>

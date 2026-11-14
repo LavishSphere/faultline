@@ -12,8 +12,12 @@ import { E2E_API_BASE } from "./ports";
 const OPTIMIZE_URL = `${E2E_API_BASE}/api/optimize`;
 const SIMULATE_URL = `${E2E_API_BASE}/api/simulate`;
 
+// lib/format.ts `usd`: whole dollars, except a value on a half dollar (x.50) shows its cents (F20, #157).
 const USD = new Intl.NumberFormat("en-US", { style: "currency", currency: "USD", maximumFractionDigits: 0 });
-const usd = (n: number) => USD.format(Math.round(n) || 0);
+const CENTS = new Intl.NumberFormat("en-US", { style: "currency", currency: "USD", minimumFractionDigits: 2, maximumFractionDigits: 2 });
+const usd = (n: number) => (Math.abs((Math.abs(n) % 1) - 0.5) < 0.005 ? CENTS.format(n) : USD.format(Math.round(n) || 0));
+/** lib/format.ts `usdCentsFloor`: dollars and cents, rounded down, so a ceiling is never shown above itself (F4). */
+const usdCentsFloor = (n: number) => CENTS.format(Math.floor(n * 100 + 1e-9) / 100);
 
 const isOptimize = (r: Request) => r.method() === "POST" && r.url() === OPTIMIZE_URL;
 const isSimulate = (r: Request) => r.method() === "POST" && r.url() === SIMULATE_URL;
@@ -68,7 +72,11 @@ test.describe("CASCADE recovery plan", () => {
 
     await expect(page.getByTestId("recovery-plan")).toHaveAttribute("data-status", "NO FEASIBLE PLAN");
     await expect(page.getByText("NO FEASIBLE PLAN", { exact: true })).toBeVisible();
-    await expect(page.getByTestId("max-feasible-floor")).toHaveText(usd(api.max_feasible_cash_floor as number));
+    const floor = api.max_feasible_cash_floor as number;
+    await expect(page.getByTestId("max-feasible-floor")).toHaveText(usdCentsFloor(floor));
+    const shown = Number((await page.getByTestId("max-feasible-floor").textContent())!.replace(/[$,]/g, ""));
+    expect(shown, "the highest feasible floor is shown with cents and never rounded up").toBeLessThanOrEqual(floor);
+    expect(floor - shown).toBeLessThan(0.01);
 
     // Switch off: payroll cuts are allowed again and the same shock has a plan.
     const unprotected = page.waitForResponse(

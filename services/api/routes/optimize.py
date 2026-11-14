@@ -5,7 +5,8 @@ Every number in the response comes from ``core.optimizer.optimize`` run on the b
 
 Request: ``{"scenario_id"?, "shock", "protect_payroll"}``, the same shock model as POST /api/simulate.
 
-Response: the OptimizationResult fields verbatim (``provenance: "SIMULATED"``) plus ``business_provenance``.
+Response: the OptimizationResult fields verbatim (``provenance: "SIMULATED"``) plus ``business_provenance``,
+``payroll_cut_cap`` (the configured z-bar) and ``supplier_lag_weeks`` (L_p), both read from the fixture (#157).
 The three statuses are all answers, so all are 200:
 - ``OPTIMAL``: plan, chosen actions, cash path, min cash, binding constraints by name, objective.
 - ``NO FEASIBLE PLAN``: every plan field is null; ``max_feasible_cash_floor`` is the smallest floor change that
@@ -58,6 +59,15 @@ class OptimizeResponse(OptimizationResult):
 
     business_provenance: Literal["SYNTHETIC", "ILLUSTRATIVE"] = Field(
         description="Provenance of the fictional demo business the optimizer ran on."
+    )
+    payroll_cut_cap: float = Field(
+        description=(
+            "z-bar, the configured payroll-cut cap per week (MATH_MODEL §4, §10), as read from the fixture. "
+            "With protect_payroll the solver uses 0 instead (§4.5); this field still reports the configured cap."
+        )
+    )
+    supplier_lag_weeks: int = Field(
+        description="L_p, the supplier payment lag (MATH_MODEL §3, §10): a week-t purchase cut reaches cash in t + L_p."
     )
 
 
@@ -120,5 +130,10 @@ def optimize_route(
         raise RouteError(ErrorCode.INFEASIBLE_INPUT, str(exc)) from None
 
     return OptimizeResponse.model_validate(
-        {**result.model_dump(), "business_provenance": business.provenance}
+        {
+            **result.model_dump(),
+            "business_provenance": business.provenance,
+            "payroll_cut_cap": opt_settings.payroll_cut_cap,
+            "supplier_lag_weeks": business.supplier_lag_weeks,
+        }
     )

@@ -13,6 +13,7 @@ import {
 import type { ApiResult } from "@/lib/api";
 import { Panel } from "../Panel";
 import { WIRE_PROVENANCE, type ProvenanceInput, type WireProvenance } from "../ProvenanceBadge";
+import { useSelectedCaseId } from "../replay/hooks";
 
 /**
  * INTEGRITY panel (issue #81): what the AI was NOT allowed to see, and which guarantees held, for the selected
@@ -100,7 +101,10 @@ export function IntegrityPanel({
 }) {
   const ids = useId();
   const [cases, setCases] = useState<ApiResult<IntegrityCaseOption[]> | null>(null);
-  const [pickedCase, setPickedCase] = useState<string | null>(null);
+  /** undefined until the presenter uses this panel's own picker; null = "System checks only". */
+  const [pickedCase, setPickedCase] = useState<string | null | undefined>(undefined);
+  /** The case chosen on REWIND / DECISION (shared selection, #157): the default when no case is passed or picked. */
+  const [sharedCase] = useSelectedCaseId();
   const [predictionDraft, setPredictionDraft] = useState("");
   const [appliedPrediction, setAppliedPrediction] = useState<string | null>(null);
   const [nonce, setNonce] = useState(0);
@@ -116,7 +120,8 @@ export function IntegrityPanel({
 
   const caseOptions = cases?.ok ? cases.data : [];
   const onlyCase = caseOptions.length === 1 ? caseOptions[0]!.event_id : null;
-  const caseId = caseIdProp ?? pickedCase ?? onlyCase;
+  const sharedServed = sharedCase !== null && caseOptions.some((c) => c.event_id === sharedCase) ? sharedCase : null;
+  const caseId = caseIdProp ?? (pickedCase !== undefined ? pickedCase : (sharedServed ?? onlyCase));
   const predictionId = predictionIdProp ?? appliedPrediction;
   const casesSettled = caseIdProp != null || cases !== null;
   const key = `${caseId ?? ""}|${predictionId ?? ""}|${nonce}`;

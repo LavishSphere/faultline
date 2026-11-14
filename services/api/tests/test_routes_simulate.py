@@ -17,7 +17,10 @@ from core.financials import ActionPlan, BusinessParams, ScenarioShock, cascade_d
 from main import create_app
 
 REAL_DATA = Path(__file__).resolve().parent.parent / "data"
-CONTRACT_KEYS = {"provenance", "business_provenance", "baseline", "result", "deltas"}
+CONTRACT_KEYS = {
+    "provenance", "business_provenance", "baseline", "result", "deltas",
+    "min_cash_floor", "first_week_below_floor", "weeks_below_floor",
+}
 
 
 @pytest.fixture
@@ -251,6 +254,61 @@ def test_invalid_business_file_is_data_invalid(client, data_dir, content):
     (data_dir / "demo_business.json").write_text(content, encoding="utf-8")
     body = _assert_coded(client.post("/api/simulate", json={"shock": {}}), 500, "DATA_INVALID")
     assert str(data_dir) not in json.dumps(body)  # never leak absolute paths
+
+
+# --------------------------------------------------------------------------- liquidity floor (MATH_MODEL §4.1, §10)
+
+
+def _bad_quarter() -> dict:
+    payload = json.loads((REAL_DATA / "scenarios.json").read_text(encoding="utf-8"))
+    return next(s for s in payload["scenarios"] if s["id"] == "bad-quarter")
+
+
+def test_baseline_reports_the_floor_and_stays_above_it(client, params):
+    body = client.post("/api/simulate", json={"shock": {}}).json()
+    assert params.min_cash == 25000.0  # §10 C_min, read from the fixture
+    assert body["min_cash_floor"] == params.min_cash
+    assert body["first_week_below_floor"] is None
+    assert body["weeks_below_floor"] == []
+
+
+def test_bad_quarter_is_below_the_floor_in_weeks_20_to_26(client, params):
+    s = _bad_quarter()
+    body = client.post("/api/simulate", json={"scenario_id": s["id"], "shock": s["shock"]}).json()
+    assert body["provenance"] == "SIMULATED"
+    assert body["min_cash_floor"] == 25000.0
+    # Oracle: the engine's own cash path for the same shock, compared with C_min week by week.
+    cash = _engine(params, s["shock"])["result"]["cash"]
+    expected = [t for t, c in enumerate(cash, start=1) if c < params.min_cash]
+    assert expected == list(range(20, 27))  # docs/DEMO_SCRIPT.md: "below our 25,000 floor in week 20"
+    assert body["weeks_below_floor"] == expected
+    assert body["first_week_below_floor"] == 20
+    # Cash never goes negative, so the runway week stays null: the floor is the stricter test.
+    assert body["result"]["runway_week"] is None
+
+
+def test_a_plan_that_holds_the_floor_exactly_is_not_below_it(client):
+    s = _bad_quarter()
+    opt = client.post(
+        "/api/optimize", json={"scenario_id": s["id"], "shock": s["shock"], "protect_payroll": True}
+    ).json()
+    assert opt["status"] == "OPTIMAL"
+    assert opt["min_cash"] == pytest.approx(25000.0)  # the floor binds (weeks 20-26)
+    body = client.post(
+        "/api/simulate", json={"scenario_id": s["id"], "shock": s["shock"], "plan": opt["plan"]}
+    ).json()
+    assert body["first_week_below_floor"] is None
+    assert body["weeks_below_floor"] == []
+
+
+def test_no_floor_in_the_fixture_reports_null(client, data_dir):
+    payload = json.loads((data_dir / "demo_business.json").read_text(encoding="utf-8"))
+    payload["business"].pop("min_cash")
+    (data_dir / "demo_business.json").write_text(json.dumps(payload), encoding="utf-8")
+    body = client.post("/api/simulate", json={"shock": _bad_quarter()["shock"]}).json()
+    assert body["min_cash_floor"] is None
+    assert body["first_week_below_floor"] is None
+    assert body["weeks_below_floor"] == []
 
 
 def test_business_provenance_follows_the_fixture(client, data_dir):

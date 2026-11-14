@@ -22,7 +22,7 @@ that are not on `main` yet.
 |---|---|---|---|---|
 | Minimum cash | `Minimum cash`, `Min cash after plan` | The lowest weekly cash balance over the 26-week horizon. | CASCADE, EXPLORE |  |
 | Week of minimum cash | `Week of minimum cash` | The first week in which cash reaches its lowest level. | CASCADE, EXPLORE |  |
-| Runway | `Runway` | The first week cash would go below zero, if it ever does. | CASCADE, EXPLORE |  |
+| Runway | `Cash goes negative`, `first week C_t < 0 (MATH_MODEL §3)` | The first week cash would go below zero, if it ever does. | CASCADE, EXPLORE |  |
 | Ending cash | `Ending cash` | Cash in the bank at the end of the last week, week 26. | CASCADE, EXPLORE |  |
 | Baseline | `vs baseline` | The demo business with no shock and no recovery actions. | CASCADE, EXPLORE |  |
 | Starting cash (C_0) | `C_0` | Cash in the bank before week 1. | CASCADE |  |
@@ -52,8 +52,8 @@ that are not on `main` yet.
 | Payroll | `Payroll`, `Payroll cut` | Wages paid to staff each week. | CASCADE, EXPLORE |  |
 | Cash (C_t) | `Cash` | Money in the bank at the end of each week. | CASCADE |  |
 | Backup supplier (π, F_b) | `Use backup supplier`, `backup premium π on λ_t` | A second supplier that covers an outage at a higher price. | CASCADE, EXPLORE |  |
-| Protect payroll | `Protect payroll`, `On: the optimizer may not cut payroll (z_t = 0)`, `Off: payroll cuts allowed up to z̄` | A switch that forbids the optimizer from cutting payroll at all. | CASCADE |  |
-| Liquidity floor (C_min) | `cash stays above the floor` | The lowest cash any plan may reach: 25,000 in the demo. | CASCADE, EXPLORE |  |
+| Protect payroll | `Protect payroll`, `On: the optimizer may not cut payroll (z_t = 0)`, `Off: payroll may be cut by up to` | A switch that forbids the optimizer from cutting payroll at all. | CASCADE |  |
+| Liquidity floor (C_min) | `cash stays above the floor`, `below it in week` | The lowest cash any plan may reach: 25,000 in the demo. | CASCADE, EXPLORE |  |
 | Recovery plan | `Recovery plan`, `Recovery plan · deterministic optimizer`, `Chosen actions` | The least harmful set of actions that keeps every hard limit. | CASCADE, EXPLORE |  |
 | Purchase cut (v_t) | `Purchase cut` | Buying less stock in a week, drawing down inventory to save cash. | CASCADE, EXPLORE |  |
 | Defer capex and delay expansion | `Defer non-critical capex`, `Delay expansion` | Yes-or-no actions: postpone planned equipment spending, or the new-store opening. | CASCADE, EXPLORE |  |
@@ -137,7 +137,7 @@ that are not on `main` yet.
 - **On screen:** `Horizon`
 - **Short:** How many days after the knowledge cutoff the question is decided.
 - **Long:** The forecast window: the question asks what happens within this many days after as_of, and the model's prompt states it ('Horizon: N days after the cutoff'). Forecasters are compared on the same event and cutoff; several horizons of one event are averaged first (MATH_MODEL §6).
-- **Example:** 7 days on 4 of the 5 committed demo cases.
+- **Example:** 16 committed cases: the 15 real FOMC cases at 8 days (the window covers the statement release) and the synthetic case at 21.
 - **Source:** services/api/data/demo_cases (horizon_days); core/temporal_gate.py prompt line.
 - **Screens:** REWIND
 - **MATH_MODEL:** §6
@@ -380,10 +380,10 @@ that are not on `main` yet.
 
 ### Runway
 
-- **On screen:** `Runway`
+- **On screen:** `Cash goes negative`, `first week C_t < 0 (MATH_MODEL §3)`
 - **Short:** The first week cash would go below zero, if it ever does.
-- **Long:** The first week t with C_t < 0 on the simulated path (MATH_MODEL §3). If cash stays at or above zero for the whole horizon it reads '> 26 weeks'. FAULTLINE never extrapolates a burn-rate runway beyond the horizon. The 25,000 liquidity floor is a separate, stricter test.
-- **Example:** '> 26 weeks' in both the baseline and Bad quarter, because the lowest cash, 13,950, stays above zero.
+- **Long:** The first week t with C_t < 0 on the simulated path (MATH_MODEL §3). If cash stays at or above zero for the whole horizon it reads 'not within 26 weeks'. It is a week, not a duration, and is never extrapolated beyond the horizon. The 25,000 liquidity floor is a separate, stricter test.
+- **Example:** 'not within 26 weeks' in both the baseline and Bad quarter, because the lowest cash, 13,950, stays above zero.
 - **Source:** Engine run on the SYNTHETIC demo business (runway_label of the baseline and scenarios.json bad-quarter).
 - **Screens:** CASCADE, EXPLORE
 - **MATH_MODEL:** §3
@@ -679,7 +679,7 @@ that are not on `main` yet.
 
 ### Protect payroll
 
-- **On screen:** `Protect payroll`, `On: the optimizer may not cut payroll (z_t = 0)`, `Off: payroll cuts allowed up to z̄`
+- **On screen:** `Protect payroll`, `On: the optimizer may not cut payroll (z_t = 0)`, `Off: payroll may be cut by up to`
 - **Short:** A switch that forbids the optimizer from cutting payroll at all.
 - **Long:** When on, the payroll-cut share z_t is fixed at 0 in every week, enforced inside the solver, not by a prompt (MATH_MODEL §4, constraint 5). When off, a cut of up to 10% may be chosen, but only as an explicit, labelled action. Layoffs are never modelled.
 - **Example:** Judge's Challenge 'Local plant closes': on gives NO FEASIBLE PLAN; off gives a plan with payroll cuts of at most 10%, such as 1,200 in week 11.
@@ -689,7 +689,7 @@ that are not on `main` yet.
 
 ### Liquidity floor (C_min)
 
-- **On screen:** `cash stays above the floor`
+- **On screen:** `cash stays above the floor`, `below it in week`
 - **Short:** The lowest cash any plan may reach: 25,000 in the demo.
 - **Long:** A hard optimizer constraint, C_t ≥ C_min in every week (MATH_MODEL §4, constraint 1). It is about two weeks of payroll: the cash a careful finance officer would not plan to go below. It is stricter than runway, which only checks for going below zero.
 - **Example:** 25,000. With no action Bad quarter first falls below it in week 20; the recovery plan holds cash at exactly 25,000 from week 20.

@@ -6,7 +6,8 @@ rounded, or filled in here.
 
 Response contract (fixed, the web app codes against it):
 ``{"provenance": "SIMULATED", "business_provenance": "SYNTHETIC", "baseline": SimulationResult,
-"result": SimulationResult, "deltas": CascadeDeltas}``
+"result": SimulationResult, "deltas": CascadeDeltas, "min_cash_floor": float | null,
+"first_week_below_floor": int | null, "weeks_below_floor": [int]}``
 
 - ``baseline`` = the business with no shock and no action (``ScenarioShock()``, ``ActionPlan()``),
   named "baseline".
@@ -15,6 +16,11 @@ Response contract (fixed, the web app codes against it):
 - Plans that would make purchases or inventory negative are rejected (422 INFEASIBLE_INPUT) until the
   engine enforces this itself (#32). Non-finite results (overflow) are rejected as VALIDATION_ERROR.
 - ``deltas`` = ``cascade_deltas(baseline, result)``: per-node Δ = result - baseline (MATH_MODEL §5).
+- ``min_cash_floor`` = the business's liquidity floor C_min (MATH_MODEL §4.1, §10: 25,000), read from the
+  fixture; null when the fixture has none. ``weeks_below_floor`` = every week t of ``result`` with
+  C_t < C_min (beyond FINANCING_TOL, so a plan that holds the floor exactly is not "below" it), and
+  ``first_week_below_floor`` its first entry (null when cash never falls below the floor or there is no floor).
+  The simulator does not enforce the floor (only the optimizer does, §4.1); these fields only report it.
 """
 
 from __future__ import annotations
@@ -78,6 +84,22 @@ class SimulateResponse(BaseModel):
     baseline: SimulationResult = Field(description="No shock, no action.")
     result: SimulationResult = Field(description="Requested shock with the requested plan.")
     deltas: CascadeDeltas = Field(description="cascade_deltas(baseline, result), MATH_MODEL §5.")
+    min_cash_floor: float | None = Field(
+        description="The business's liquidity floor C_min (MATH_MODEL §4.1, §10); null when the fixture sets none."
+    )
+    first_week_below_floor: int | None = Field(
+        description="First week t of `result` with C_t < C_min; null if cash never falls below it (or no floor)."
+    )
+    weeks_below_floor: list[int] = Field(
+        description="Every week t of `result` with C_t < C_min, ascending; empty if none (or no floor)."
+    )
+
+
+def weeks_below(cash: list[float], floor: float | None) -> list[int]:
+    """Weeks (1-based) whose closing cash is below the floor by more than FINANCING_TOL."""
+    if floor is None:
+        return []
+    return [t for t, c in enumerate(cash, start=1) if c < floor - FINANCING_TOL]
 
 
 def load_business(settings: Settings) -> BusinessParams:
@@ -198,10 +220,14 @@ def simulate_route(
     if physical:
         raise RouteError(ErrorCode.INFEASIBLE_INPUT, physical)
 
+    below = weeks_below(result.cash, business.min_cash)
     return SimulateResponse(
         provenance="SIMULATED",
         business_provenance=business.provenance,
         baseline=baseline,
         result=result,
         deltas=deltas,
+        min_cash_floor=business.min_cash,
+        first_week_below_floor=below[0] if below else None,
+        weeks_below_floor=below,
     )

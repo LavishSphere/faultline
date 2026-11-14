@@ -16,7 +16,9 @@ import {
   type SimulateRequest,
   type SimulateResponse,
 } from "@/lib/api";
-import { CascadeGraph, formatDelta } from "../CascadeGraph";
+import { usd, usdCentsFloor, usdDelta } from "@/lib/format";
+import { CascadeGraph } from "../CascadeGraph";
+import { CashNegativeReadout, MinCashSublabel, payrollOffNote } from "../CashReadouts";
 import { FinancialReadout } from "../FinancialReadout";
 import { NotAvailable, Panel } from "../Panel";
 import { JudgeChallenge } from "./challenge/JudgeChallenge";
@@ -68,9 +70,6 @@ function unreachable(f: ApiFailure): boolean {
 }
 
 const TIME = new Intl.DateTimeFormat("en-US", { hour: "2-digit", minute: "2-digit", second: "2-digit", hour12: false });
-const USD = new Intl.NumberFormat("en-US", { style: "currency", currency: "USD", maximumFractionDigits: 0 });
-/** Whole-dollar display; rounding first so float noise never renders as "-$0". */
-const usd = (n: number) => USD.format(Math.round(n) || 0);
 
 export function CascadeWorkbench() {
   const [controls, setControls] = useState<ScenarioControls>(NO_SHOCK);
@@ -312,7 +311,7 @@ export function CascadeWorkbench() {
             <p className="font-mono text-[10px] leading-snug text-muted">
               {outageLocked
                 ? "Preset κ_t is partial, not whole weeks: outage sliders are locked so it is sent exactly. Reset to edit."
-                : `φ default ${DEFAULT_DEPENDENT_PCT}% = demo business φ (MATH_MODEL §10, assumed placeholder).`}
+                : `φ default ${DEFAULT_DEPENDENT_PCT}% = demo business φ (MATH_MODEL §10, assumed; signed off 2026-11-12).`}
             </p>
           </ControlGroup>
 
@@ -332,6 +331,7 @@ export function CascadeWorkbench() {
           checked={protect}
           disabled={controlsDisabled}
           onChange={(v) => setProtect(v)}
+          cap={(opt.kind === "ok" ? opt.data : opt.kind === "loading" ? opt.last : null)?.payroll_cut_cap ?? null}
         />
 
         {apiDown ? (
@@ -378,7 +378,6 @@ function Readouts({
   const r = data?.result ?? null;
   const b = data?.baseline ?? null;
   const d = data?.deltas ?? null;
-  const delta = (n: number) => formatDelta(n, "usd");
   const prov: ProvenanceInput = labels[0] ?? "NOT AVAILABLE";
 
   return (
@@ -392,7 +391,7 @@ function Readouts({
           provenance={prov}
           size="fit"
           dimmed={stale}
-          sublabel={r && b && d ? `${delta(d.min_cash_delta)} vs baseline ${usd(b.min_cash)}` : undefined}
+          sublabel={data ? <MinCashSublabel data={data} /> : undefined}
         />
         <FinancialReadout
           label="Week of minimum cash"
@@ -405,21 +404,7 @@ function Readouts({
           dimmed={stale}
           sublabel={b ? `baseline: week ${b.min_cash_week}` : undefined}
         />
-        <FinancialReadout
-          label="Runway"
-          value={r ? (r.runway_week === null ? { above: r.horizon_weeks } : r.runway_week) : null}
-          format="weeks"
-          prefix="week"
-          unit={r && r.runway_week === null ? "weeks" : undefined}
-          provenance={prov}
-          size="fit"
-          dimmed={stale}
-          sublabel={
-            r && b
-              ? `first week C_t < 0 · API “${r.runway_label}” · baseline “${b.runway_label}”`
-              : "First week with C_t < 0; “> T weeks” if cash stays ≥ 0."
-          }
-        />
+        <CashNegativeReadout data={data} provenance={prov} dimmed={stale} />
         <FinancialReadout
           label="Ending cash"
           value={r ? r.ending_cash : null}
@@ -427,7 +412,7 @@ function Readouts({
           provenance={prov}
           size="fit"
           dimmed={stale}
-          sublabel={r && b && d ? `week ${r.horizon_weeks} · ${delta(d.ending_cash_delta)} vs baseline ${usd(b.ending_cash)}` : undefined}
+          sublabel={r && b && d ? `week ${r.horizon_weeks} · ${usdDelta(d.ending_cash_delta)} vs baseline ${usd(b.ending_cash)}` : undefined}
         />
       </div>
     </Panel>
@@ -647,10 +632,13 @@ function PayrollToggle({
   checked,
   disabled,
   onChange,
+  cap,
 }: {
   checked: boolean;
   disabled: boolean;
   onChange: (v: boolean) => void;
+  /** z̄ as served by POST /api/optimize; null until it answers. */
+  cap: number | null;
 }) {
   return (
     <div className="mt-3 flex items-center justify-between gap-4 border-t border-line/70 pt-3">
@@ -659,7 +647,7 @@ function PayrollToggle({
           Protect payroll
         </span>
         <span id="protect-payroll-note" className="font-mono text-[10px] text-muted">
-          {checked ? "On: the optimizer may not cut payroll (z_t = 0)" : "Off: payroll cuts allowed up to z̄"} · POST
+          {checked ? "On: the optimizer may not cut payroll (z_t = 0)" : payrollOffNote(cap)} · POST
           /api/optimize
         </span>
       </div>
@@ -779,7 +767,7 @@ function RecoveryPlan({
               <p className="font-mono text-xs">
                 Highest floor a plan can hold:{" "}
                 <span className="num" data-testid="max-feasible-floor">
-                  {data.max_feasible_cash_floor === null ? "NOT AVAILABLE" : usd(data.max_feasible_cash_floor)}
+                  {data.max_feasible_cash_floor === null ? "NOT AVAILABLE" : usdCentsFloor(data.max_feasible_cash_floor)}
                 </span>
               </p>
               <p className="font-mono text-[10px] text-text-2">Solver: {data.solver_message}</p>
@@ -822,6 +810,10 @@ function OptimalPlan({
                 <span>
                   {ACTION_LABELS[a.action] ?? a.action}
                   {a.week !== null ? ` · week ${a.week}` : ""}
+                  {/* F15: a purchase cut reaches cash only when that week's supplier bill falls due (MATH_MODEL §3). */}
+                  {a.action === "purchase_cut" && data.supplier_lag_weeks !== undefined ? (
+                    <span className="text-muted"> (reaches cash {data.supplier_lag_weeks} wk later: supplier lag L_p)</span>
+                  ) : null}
                 </span>
                 <span className="num text-text">
                   {a.amount !== null ? usd(a.amount) : "yes"}
@@ -838,12 +830,19 @@ function OptimalPlan({
           <span className="num text-text" data-testid="plan-min-cash">{data.min_cash === null ? "NOT AVAILABLE" : usd(data.min_cash)}</span>
           {data.min_cash_week !== null ? <span className="text-muted"> · week {data.min_cash_week}</span> : null}
         </p>
+        {/* F16: lead with the disruption cost (non-cash harm, MATH_MODEL §4.4); the objective is cost − ε·μ. */}
         <p>
-          <span className="kicker">Objective</span>{" "}
-          <span className="num text-text">{data.objective === null ? "NOT AVAILABLE" : data.objective.toLocaleString("en-US", { maximumFractionDigits: 2 })}</span>
-          {data.disruption_cost !== null ? (
-            <span className="text-muted"> · disruption cost {data.disruption_cost.toLocaleString("en-US", { maximumFractionDigits: 2 })}</span>
-          ) : null}
+          <span className="kicker">Disruption cost</span>{" "}
+          <span className="num text-text">
+            {data.disruption_cost === null ? "NOT AVAILABLE" : data.disruption_cost.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+          </span>
+          <span className="text-muted"> (non-cash)</span>
+          <span className="text-muted">
+            {" "}
+            · objective{" "}
+            {data.objective === null ? "NOT AVAILABLE" : data.objective.toLocaleString("en-US", { maximumFractionDigits: 2 })} = cost − ε ×
+            min cash (MATH_MODEL §4)
+          </span>
         </p>
         <div>
           <p className="kicker">Binding constraints</p>
