@@ -145,31 +145,69 @@ test.describe("REVEAL", () => {
       status: string;
       provenance: string;
       notes: string[];
-      items: { label: string; verdict: string }[];
+      items: { label: string; verdict: string; caveat: string | null; n_events: number }[];
+      records: { agent_variant: string }[];
     };
 
     await expect(page.getByText(`status: ${api.status} · provenance: ${api.provenance}`, { exact: true })).toBeVisible();
-    for (const note of api.notes) await expect(page.getByText(note, { exact: true })).toBeVisible();
+    for (const note of api.notes) await expect(page.getByText(note, { exact: true }).first()).toBeVisible();
 
-    const first = api.items[0];
-    if (first) {
-      // The default tab is the first variant the API served; its first item's strings are shown verbatim.
-      await expect(page.getByTestId("scorecard-label")).toHaveText(first.label);
-      await expect(page.getByTestId("scorecard-verdict")).toHaveText(first.verdict);
-    } else {
-      // No scorecard served: NOT AVAILABLE, never INSUFFICIENT DATA (that verdict belongs to a served card, #117).
-      await expect(page.getByTestId("scorecard-label")).toHaveCount(0);
-      await expect(page.getByTestId("scorecard-empty")).toHaveText("Not available");
-      await expect(page.getByText("Insufficient data", { exact: true })).toHaveCount(0);
+    // #124: both variants side by side, each showing the FIRST item the API served for it, verbatim.
+    const plain = [
+      ["agent_only", "Agent only: the model saw evidence, no market price"],
+      ["agent_plus_market", "Agent + market: the model also saw the market price at the cutoff"],
+    ] as const;
+    for (const [variant, line] of plain) {
+      const card = page.getByTestId(`scorecard-${variant}`);
+      await expect(card.getByTestId("scorecard-variant-line")).toHaveText(line);
+      const i = api.records.findIndex((r) => r.agent_variant === variant);
+      const item = i >= 0 ? api.items[i] : undefined;
+      if (item) {
+        await expect(card.getByTestId("scorecard-label")).toHaveText(item.label);
+        await expect(card.getByTestId("scorecard-verdict")).toHaveText(item.verdict);
+        if (item.caveat) await expect(card.getByTestId("scorecard-caveat")).toHaveText(item.caveat);
+      } else {
+        // No scorecard served: NOT AVAILABLE, never INSUFFICIENT DATA (that verdict belongs to a served card, #117).
+        await expect(card.getByTestId("scorecard-label")).toHaveCount(0);
+        await expect(card.getByTestId("scorecard-empty")).toHaveText("Not available");
+        await expect(card.getByText("Insufficient data", { exact: true })).toHaveCount(0);
+        if (api.items.length) {
+          // The API's own note naming the missing variant is repeated on its card, verbatim.
+          await expect(card.getByTestId("scorecard-empty-note")).toContainText(variant);
+        }
+      }
+    }
+    if (api.records.length >= 2) {
+      // Wide screen: the two cards share a row.
+      const a = await page.getByTestId("scorecard-agent_only").boundingBox();
+      const b = await page.getByTestId("scorecard-agent_plus_market").boundingBox();
+      expect(a && b && Math.abs(a.y - b.y) < 2 && b.x > a.x, "cards side by side at 1920 px").toBe(true);
     }
     // The outcome stays sealed until an explicit click, and nothing on the scorecard is marked as this forecast.
     await expect(page.getByText("Sealed", { exact: true })).toBeVisible();
     await expect(page.getByText("← this forecast")).toHaveCount(0);
     // Per-event outcomes (y of every scored event) start collapsed.
-    const perEvent = page.getByTestId("per-event-outcomes");
-    if (await perEvent.count()) await expect(perEvent).not.toHaveAttribute("open", /.*/);
+    for (const perEvent of await page.getByTestId("per-event-outcomes").all()) {
+      await expect(perEvent).not.toHaveAttribute("open", /.*/);
+    }
 
     await page.waitForTimeout(500);
     expect(apiCalls.filter((c) => c.startsWith("POST")), "no POST (reveal / compute) on page load").toEqual([]);
+  });
+
+  test("scorecards stack at 390 px with no horizontal page scroll", async ({ page }) => {
+    await page.setViewportSize({ width: 390, height: 844 });
+    const loaded = page.waitForResponse((r) => r.url() === BENCHMARK_URL);
+    await page.goto("/reveal/");
+    await loaded;
+    const a = page.getByTestId("scorecard-agent_only");
+    const b = page.getByTestId("scorecard-agent_plus_market");
+    await expect(a.getByTestId("scorecard-variant-line")).toBeVisible();
+    await expect(b.getByTestId("scorecard-variant-line")).toBeAttached();
+    const boxA = await a.boundingBox();
+    const boxB = await b.boundingBox();
+    expect(boxA && boxB && boxB.y >= boxA.y + boxA.height, "agent + market card below agent only").toBe(true);
+    const overflow = await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth);
+    expect(overflow, "no horizontal page scroll at 390 px").toBeLessThanOrEqual(0);
   });
 });

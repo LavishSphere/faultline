@@ -3,7 +3,7 @@
 // the checks under test only accept or refuse a body, they never compute a score.
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { KNOWN_VERDICTS, checkRevealResponse, isSyntheticRef, readBenchmark } from "./benchmark.ts";
+import { KNOWN_VERDICTS, checkRevealResponse, isSyntheticRef, notesForVariant, readBenchmark } from "./benchmark.ts";
 import { checkCaseEvidence, isSyntheticQuote } from "./replay.ts";
 
 const SHA = "a".repeat(64);
@@ -297,4 +297,15 @@ test("label and provenance are required on quotes and market_at_cutoff (#117 F)"
     note: "none",
   };
   assert.equal(checkCaseEvidence({ ...evidenceBody(), market_at_cutoff: na }, c), null);
+});
+
+test("notesForVariant selects the API's notes that name the variant, verbatim (#124)", () => {
+  const notes = [
+    "No recorded scorecard for agent_plus_market (NOT AVAILABLE).",
+    "committed agent_only--x.json could not be read as JSON; not served.",
+    "unrelated note",
+  ];
+  assert.deepEqual(notesForVariant(notes, "agent_plus_market"), [notes[0]]);
+  assert.deepEqual(notesForVariant(notes, "agent_only"), [notes[1]]);
+  assert.deepEqual(notesForVariant([], "agent_only"), []);
 });

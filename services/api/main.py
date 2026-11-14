@@ -7,7 +7,19 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from config import get_settings
 from errors import FaultlineError, faultline_error_handler
-from routes import benchmark, cases, explore, health, integrity, judge_challenges, replay, research, scenarios, simulate
+from routes import (
+    benchmark,
+    cases,
+    explore,
+    health,
+    integrity,
+    judge_challenges,
+    optimize,
+    replay,
+    research,
+    scenarios,
+    simulate,
+)
 
 
 def create_app() -> FastAPI:
@@ -26,6 +38,7 @@ def create_app() -> FastAPI:
     app.add_exception_handler(FaultlineError, faultline_error_handler)
     app.include_router(health.router, prefix="/api")
     app.include_router(simulate.router, prefix="/api")
+    app.include_router(optimize.router, prefix="/api")
     app.include_router(scenarios.router, prefix="/api")
     app.include_router(judge_challenges.router, prefix="/api")
     app.include_router(research.router, prefix="/api")
