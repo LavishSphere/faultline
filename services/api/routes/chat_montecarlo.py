@@ -235,8 +235,9 @@ DRIVER_SCHEMA = _obj({
     "distribution": {"type": "string", "enum": ["triangular", "normal", "lognormal", "uniform"]},
     "params": _obj({k: _NUM_OR_NULL for k in _ALL_PARAMS},
                    "Fill only the chosen distribution's keys, the rest null: triangular low, mode, high; normal "
-                   "mean, sd; lognormal median, p90 (positive amounts only); uniform low, high. In the metric's "
-                   "unit; negative = harm when higher_is_better."),
+                   "mean, sd; lognormal median, p90 (positive amounts only: never for a downside); uniform low, "
+                   "high. In the metric's unit; negative = harm when higher_is_better. For a driver that can be "
+                   "negative (a downside or a loss), use triangular or normal."),
     "probability": {**_NUM_OR_NULL, "description": "event only: chance it happens, 0..1; value drivers: null."},
     "source": _obj({"url": {"type": "string"}, "title": {"type": "string"}, "note": {"type": ["string", "null"]}},
                    "The web_search result this range is anchored on (url and title exactly as returned); null when "
@@ -274,8 +275,9 @@ def cash_tool(scenario_schema: dict[str, Any], shock_schema: dict[str, Any]) -> 
             "Monte Carlo version of the SYNTHETIC demo business's 26-week cash simulation (SIMULATED): the shock's "
             "size and timing are drawn around the named scenario or custom shock. Returns the probability that "
             "cash breaches the minimum-cash floor (with a 95% CI) and goes negative, with and without the "
-            "payroll-protected recovery plan, plus P5..P95 cash bands per week. Use for 'how likely' / 'what are "
-            "the odds' questions about the demo business."),
+            "payroll-protected recovery plan, plus P5..P95 cash bands per week. The plan is solved once on the "
+            "central path and held fixed on every path; plan_central_headroom_over_floor is its headroom there. "
+            "Use for 'how likely' / 'what are the odds' questions about the demo business."),
         "parameters": _obj({
             "scenario_id": scenario_schema,
             "shock": shock_schema,
@@ -335,8 +337,19 @@ def cash_summary(out: dict[str, Any]) -> dict[str, Any]:
         "no_plan": _cash_side(out.get("no_plan")),
         "with_plan": _cash_side(out.get("with_plan")),
         "plan": out.get("plan"),
+        # Computed here, not by the model: the plan is solved on the central path only, so a plan that leaves no
+        # headroom over the floor there is fragile once the shock's size and timing vary (#209).
+        "plan_central_headroom_over_floor": _headroom(out.get("plan"), out.get("floor")),
+        "notes": out.get("notes"),
         "assumptions": out.get("assumptions"),
     }
+
+
+def _headroom(plan: Any, floor: Any) -> float | None:
+    central = _get(plan, "central_min_cash")
+    if not isinstance(central, int | float) or not isinstance(floor, int | float):
+        return None
+    return round(float(central) - float(floor), 2)
 
 
 __all__ = ["CashRequest", "DecisionRequest", "EngineContractError", "EngineUnavailable", "MONTE_CARLO_DECISION_TOOL",

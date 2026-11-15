@@ -272,6 +272,8 @@ def test_cash_tool_sends_the_resolved_shock_so_judge_challenges_work(engine):
     s = out.summary
     assert s["no_plan"]["prob_below_floor_any"] == 0.612 and s["with_plan"]["prob_below_floor_any"] == 0.044
     assert s["monte_carlo"] == FAKE_CASH and "bands" not in s["no_plan"]
+    assert s["plan_central_headroom_over_floor"] == 0.0  # central_min_cash 25,000 on a 25,000 floor
+    assert s["notes"] is None  # passed through as the engine gives it
 
 
 # ----------------------------------------------------------------------------- figure check: probabilities
@@ -333,7 +335,8 @@ def test_prompt_asks_for_search_then_monte_carlo_then_numbers_first():
         system = chat.system_prompt(web_search=web)
         for rule in ("monte_carlo_decision", "LEADING WITH THE NUMBERS", "conditional on them, not a forecast",
                      "MODEL-WRITTEN judgment", "monte_carlo_cash", "query_internal_data",
-                     "SYNTHETIC (mock internal data)", "0.783 is 78%"):
+                     "SYNTHETIC (mock internal data)", "0.783 is 78%", "use triangular or normal for any downside",
+                     "plan_central_headroom_over_floor"):
             assert rule in system, (web, rule)
     assert "Step 1: Call web_search first" in chat.system_prompt(web_search=True)
     assert "set every source null" in chat.system_prompt(web_search=False)

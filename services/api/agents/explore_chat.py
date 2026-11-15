@@ -416,6 +416,7 @@ def system_prompt(web_search: bool) -> str:
         "metric for all of them (for a company decision, e.g. \"5-year shareholder value change\" in $B with "
         "higher_is_better true), and two to five drivers per option whose sum is the option's outcome; use event "
         "drivers (with a probability) for discrete risks such as a failed succession or a deal collapsing; "
+        "lognormal is for positive amounts only, so use triangular or normal for any downside driver; "
         + anchor + ". Step 3: call monte_carlo_decision once with n_paths null and seed null. Step 4: write the "
         "brief, LEADING WITH THE NUMBERS. Decision: the decision in one line and the options. Monte Carlo: first "
         "the best option and its prob_best with the 95% CI, in the form \"<option>: best in <prob_best>% of "
@@ -476,7 +477,10 @@ def system_prompt(web_search: bool) -> str:
         "with the break-even probability the tool returns.",
         "- \"How likely / what are the odds / what is the probability\" of a cash problem, or any stress question "
         "where the odds matter -> monte_carlo_cash with protect_payroll=true and with_plan=true; lead with the "
-        "probability of breaching the cash floor without the plan and with it, each with its 95% CI.",
+        "probability of breaching the cash floor without the plan and with it, each with its 95% CI. If the "
+        "breach probability stays high with the plan, explain why from plan_central_headroom_over_floor: the plan "
+        "is solved on the central path only, so a plan with little or no headroom over the floor there is "
+        "fragile once the shock's size and timing vary.",
         "- Questions about the demo business's own records (customers and concentration, receivables, payables, "
         "suppliers, payroll by department, inventory and weeks of cover, debt and covenants, contracts, past "
         "weekly results) -> query_internal_data, labelled SYNTHETIC (mock internal data). Prefer it to guessing, "
