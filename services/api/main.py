@@ -9,6 +9,7 @@ import time
 from collections import OrderedDict
 from collections.abc import Callable
 from enum import StrEnum
+from typing import Any
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
@@ -61,6 +62,7 @@ PUBLIC_MODE_ROUTES: dict[tuple[str, str], str] = {
     ("POST", "/api/explore/analyze"): ADMIN,  # Tavily credits + local-model inference
     ("GET", "/api/explore/search"): ADMIN,  # Tavily credits
     ("POST", "/api/explore/chat"): PUBLIC_IF_CHAT_FLAG,  # hosted-model credits; FAULTLINE_PUBLIC_CHAT=1 opens it (#187)
+    ("POST", "/api/explore/chat/stream"): PUBLIC_IF_CHAT_FLAG,  # the same turn as SSE tool steps; same gates (#222)
     ("GET", "/api/explore/chat/models"): PUBLIC,  # model catalogue; key presence as booleans only
     ("GET", "/api/explore/chat/status"): PUBLIC,  # presenter pause state
     ("POST", "/api/explore/chat/pause"): ADMIN,  # presenter pause switch
@@ -88,9 +90,10 @@ ADMIN_GATED_PREFIXES = ("/api/replay", "/api/explore", "/api/benchmark/compute")
 # (e.g. /api/replay/recorded/x, /api/replay/recordedx) stays admin-only.
 PUBLIC_EXACT_PATHS = frozenset({"/api/replay/recorded", "/api/explore/chat/models", "/api/explore/chat/status"})
 # Exact paths that are public only while FAULTLINE_PUBLIC_CHAT=1 (read per request; anything else stays admin-only).
-FLAG_PUBLIC_PATHS = frozenset({"/api/explore/chat"})
+FLAG_PUBLIC_PATHS = frozenset({"/api/explore/chat", "/api/explore/chat/stream"})
 # Exact paths with a larger body cap than FAULTLINE_MAX_BODY_BYTES (20 chat messages of 4,000 characters).
-BODY_LIMIT_OVERRIDES = {"/api/explore/chat": explore_chat.CHAT_MAX_BODY_BYTES}
+BODY_LIMIT_OVERRIDES = {"/api/explore/chat": explore_chat.CHAT_MAX_BODY_BYTES,
+                        "/api/explore/chat/stream": explore_chat.CHAT_MAX_BODY_BYTES}
 ADMIN_MESSAGE = (
     "Admin only on the public demo: this route runs the model, spends paid search credits or reveals sealed "
     "outcomes, and needs the admin token (Authorization: Bearer <FAULTLINE_ADMIN_TOKEN>). The public demo shows "
@@ -288,6 +291,25 @@ def _disable_api_docs(app: FastAPI) -> None:
     app.openapi_url = app.docs_url = app.redoc_url = app.swagger_ui_oauth2_redirect_url = None
 
 
+# Presenter mode (#222): the chat UI may send the admin token so the presenter on stage is not throttled with the
+# venue's shared address. Authorization is a CORS-allowed header on these exact chat paths only; every other route
+# (replay, reveal, benchmark compute, explore search/analyze, the pause switch) still refuses it cross-origin.
+PRESENTER_CORS_PATHS = frozenset({"/api/explore/chat", "/api/explore/chat/stream", "/api/explore/chat/models",
+                                  "/api/explore/chat/status"})
+
+
+class PresenterCORSMiddleware:
+    """CORS for the allowlisted origins; `Authorization` is allowed only on PRESENTER_CORS_PATHS (exact match)."""
+
+    def __init__(self, app: ASGIApp, **options: Any) -> None:
+        self.strict = CORSMiddleware(app, allow_headers=["Content-Type"], **options)
+        self.presenter = CORSMiddleware(app, allow_headers=["Content-Type", "Authorization"], **options)
+
+    async def __call__(self, scope: Scope, receive: Receive, send: Send) -> None:
+        chat = scope["type"] == "http" and scope.get("path") in PRESENTER_CORS_PATHS
+        await (self.presenter if chat else self.strict)(scope, receive, send)
+
+
 def install_edge_protection(app: FastAPI, settings: Settings) -> None:
     # Starlette: the last middleware added is the outermost. Request order (outer -> inner):
     # CORS -> mode header -> rate limit -> body limit -> admin gate -> routes.
@@ -300,10 +322,9 @@ def install_edge_protection(app: FastAPI, settings: Settings) -> None:
         app.add_middleware(RateLimitMiddleware, per_minute=settings.rate_limit_per_min)
     app.add_middleware(ModeHeaderMiddleware, mode=settings.mode)
     app.add_middleware(
-        CORSMiddleware,
+        PresenterCORSMiddleware,  # Content-Type only, plus Authorization on the presenter chat paths (#222)
         allow_origins=list(settings.cors_origins),
         allow_methods=["GET", "POST"],
-        allow_headers=["Content-Type"],  # no Authorization: the admin token is never sent from a browser
         allow_credentials=False,
         expose_headers=[MODE_HEADER, "Retry-After"],
         max_age=600,

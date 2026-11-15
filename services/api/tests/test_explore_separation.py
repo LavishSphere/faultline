@@ -70,7 +70,9 @@ ALLOWED_REFS = {
                 "const:/api/explore/search",
                 # #187: mounts the chat router and classifies its exact paths (edge gate, body cap, route table).
                 "import:routes.explore_chat", "const:/api/explore/chat", "const:/api/explore/chat/models",
-                "const:/api/explore/chat/status", "const:/api/explore/chat/pause"},
+                "const:/api/explore/chat/status", "const:/api/explore/chat/pause",
+                # #222: the streamed chat turn, classified like /api/explore/chat.
+                "const:/api/explore/chat/stream"},
     "ci/content_scan.py": {"const:Tavily API key"},
     # #214: /api/health reports which backend the chat's web_search uses (a name, never a key). It imports only the
     # env resolver; health is not a replay module (the replay import test below still runs in a clean interpreter).
@@ -608,7 +610,7 @@ def test_retrieved_at_is_now_not_a_historical_date():
 
 # --------------------------------------------------------------------------- (d) the LIVE EXPLORE chat (#187)
 
-CHAT_MODULES = ("agents.explore_chat", "routes.explore_chat")
+CHAT_MODULES = ("agents.explore_chat", "agents.explore_chat_steps", "routes.explore_chat")  # #222: live step previews
 # Everything on the Blind Replay / scoring side, plus the replay-side agents. The chat may import the deterministic
 # engine (core.financials, core.optimizer, core.decision, core.research) and its public routes, nothing else.
 REPLAY_SIDE = (
