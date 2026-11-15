@@ -12,6 +12,7 @@ fixture file cannot leak its contents through an error response.
 
 from __future__ import annotations
 
+import ipaddress
 import json
 from collections.abc import Callable, Coroutine, Iterable, Mapping
 from pathlib import Path
@@ -127,3 +128,16 @@ def read_json(path: Path, display_name: str) -> Any:
             f"{display_name} could not be read ({type(exc).__name__}).",
             status_code=500,
         ) from None
+
+
+def rate_limit_key(host: str) -> str:
+    """IPv4: the address. IPv6: its /64, since one client can rotate through a whole /64 (docs/DEPLOY.md)."""
+    try:
+        ip = ipaddress.ip_address(host)
+    except ValueError:
+        return host
+    if isinstance(ip, ipaddress.IPv6Address):
+        if ip.ipv4_mapped is not None:
+            return str(ip.ipv4_mapped)
+        return str(ipaddress.IPv6Network((ip, 64), strict=False))
+    return str(ip)

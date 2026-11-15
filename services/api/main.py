@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import ipaddress
 import json
 import math
 import re
@@ -15,17 +14,19 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from starlette.types import ASGIApp, Message, Receive, Scope, Send
 
-from config import Settings, admin_token_matches, get_settings
+from config import Settings, admin_token_matches, get_settings, public_chat_enabled
 from errors import FaultlineError, faultline_error_handler
 from routes import (
     benchmark,
     cases,
     decision,
     explore,
+    explore_chat,
     health,
     integrity,
     judge_challenges,
     optimize,
+    rate_limit_key,  # noqa: F401 - re-exported: tests and docs name main.rate_limit_key
     recorded,
     replay,
     research,
@@ -47,6 +48,9 @@ MODE_HEADER = "X-Faultline-Mode"
 # tests/test_public_mode_routes.py walks the OpenAPI schema: a route missing from this table fails the suite.
 ADMIN = "admin"
 PUBLIC = "public"
+# "public-if-flag": admin-only in public mode unless FAULTLINE_PUBLIC_CHAT=1, then public (the LIVE EXPLORE chat, #187).
+# It spends paid model credits, so it is open only when the lead switches it on; it has its own per-IP limit.
+PUBLIC_IF_CHAT_FLAG = "public-if-flag"
 PUBLIC_MODE_ROUTES: dict[tuple[str, str], str] = {
     ("POST", "/api/replay/run"): ADMIN,  # local-model inference + writes the prediction store
     ("POST", "/api/replay/{prediction_id}/reveal"): ADMIN,  # reveals a sealed outcome + writes the reveal ledger
@@ -54,6 +58,10 @@ PUBLIC_MODE_ROUTES: dict[tuple[str, str], str] = {
     ("POST", "/api/benchmark/compute"): ADMIN,  # reveals outcomes to score + writes a scorecard file
     ("POST", "/api/explore/analyze"): ADMIN,  # Tavily credits + local-model inference
     ("GET", "/api/explore/search"): ADMIN,  # Tavily credits
+    ("POST", "/api/explore/chat"): PUBLIC_IF_CHAT_FLAG,  # hosted-model credits; FAULTLINE_PUBLIC_CHAT=1 opens it (#187)
+    ("GET", "/api/explore/chat/models"): PUBLIC,  # model catalogue; key presence as booleans only
+    ("GET", "/api/explore/chat/status"): PUBLIC,  # presenter pause state
+    ("POST", "/api/explore/chat/pause"): ADMIN,  # presenter pause switch
     ("GET", "/api/health"): PUBLIC,
     ("POST", "/api/simulate"): PUBLIC,
     ("POST", "/api/optimize"): PUBLIC,
@@ -72,7 +80,11 @@ PUBLIC_MODE_ROUTES: dict[tuple[str, str], str] = {
 ADMIN_GATED_PREFIXES = ("/api/replay", "/api/explore", "/api/benchmark/compute")
 # Exact paths under a gated prefix that are public (read-only). Exact match only: anything below or beside them
 # (e.g. /api/replay/recorded/x, /api/replay/recordedx) stays admin-only.
-PUBLIC_EXACT_PATHS = frozenset({"/api/replay/recorded"})
+PUBLIC_EXACT_PATHS = frozenset({"/api/replay/recorded", "/api/explore/chat/models", "/api/explore/chat/status"})
+# Exact paths that are public only while FAULTLINE_PUBLIC_CHAT=1 (read per request; anything else stays admin-only).
+FLAG_PUBLIC_PATHS = frozenset({"/api/explore/chat"})
+# Exact paths with a larger body cap than FAULTLINE_MAX_BODY_BYTES (20 chat messages of 4,000 characters).
+BODY_LIMIT_OVERRIDES = {"/api/explore/chat": explore_chat.CHAT_MAX_BODY_BYTES}
 ADMIN_MESSAGE = (
     "Admin only on the public demo: this route runs the model, spends paid search credits or reveals sealed "
     "outcomes, and needs the admin token (Authorization: Bearer <FAULTLINE_ADMIN_TOKEN>). The public demo shows "
@@ -100,9 +112,11 @@ def _normalised_path(path: str) -> str:
     return re.sub(r"/{2,}", "/", path).lower().rstrip("/")
 
 
-def is_admin_gated(path: str) -> bool:
+def is_admin_gated(path: str, public_chat: bool | None = None) -> bool:
     norm = _normalised_path(path)
     if norm in PUBLIC_EXACT_PATHS:
+        return False
+    if norm in FLAG_PUBLIC_PATHS and (public_chat_enabled() if public_chat is None else public_chat):
         return False
     return any(norm == p or norm.startswith(p + "/") for p in ADMIN_GATED_PREFIXES)
 
@@ -131,17 +145,19 @@ class AdminGateMiddleware:
 class BodySizeLimitMiddleware:
     """413 when the declared Content-Length or the streamed body exceeds `max_bytes`."""
 
-    def __init__(self, app: ASGIApp, max_bytes: int) -> None:
+    def __init__(self, app: ASGIApp, max_bytes: int, overrides: dict[str, int] | None = None) -> None:
         self.app = app
         self.max_bytes = max_bytes
+        self.overrides = overrides or {}
 
     async def __call__(self, scope: Scope, receive: Receive, send: Send) -> None:
         if scope["type"] != "http":
             await self.app(scope, receive, send)
             return
-        message = f"Request body exceeds {self.max_bytes} bytes."
+        max_bytes = self.overrides.get(_normalised_path(scope["path"]), self.max_bytes)
+        message = f"Request body exceeds {max_bytes} bytes."
         declared = dict(scope["headers"]).get(b"content-length")
-        if declared is not None and declared.isdigit() and int(declared) > self.max_bytes:
+        if declared is not None and declared.isdigit() and int(declared) > max_bytes:
             await _send_error(send, 413, EdgeErrorCode.PAYLOAD_TOO_LARGE, message)
             return
 
@@ -159,7 +175,7 @@ class BodySizeLimitMiddleware:
             msg = await receive()
             if msg["type"] == "http.request":
                 received += len(msg.get("body", b""))
-                if received > self.max_bytes:
+                if received > max_bytes:
                     too_large = True
                     return {"type": "http.disconnect"}
             return msg
@@ -210,19 +226,6 @@ class TokenBucketLimiter:
             self._buckets.popitem(last=False)
         retry_after = 0 if allowed else max(1, math.ceil((1.0 - tokens) / self.rate))
         return allowed, retry_after
-
-
-def rate_limit_key(host: str) -> str:
-    """IPv4: the address. IPv6: its /64, since one client can rotate through a whole /64 (docs/DEPLOY.md)."""
-    try:
-        ip = ipaddress.ip_address(host)
-    except ValueError:
-        return host
-    if isinstance(ip, ipaddress.IPv6Address):
-        if ip.ipv4_mapped is not None:
-            return str(ip.ipv4_mapped)
-        return str(ipaddress.IPv6Network((ip, 64), strict=False))
-    return str(ip)
 
 
 class RateLimitMiddleware:
@@ -286,7 +289,7 @@ def install_edge_protection(app: FastAPI, settings: Settings) -> None:
     if settings.mode == "public":
         _disable_api_docs(app)
         app.add_middleware(AdminGateMiddleware)
-    app.add_middleware(BodySizeLimitMiddleware, max_bytes=settings.max_body_bytes)
+    app.add_middleware(BodySizeLimitMiddleware, max_bytes=settings.max_body_bytes, overrides=BODY_LIMIT_OVERRIDES)
     if settings.rate_limit_per_min > 0:
         app.add_middleware(RateLimitMiddleware, per_minute=settings.rate_limit_per_min)
     app.add_middleware(ModeHeaderMiddleware, mode=settings.mode)
@@ -327,6 +330,8 @@ def create_app() -> FastAPI:
     app.include_router(benchmark.router, prefix="/api")
     # LIVE EXPLORE (Tavily). Admin-gated inside the route in public mode; never used by the Blind Replay (#60).
     app.include_router(explore.router, prefix="/api")
+    # LIVE EXPLORE chat (#187): hosted models calling the engine tools. Walled off from the Blind Replay.
+    app.include_router(explore_chat.router, prefix="/api")
     return app
 
 

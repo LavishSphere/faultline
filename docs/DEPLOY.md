@@ -63,6 +63,15 @@ disagree with it, or if this table and the code differ. A new route therefore ca
   exception is the read-only `GET /api/replay/recorded`), and inside the
   route by the shared gate `routes.replay.require_admin_in_public_mode`.
 - **public**: deterministic or read-only. Open to anyone, behind the per-IP rate limit and the body cap.
+- **public-if-flag**: the LIVE EXPLORE chat. Admin-only (as above) unless the server sets `FAULTLINE_PUBLIC_CHAT=1`
+  exactly; then public, behind its own per-IP limit (`FAULTLINE_CHAT_PER_IP` turns per 10 minutes, default 10; a valid
+  admin token bypasses it), a global concurrency cap (`FAULTLINE_CHAT_CONCURRENCY`, default 4, then 503 `BUSY`), the
+  presenter pause switch (503 `PAUSED`), a public price cap (`FAULTLINE_CHAT_MAX_PRICE_PER_MTOK`, default 20 USD
+  per million output tokens, also applied to a pinned `FAULTLINE_CHAT_MODELS` list), a daily spend ceiling
+  (`FAULTLINE_CHAT_DAILY_BUDGET_USD`, default 25: provider-reported tokens x catalogue price, unpriced models charged
+  at the price cap; once reached, non-admin turns get 503 `BUDGET` until the next UTC day), and at most 3 web searches
+  per turn. The pause, the per-IP counters and the spend total are in process memory: a restart resets them. Checked at the edge (exact path, read per request) and in the route
+  (`routes.explore_chat.require_chat_access`).
 
 | Route | Public mode | Why |
 |---|---|---|
@@ -72,6 +81,10 @@ disagree with it, or if this table and the code differ. A new route therefore ca
 | `POST /api/benchmark/compute` | admin | reveals outcomes to score them; writes a scorecard file |
 | `POST /api/explore/analyze` | admin | Tavily credits and local-model inference |
 | `GET /api/explore/search` | admin | Tavily credits |
+| `POST /api/explore/chat` | public-if-flag | hosted-model credits: admin-only unless `FAULTLINE_PUBLIC_CHAT=1`; own per-IP limit (#187) |
+| `GET /api/explore/chat/models` | public | chat model catalogue; key presence as booleans only |
+| `GET /api/explore/chat/status` | public | presenter pause state |
+| `POST /api/explore/chat/pause` | admin | presenter pause switch |
 | `GET /api/health` | public | readiness booleans only |
 | `POST /api/simulate` | public | deterministic cash recurrence |
 | `POST /api/optimize` | public | deterministic MILP |
@@ -88,6 +101,34 @@ disagree with it, or if this table and the code differ. A new route therefore ca
 The web app never sends the admin token (CORS does not allow the `Authorization` header), so on the public site
 the admin-only features show their "admin only" state. On the server, Live Explore could not work anyway: the api
 container has no internet route.
+
+### Optional: live chat egress (`FAULTLINE_CHAT_EGRESS`)
+
+The LIVE EXPLORE chat (`POST /api/explore/chat`, #187) calls hosted models (OpenRouter, OpenAI, Anthropic) and, when
+`TAVILY_API_KEY` is set, Tavily. In the default stack the api container sits only on the internal `edge` and `models`
+networks, so it **cannot reach any provider** and every chat turn fails with 502 `UPSTREAM_ERROR` (the catalogue
+says the lists are NOT AVAILABLE). That default does not change.
+
+To switch the chat on, opt in explicitly with the override file, which attaches the api service to one extra,
+non-internal network:
+
+```bash
+# deploy/.env: FAULTLINE_CHAT_EGRESS=1 (documents the choice), the provider keys, and FAULTLINE_PUBLIC_CHAT=1 only if
+# visitors (not just the admin token) may chat.
+docker compose -f deploy/docker-compose.yml -f deploy/docker-compose.chat-egress.yml up -d
+```
+
+Trade-off: with the override the api process has outbound internet, so "replay inference runs with outbound network
+disabled" is no longer enforced by the network for that container. Replay isolation then rests on the code walls,
+which hold either way: the replay pipeline has no retrieval tool and calls only the internal Ollama
+(`OLLAMA_BASE_URL`), and `services/api/tests/test_explore_separation.py` proves the chat modules import no replay code,
+the replay modules import none of the chat, and the chat's tools expose no case, outcome, prediction or score.
+Ollama stays on the internal `models` network. Remove the override file from the command to go back.
+
+Keys: `OPENROUTER_API_KEY`, `OPENAI_API_KEY`, `ANTHROPIC_API_KEY` (and optionally `TAVILY_API_KEY`) go in
+`deploy/.env`; the API reports only whether each is set. OpenAI and Claude models are called only through their native
+APIs, never through OpenRouter; a missing native key shows those models as unavailable. The pause switch and the
+per-IP counters live in process memory (one worker): a restart clears them.
 
 ### The public demo needs recorded data
 

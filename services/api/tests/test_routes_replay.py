@@ -80,6 +80,12 @@ NOT_REPLAY = {
     "/api/explore/search",
     "/api/explore/analyze",
     "/api/judge-challenges",
+    # routes/explore_chat.py (#187): LIVE EXPLORE chat over the SYNTHETIC business; no case, outcome or store access
+    # (tests/test_explore_separation.py proves the import walls both ways).
+    "/api/explore/chat",
+    "/api/explore/chat/models",
+    "/api/explore/chat/status",
+    "/api/explore/chat/pause",
 }
 # routes/benchmark.py (tests/test_routes_benchmark*.py): GET serves recorded post-reveal scorecards, read-only (it
 # never reveals and never opens the store or sealed folder); compute reveals and is admin-only in public mode.

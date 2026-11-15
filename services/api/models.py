@@ -96,6 +96,10 @@ class ErrorCode(StrEnum):
     LIVE_EXPLORE_TIMEOUT = "LIVE_EXPLORE_TIMEOUT"  # Tavily did not answer within the timeout (504)
     # POST /api/optimize: every solver slot is busy (routes/optimize.py MAX_CONCURRENT_SOLVES); 503 with Retry-After
     BUSY = "BUSY"
+    # LIVE EXPLORE chat (routes/explore_chat.py, #187)
+    UPSTREAM_ERROR = "UPSTREAM_ERROR"  # the hosted model provider failed or answered unexpectedly (502)
+    PAUSED = "PAUSED"  # the presenter paused the public chat (503); admin calls still work
+    BUDGET = "BUDGET"  # the chat's daily spend ceiling is reached (503); admin calls still work
 
 
 class ApiError(BaseModel):
