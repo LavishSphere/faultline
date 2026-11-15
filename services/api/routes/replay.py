@@ -295,7 +295,7 @@ async def run_replay(
     except ProviderError as exc:
         raise _provider_error(exc) from None
 
-    report = skeptic.review(result.output, mi.evidence_ids)
+    report = skeptic.review(result.output, mi.evidence_ids, market_refs=skeptic.market_refs(mi.snapshot_json))
     if report.rejected:
         raise _skeptic_rejection(report)
 
