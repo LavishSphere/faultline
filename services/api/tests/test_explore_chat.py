@@ -449,7 +449,10 @@ def test_anthropic_adapter_request_and_tool_round_trip(env):
     assert first["thinking"] == {"type": "adaptive"} and first["fallbacks"] == "default"
     assert first["output_config"] == {"effort": "low"}
     assert "I don't have that number" in first["system"]
-    assert all(t["strict"] is True and t["input_schema"]["additionalProperties"] is False for t in first["tools"])
+    # Strict while Anthropic's 16 union-parameter budget holds (anthropic_tools); every schema stays closed.
+    assert all(t.get("strict", True) is True and t["input_schema"]["additionalProperties"] is False
+               for t in first["tools"])
+    assert any(t.get("strict") is True for t in first["tools"])
     # The assistant turn goes back unchanged (thinking block included), then one user turn of tool_result blocks.
     assistant, results = second["messages"][-2], second["messages"][-1]
     assert assistant["role"] == "assistant"
@@ -890,3 +893,21 @@ def test_prompt_covers_real_world_decision_types_and_scopes_payroll_to_the_demo_
 def test_one_round_can_run_every_judge_challenge():
     from routes.judge_challenges import load_challenges
     assert chat.MAX_CALLS_PER_ROUND >= len(load_challenges(get_settings()).challenges)
+
+
+def test_anthropic_strict_tools_stay_within_the_union_limit():
+    """Anthropic refuses strict tools holding more than 16 union-typed parameters in total (400 on every Claude turn
+    after the Monte Carlo tools landed). The full live tool list must stay within the budget; the rest go non-strict."""
+    from config import get_settings
+    from routes.explore_chat import EngineToolBox
+
+    specs = EngineToolBox(get_settings(), None).specs()
+    tools = chat.anthropic_tools(specs)
+    by_name = {t.name: t for t in specs}
+    strict_unions = sum(chat.union_param_count(by_name[t["name"]].parameters) for t in tools if t.get("strict"))
+    assert strict_unions <= chat.ANTHROPIC_STRICT_UNION_LIMIT
+    assert [t["name"] for t in tools] == [t.name for t in specs]  # every tool is still offered
+    assert any(t.get("strict") for t in tools) and not all(t.get("strict") for t in tools)
+    props = {"a": {"type": ["string", "null"]}, "b": {"anyOf": [{"type": "string"}, {"type": "null"}]},
+             "c": {"type": "string"}}
+    assert chat.union_param_count({"type": "object", "properties": props}) == 2
