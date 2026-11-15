@@ -1,0 +1,37 @@
+{
+ "_note": "TEST FIXTURE for e2e/monte-carlo.spec.ts: contract shape only, hand-picked numbers, never engine or model output.",
+ "result_summary": {
+  "provenance": "SYNTHETIC (mock internal data)",
+  "table": "suppliers",
+  "columns": [
+   "supplier",
+   "share_of_cogs",
+   "lead_time_weeks",
+   "region"
+  ],
+  "rows": [
+   {
+    "supplier": "TEST FIXTURE Alpha Components",
+    "share_of_cogs": 0.42,
+    "lead_time_weeks": 6,
+    "region": "APAC"
+   },
+   {
+    "supplier": "TEST FIXTURE Beta Metals",
+    "share_of_cogs": 0.21,
+    "lead_time_weeks": 3,
+    "region": "EU"
+   },
+   {
+    "supplier": "TEST FIXTURE Gamma Logistics",
+    "share_of_cogs": 0.09,
+    "lead_time_weeks": null,
+    "region": "NA"
+   }
+  ],
+  "aggregate": {
+   "rows": 3,
+   "top_supplier_share": 0.42
+  }
+ }
+}

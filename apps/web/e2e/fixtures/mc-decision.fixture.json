@@ -1,0 +1,421 @@
+{
+ "_note": "RECORDED engine response for e2e/monte-carlo.spec.ts: POST /api/montecarlo/decision on the local API (request in `request`). The decision inputs are the API test suite's made-up example; the cash run is the SYNTHETIC demo business.",
+ "request": {
+  "question": "Should Nvidia keep Jensen Huang as CEO?",
+  "metric": {
+   "name": "change in 3-year shareholder value (MADE-UP EXAMPLE)",
+   "unit": "USD bn",
+   "higher_is_better": true
+  },
+  "options": [
+   {
+    "id": "keep",
+    "label": "Keep the current CEO",
+    "drivers": [
+     {
+      "name": "product execution",
+      "kind": "value",
+      "distribution": "triangular",
+      "params": {
+       "low": -300.0,
+       "mode": 200.0,
+       "high": 800.0
+      },
+      "source": {
+       "url": null,
+       "title": null,
+       "note": "MADE-UP EXAMPLE range for a test"
+      }
+     },
+     {
+      "name": "key-person health event",
+      "kind": "event",
+      "distribution": "triangular",
+      "params": {
+       "low": -600.0,
+       "mode": -300.0,
+       "high": -100.0
+      },
+      "probability": 0.15
+     }
+    ]
+   },
+   {
+    "id": "replace",
+    "label": "Appoint an outside CEO",
+    "drivers": [
+     {
+      "name": "product execution",
+      "kind": "value",
+      "distribution": "triangular",
+      "params": {
+       "low": -500.0,
+       "mode": 50.0,
+       "high": 700.0
+      }
+     },
+     {
+      "name": "transition disruption",
+      "kind": "value",
+      "distribution": "normal",
+      "params": {
+       "mean": -150.0,
+       "sd": 80.0
+      }
+     },
+     {
+      "name": "new-strategy upside",
+      "kind": "event",
+      "distribution": "lognormal",
+      "params": {
+       "median": 50.0,
+       "p90": 200.0
+      },
+      "probability": 0.4
+     }
+    ]
+   }
+  ]
+ },
+ "result_summary": {
+  "monte_carlo": {
+   "provenance": "SIMULATED",
+   "label": "Monte Carlo computed by FAULTLINE; inputs are model-estimated assumptions (cited where a source is shown)",
+   "question": "Should Nvidia keep Jensen Huang as CEO?",
+   "metric": {
+    "name": "change in 3-year shareholder value (MADE-UP EXAMPLE)",
+    "unit": "USD bn",
+    "higher_is_better": true
+   },
+   "n_paths": 20000,
+   "seed": 20261115,
+   "input_sha256": "f22f349fae8c42b88cabca1e582f80429a0d5f20045e06898b5312b8ce4672b8",
+   "runtime_ms": 13.52216600207612,
+   "options": [
+    {
+     "id": "keep",
+     "label": "Keep the current CEO",
+     "mean": 183.86030951988437,
+     "sd": 256.79411867961977,
+     "p5": -238.25226800364362,
+     "p25": 12.804138267163253,
+     "p50": 189.749010910067,
+     "p75": 362.6246844909001,
+     "p95": 602.3432878786996,
+     "prob_below_zero": 0.23365,
+     "histogram": {
+      "bin_edges": [
+       -859.7060136656563,
+       -746.7531627010193,
+       -633.8003117363821,
+       -520.8474607717451,
+       -407.89460980710805,
+       -294.941758842471,
+       -181.98890787783387,
+       -69.03605691319683,
+       43.916794051440206,
+       156.86964501607724,
+       269.8224959807143,
+       382.7753469453513,
+       495.7281979099886,
+       608.6810488746256,
+       721.6338998392627,
+       834.5867508038997,
+       947.5396017685367,
+       1060.4924527331736,
+       1173.4453036978107,
+       1286.3981546624477,
+       1399.3510056270848,
+       1512.3038565917218,
+       1625.2567075563588,
+       1738.2095585209959,
+       1851.1624094856334,
+       1964.1152604502704,
+       2077.0681114149074,
+       2190.0209623795445,
+       2302.9738133441815,
+       2415.9266643088185,
+       2528.8795152734556,
+       2641.8323662380926,
+       2754.7852172027297,
+       2867.7380681673667,
+       2980.6909191320037,
+       3093.6437700966408,
+       3206.596621061278,
+       3319.549472025915,
+       3432.502322990552,
+       3545.455173955189,
+       3658.408024919826
+      ],
+      "counts": [
+       6,
+       27,
+       84,
+       195,
+       324,
+       938,
+       1748,
+       2458,
+       3163,
+       3606,
+       2912,
+       2127,
+       1463,
+       780,
+       169,
+       0,
+       0,
+       0,
+       0,
+       0,
+       0,
+       0,
+       0,
+       0,
+       0,
+       0,
+       0,
+       0,
+       0,
+       0,
+       0,
+       0,
+       0,
+       0,
+       0,
+       0,
+       0,
+       0,
+       0,
+       0
+      ]
+     }
+    },
+    {
+     "id": "replace",
+     "label": "Appoint an outside CEO",
+     "mean": -31.341444013833637,
+     "sd": 273.32624507450583,
+     "p5": -465.92189308927954,
+     "p25": -223.0691286117551,
+     "p50": -42.01475395849733,
+     "p75": 151.90990886327728,
+     "p95": 424.1319433317528,
+     "prob_below_zero": 0.56055,
+     "histogram": {
+      "bin_edges": [
+       -859.7060136656563,
+       -746.7531627010193,
+       -633.8003117363821,
+       -520.8474607717451,
+       -407.89460980710805,
+       -294.941758842471,
+       -181.98890787783387,
+       -69.03605691319683,
+       43.916794051440206,
+       156.86964501607724,
+       269.8224959807143,
+       382.7753469453513,
+       495.7281979099886,
+       608.6810488746256,
+       721.6338998392627,
+       834.5867508038997,
+       947.5396017685367,
+       1060.4924527331736,
+       1173.4453036978107,
+       1286.3981546624477,
+       1399.3510056270848,
+       1512.3038565917218,
+       1625.2567075563588,
+       1738.2095585209959,
+       1851.1624094856334,
+       1964.1152604502704,
+       2077.0681114149074,
+       2190.0209623795445,
+       2302.9738133441815,
+       2415.9266643088185,
+       2528.8795152734556,
+       2641.8323662380926,
+       2754.7852172027297,
+       2867.7380681673667,
+       2980.6909191320037,
+       3093.6437700966408,
+       3206.596621061278,
+       3319.549472025915,
+       3432.502322990552,
+       3545.455173955189,
+       3658.408024919826
+      ],
+      "counts": [
+       12,
+       101,
+       446,
+       1064,
+       1829,
+       2538,
+       3224,
+       3171,
+       2722,
+       2067,
+       1460,
+       823,
+       369,
+       101,
+       25,
+       18,
+       6,
+       11,
+       4,
+       4,
+       2,
+       1,
+       0,
+       1,
+       0,
+       0,
+       0,
+       0,
+       0,
+       0,
+       0,
+       0,
+       0,
+       0,
+       0,
+       0,
+       0,
+       0,
+       0,
+       1
+      ]
+     }
+    }
+   ],
+   "pairwise": [
+    {
+     "a": "keep",
+     "b": "replace",
+     "prob_a_better": 0.8833,
+     "ci95": [
+      0.878776593946542,
+      0.8876761912128481
+     ]
+    }
+   ],
+   "best": {
+    "id": "keep",
+    "prob_best": 0.8833,
+    "ci95": [
+     0.878776593946542,
+     0.8876761912128481
+    ]
+   },
+   "sensitivity": [
+    {
+     "option_id": "replace",
+     "driver": "product execution",
+     "low_p50": -368.2567643103823,
+     "high_p50": 293.4894761398514,
+     "swing": 661.7462404502337
+    },
+    {
+     "option_id": "keep",
+     "driver": "product execution",
+     "low_p50": -64.86209723040456,
+     "high_p50": 541.8183057717222,
+     "swing": 606.6804030021267
+    },
+    {
+     "option_id": "keep",
+     "driver": "key-person health event",
+     "low_p50": -58.88330494126268,
+     "high_p50": 223.91623910814712,
+     "swing": 282.7995440494098
+    },
+    {
+     "option_id": "replace",
+     "driver": "transition disruption",
+     "low_p50": -147.82990401674795,
+     "high_p50": 58.219602487363204,
+     "swing": 206.04950650411115
+    },
+    {
+     "option_id": "replace",
+     "driver": "new-strategy upside",
+     "low_p50": -73.8996304337072,
+     "high_p50": 29.786886667796708,
+     "swing": 103.68651710150391
+    }
+   ],
+   "assumptions": [
+    {
+     "option_id": "keep",
+     "name": "product execution",
+     "kind": "value",
+     "distribution": "triangular",
+     "params": {
+      "low": -300.0,
+      "mode": 200.0,
+      "high": 800.0
+     },
+     "probability": null,
+     "source": {
+      "url": null,
+      "title": null,
+      "note": "MADE-UP EXAMPLE range for a test"
+     }
+    },
+    {
+     "option_id": "keep",
+     "name": "key-person health event",
+     "kind": "event",
+     "distribution": "triangular",
+     "params": {
+      "low": -600.0,
+      "mode": -300.0,
+      "high": -100.0
+     },
+     "probability": 0.15,
+     "source": null
+    },
+    {
+     "option_id": "replace",
+     "name": "product execution",
+     "kind": "value",
+     "distribution": "triangular",
+     "params": {
+      "low": -500.0,
+      "mode": 50.0,
+      "high": 700.0
+     },
+     "probability": null,
+     "source": null
+    },
+    {
+     "option_id": "replace",
+     "name": "transition disruption",
+     "kind": "value",
+     "distribution": "normal",
+     "params": {
+      "mean": -150.0,
+      "sd": 80.0
+     },
+     "probability": null,
+     "source": null
+    },
+    {
+     "option_id": "replace",
+     "name": "new-strategy upside",
+     "kind": "event",
+     "distribution": "lognormal",
+     "params": {
+      "median": 50.0,
+      "p90": 200.0
+     },
+     "probability": 0.4,
+     "source": null
+    }
+   ]
+  }
+ }
+}

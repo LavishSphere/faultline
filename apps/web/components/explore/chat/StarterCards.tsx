@@ -12,9 +12,9 @@ type Tone = "risk" | "info" | "viable" | "accent";
 
 export const STARTERS: { kicker: string; title: string; prompt: string; tone: Tone }[] = [
   {
-    kicker: "Governance · current web",
-    title: "Should Meta keep Zuckerberg as CEO?",
-    prompt: "Should Meta keep Mark Zuckerberg as CEO? Give me a decision brief with current sources, and say what would change the answer.",
+    kicker: "Governance · Monte Carlo",
+    title: "Should Nvidia keep Jensen Huang as CEO?",
+    prompt: "Should Nvidia keep Jensen Huang as CEO? Give me the odds.",
     tone: "accent",
   },
   {
@@ -24,9 +24,9 @@ export const STARTERS: { kicker: string; title: string; prompt: string; tone: To
     tone: "info",
   },
   {
-    kicker: "Stress test · engine",
-    title: "Our biggest supplier just went bust",
-    prompt: "Our biggest supplier just went bust. What happens to our cash, and what is the least harmful recovery plan if we protect payroll?",
+    kicker: "Cash risk · Monte Carlo",
+    title: "What are the odds we breach the cash floor?",
+    prompt: "What's the probability we breach the cash floor if our biggest supplier fails?",
     tone: "risk",
   },
   {
