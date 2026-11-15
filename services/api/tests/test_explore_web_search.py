@@ -280,6 +280,52 @@ def test_openai_result_shape_and_model_written_snippets(env):
     assert chat.unverified_numbers("Revenue was $57.0 billion.", [chat.figure_sources(s)]) == ["$57.0 billion"]
 
 
+# --------------------------------------------------------------------------- Anthropic -> OpenAI fallback (#221)
+
+
+def _anthropic_fails_then(openai: FakeProvider | None) -> tuple[chat.ToolOutcome, FakeProvider | None]:
+    transports = {"anthropic": httpx2.MockTransport(_raise_timeout)}
+    if openai is not None:
+        transports["openai"] = openai.transport()
+    box = chat_routes.EngineToolBox(get_settings(), None, web_clients=chat.ClientFactory(transports))
+    return asyncio.run(box.run("web_search", {"query": "Nvidia CEO"})), openai
+
+
+def test_a_failed_anthropic_search_is_retried_once_on_openai_with_openai_attribution(env):
+    env.setenv("FAULTLINE_WEB_SEARCH_PROVIDER", "anthropic")
+    env.setenv("OPENAI_API_KEY", OPENAI_KEY)
+    out, openai = _anthropic_fails_then(FakeProvider(replies=[oai_reply]))
+    assert out.status == "ok" and len(openai.chat_requests) == 1
+    assert out.summary["attribution"] == "Search by OpenAI web search"
+    assert "Tavily" not in json.dumps(out.summary) and "Anthropic" not in out.summary["attribution"]
+
+
+def test_both_searches_failing_is_one_tool_error_with_no_results(env):
+    env.setenv("FAULTLINE_WEB_SEARCH_PROVIDER", "anthropic")
+    env.setenv("OPENAI_API_KEY", OPENAI_KEY)
+    body = {"error": {"message": "nope", "type": "server_error"}}
+    out, openai = _anthropic_fails_then(FakeProvider(replies=[lambda _b: httpx2.Response(500, json=body)]))
+    assert out.status == "error" and set(out.summary) == {"error"} and "upstream" in out.summary["error"]
+    assert len(openai.chat_requests) == 1  # one fallback try, never more
+
+
+def test_no_openai_key_means_no_fallback(env):
+    env.setenv("FAULTLINE_WEB_SEARCH_PROVIDER", "anthropic")
+    out, _ = _anthropic_fails_then(None)
+    assert out.status == "error" and "timeout" in out.summary["error"]
+
+
+def test_tavily_attribution_appears_only_on_tavily_results(env):
+    env.setenv("OPENAI_API_KEY", OPENAI_KEY)
+    for provider, reply in (("anthropic", an_reply(search_block() + text_blocks())), ("openai", oai_reply)):
+        env.setenv("FAULTLINE_WEB_SEARCH_PROVIDER", provider)
+        fake = FakeProvider(replies=[reply])
+        clients = factory(**{provider: fake})
+        box = chat_routes.EngineToolBox(get_settings(), None, web_clients=clients)
+        out = asyncio.run(box.run("web_search", {"query": "Nvidia CEO"}))
+        assert out.status == "ok" and "Tavily" not in json.dumps(out.summary), provider
+
+
 # --------------------------------------------------------------------------- the figure check, through the route
 
 
@@ -290,7 +336,8 @@ def _brief(figure: str) -> str:
 @pytest.mark.parametrize(("figure", "ok"), [("$57.0 billion", True), ("$65 billion", False)])
 def test_summary_is_not_a_source_for_the_figure_check(env, figure, ok):
     h = Harness(openrouter=FakeProvider(models=OPENROUTER_MODELS, replies=[
-                    oa_tool_calls(("web_search", {"query": "Nvidia revenue"})), oa_text(_brief(figure))]),
+                    oa_tool_calls(("web_search", {"query": "Nvidia revenue"})), oa_text(_brief(figure)),
+                    *([] if ok else [oa_text(_brief(figure))])]),  # a failing reply gets one repair round (#221)
                 anthropic=FakeProvider(models=ANTHROPIC_LIST, replies=[an_reply(search_block() + text_blocks())]))
     out = h.turn("Should Nvidia keep Jensen Huang as CEO?").json()
     call = out["tool_calls"][0]

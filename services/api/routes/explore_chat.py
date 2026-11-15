@@ -794,8 +794,19 @@ class EngineToolBox:
                 found = await web_llm.search(self.web_provider, query, self.web_clients)
             except web_llm.WebSearchError as err:
                 logger.warning("chat web_search (%s) failed: %s", self.web_provider, err.kind)
-                return chat.ToolOutcome("error", "LIVE EXPLORE", {"query": query},
-                                        {"error": f"Web search unavailable ({err.kind}). No results were made up."})
+                # #221: an Anthropic search that fails gets ONE try on OpenAI's web search when its key is set. The
+                # result carries the attribution of the provider that actually answered (WebSearchResult.provider).
+                kind, recovered = err.kind, None
+                if self.web_provider == "anthropic" and self.web_clients.key("openai"):
+                    try:
+                        recovered = await web_llm.search("openai", query, self.web_clients)
+                    except web_llm.WebSearchError as again:
+                        logger.warning("chat web_search fallback (openai) failed: %s", again.kind)
+                        kind = again.kind
+                if recovered is None:
+                    return chat.ToolOutcome("error", "LIVE EXPLORE", {"query": query},
+                                            {"error": f"Web search unavailable ({kind}). No results were made up."})
+                found = recovered
             return chat.ToolOutcome("ok", "LIVE EXPLORE", {"query": query},
                                     found.as_summary(web_label(found.retrieved_at)))
         try:
