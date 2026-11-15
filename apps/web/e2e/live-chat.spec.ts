@@ -102,7 +102,7 @@ test.describe("Ask the engine: models", () => {
       "chat-provider-openai",
       "chat-provider-anthropic",
     ]);
-    await expect(groups.nth(0).locator(".kicker")).toHaveText("Open models via OpenRouter");
+    await expect(groups.nth(0).locator(".kicker")).toHaveText("Via OpenRouter");
     await expect(groups.nth(1).locator(".kicker")).toHaveText("OpenAI (direct)");
     await expect(groups.nth(2).locator(".kicker")).toHaveText("Anthropic Claude (direct)");
 

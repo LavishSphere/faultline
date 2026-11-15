@@ -34,7 +34,7 @@ export const CHAT_PROVIDERS = ["openrouter", "openai", "anthropic"] as const;
 export type ChatProvider = (typeof CHAT_PROVIDERS)[number];
 /** OpenAI and Claude models are served through their native APIs; OpenRouter carries the open-weight models. */
 export const PROVIDER_LABEL: Record<ChatProvider, string> = {
-  openrouter: "Open models via OpenRouter",
+  openrouter: "Via OpenRouter",
   openai: "OpenAI (direct)",
   anthropic: "Anthropic Claude (direct)",
 };

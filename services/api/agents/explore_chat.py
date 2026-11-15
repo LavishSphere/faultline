@@ -52,7 +52,7 @@ MAX_OUTPUT_TOKENS = 4000
 PROVIDER_TIMEOUT_S = 60.0
 CATALOG_TTL_S = 600.0
 CATALOG_FAILURE_TTL_S = 60.0  # a failed provider list is retried sooner
-MAX_FEATURED = 8
+MAX_FEATURED = 12
 
 CHAT_PROVENANCE = "LIVE EXPLORE"
 CHAT_LABEL = "MODEL-WRITTEN, numbers from engine tools"
@@ -87,14 +87,19 @@ OPENAI_VETTED: tuple[tuple[str, str], ...] = (
 # tools, or their replies were withheld for unsupported figures, most often). OpenAI models were not measured (no
 # key on the test server) and keep their earlier order.
 FEATURED_PREFERENCE: tuple[str, ...] = (
-    "openrouter:google/gemini-3.1-flash-lite",
-    "openrouter:x-ai/grok-4.3",
-    "openrouter:qwen/qwen3-235b-a22b-2507",
-    "openai:gpt-5.1",
-    "openai:gpt-5",
-    "openai:gpt-4.1",
-    "anthropic:claude-opus-5-5",
+    # Open weights (self-hostable), ranked by a live run of two CEO-decision prompts through the public API on
+    # 2026-11-15 (web_search + monte_carlo_decision + brief passing the figure check).
+    "openrouter:z-ai/glm-5.3",
+    "openrouter:z-ai/glm-5.1",
+    "openrouter:deepseek/deepseek-v4-pro",
+    "openrouter:qwen/qwen3.6-27b",
+    "openrouter:nvidia/nemotron-3-super-120b-a12b",
+    "openrouter:google/gemma-4-31b-it",
+    "openrouter:meta-llama/llama-3.3-70b-instruct",
+    # Closed APIs. grok-4.6 passed both prompts; grok-4.7 passed neither in the same run.
     "anthropic:claude-sonnet-5-5",
+    "anthropic:claude-opus-5-5",
+    "openrouter:x-ai/grok-4.6",
     "anthropic:claude-haiku-5-5",
 )
 
