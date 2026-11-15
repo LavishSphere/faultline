@@ -124,6 +124,9 @@ export interface RevealResponse {
   persisted_before_outcome_revealed: boolean;
   scores: PredictionScores;
   baselines: Baselines;
+  /** Content hash of the case record the forecast was made from, frozen with the prediction (#180). Optional: an
+   * older API omits it, and the unsealing line then says NOT AVAILABLE. */
+  case_sha256?: string;
 }
 
 /** evaluator.ExclusionReason. */
@@ -177,19 +180,15 @@ export interface EventScore {
   brier: Record<string, number>;
   log_loss: Record<string, number>;
   accuracy_at_0_5: Record<string, number>;
+  /**
+   * The persisted forecast's p_yes behind this row's agent scores (#180). Set only on a single-snapshot row; null (or
+   * absent, on a card recorded before #180) = NOT AVAILABLE. The API refuses a card whose p disagrees with the row's
+   * own Brier / log loss, and checks a committed card's p against its run's rows.
+   */
+  agent_p_yes?: number | null;
+  /** The market baseline price (market-implied, price-derived) the gate froze before reveal; same rules as agent_p_yes. */
+  market_p_yes?: number | null;
 }
-
-/**
- * NOT AVAILABLE stub (#164): the market baseline's p for each scored event. `EventScore` carries Brier, log loss and
- * accuracy per forecaster but no `p_yes`; the agent's p comes from GET /api/replay/recorded, but no route serves the
- * per-event market price, so the results chart shows it as NOT AVAILABLE instead of back-solving it from a Brier
- * score in the browser. Needed from the backend: `p_yes: dict[str, float]` on `evaluator.EventScore` (mean p per
- * forecaster over the event's snapshots), served by GET /api/benchmark and covered by the committed-snapshot checks.
- */
-export const PER_EVENT_P_YES: { readonly status: "NOT AVAILABLE"; readonly needs: string } = {
-  status: "NOT AVAILABLE",
-  needs: "EventScore.p_yes (p per forecaster for each scored event) in GET /api/benchmark",
-};
 
 /** evaluator.ForecasterSummary. */
 export interface ForecasterSummary {
@@ -418,6 +417,7 @@ export function checkRevealResponse(body: unknown, requestedId: string): string 
     if (!isInt(body[k])) return `${k} missing`;
   }
   if (typeof body.persisted_before_outcome_revealed !== "boolean") return "persisted_before_outcome_revealed missing";
+  if (body.case_sha256 !== undefined && !isSha(body.case_sha256)) return "case_sha256 malformed";
   const s = body.scores;
   if (!isObj(s) || !isNum(s.brier) || !isNum(s.log_loss) || !isNum(s.accuracy_at_0_5)) return "scores missing";
   const b = body.baselines;
@@ -479,6 +479,10 @@ function checkScorecard(c: unknown, at: string): string | null {
     if (!isStrArray(e.prediction_ids) || !isStrArray(e.market_refs)) return `${at}.per_event[${i}] ids/refs malformed`;
     if (!isNumRecord(e.brier) || !isNumRecord(e.log_loss) || !isNumRecord(e.accuracy_at_0_5)) {
       return `${at}.per_event[${i}] scores malformed`;
+    }
+    for (const k of ["agent_p_yes", "market_p_yes"] as const) {
+      const q = e[k];
+      if (q !== undefined && q !== null && !(isNum(q) && q >= 0 && q <= 1)) return `${at}.per_event[${i}].${k} is not a probability`;
     }
   }
   if (c.summary !== null) {

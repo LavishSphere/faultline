@@ -36,7 +36,7 @@ from pathlib import Path
 from typing import Literal
 
 import numpy as np
-from pydantic import AwareDatetime, BaseModel, ConfigDict, ValidationError
+from pydantic import AwareDatetime, BaseModel, ConfigDict, Field, ValidationError
 
 from config import get_settings
 from config import same_path as _same_path
@@ -75,9 +75,7 @@ ExclusionReason = Literal[
 CaseSet = Literal["real", "synthetic"]
 CASE_SETS: tuple[CaseSet, ...] = ("real", "synthetic")
 # market_label of a scorecard whose market baselines mix synthetic and real-venue quotes (synthetic cases only).
-MIXED_MARKET_LABEL = (
-    f'"synthetic:" refs: {SYNTHETIC_QUOTE_LABEL}; other refs: {MARKET_LABEL}'
-)
+MIXED_MARKET_LABEL = f'"synthetic:" refs: {SYNTHETIC_QUOTE_LABEL}; other refs: {MARKET_LABEL}'
 
 # official_blocker while FAULTLINE_DEMO_STORE is set (#155): a demo scratch store never earns OFFICIAL.
 DEMO_SCRATCH_BLOCKER = (
@@ -379,6 +377,12 @@ class EventScore(BaseModel):
     brier: dict[str, float]
     log_loss: dict[str, float]
     accuracy_at_0_5: dict[str, float]
+    # The exact inputs of this row's agent and market scores (#180): the persisted prediction's p_yes and the
+    # market_baseline_p_yes the gate froze with it. Set only when n_snapshots == 1, where one p determines the row's
+    # scores (Brier = (p - y)^2); null for a multi-snapshot row, whose scores are means over snapshots.
+    # routes/benchmark.scorecard_problems refuses a value inconsistent with the scores beside it.
+    agent_p_yes: float | None = Field(default=None, ge=0.0, le=1.0)
+    market_p_yes: float | None = Field(default=None, ge=0.0, le=1.0)
 
 
 class ForecasterSummary(BaseModel):
@@ -710,6 +714,7 @@ def build_scorecard(
         if len(ys) != 1:
             raise ValueError(f"{event_id}: inconsistent outcomes across snapshots")
         y = ys.pop()
+        single = rows[0][2] if len(rows) == 1 else None
         per_event.append(
             EventScore(
                 event_id=event_id,
@@ -722,6 +727,8 @@ def build_scorecard(
                 accuracy_at_0_5={
                     f: float(np.mean([correct_at_half(pr[f], y) for _, _, pr in rows])) for f in forecasters
                 },
+                agent_p_yes=None if single is None else single[agent_key],
+                market_p_yes=None if single is None else single["market"],
             )
         )
 

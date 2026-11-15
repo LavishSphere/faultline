@@ -27,6 +27,8 @@ interface EventRow {
   y: number;
   prediction_ids: string[];
   brier: Record<string, number>;
+  agent_p_yes?: number | null;
+  market_p_yes?: number | null;
 }
 interface Card {
   label: string;
@@ -43,6 +45,7 @@ interface Benchmark {
 }
 interface Reveal {
   prediction: { prediction_id: string; prompt_sha256: string; snapshot_sha256: string };
+  case_sha256: string;
   sealed: { outcome: string };
   persisted_before_outcome_revealed: boolean;
   scores: { brier: number };
@@ -55,8 +58,11 @@ const fmtPrecise = (x: number) =>
   x === 0 ? "0.000000" : `${x < 0 ? "−" : "+"}${Math.abs(x) < 1e-4 ? String(Math.abs(x)) : Math.abs(x).toFixed(6)}`;
 const short = (h: string) => (h.length > 28 ? `${h.slice(0, 16)}…${h.slice(-8)}` : h);
 
-async function mockCommitted(page: Page, { recorded = true }: { recorded?: boolean } = {}) {
-  await page.route(BENCHMARK_URL, (route) => route.fulfill({ json: fixture.benchmark }));
+async function mockCommitted(
+  page: Page,
+  { recorded = true, benchmark = fixture.benchmark }: { recorded?: boolean; benchmark?: Benchmark } = {},
+) {
+  await page.route(BENCHMARK_URL, (route) => route.fulfill({ json: benchmark }));
   if (!recorded) return;
   await page.route(`${E2E_API_BASE}/api/replay/recorded?**`, (route) => {
     const q = new URL(route.request().url()).searchParams;
@@ -103,7 +109,7 @@ test.describe("REVEAL · results by event", () => {
     await page.getByTestId("results-chart-toggle-y").click();
     await expect(page.getByTestId("results-chart-y")).toHaveCount(card.per_event.length);
 
-    // Hover events: id, Brier as the API sent them, p (model) from the matched recorded forecast, p (market) not available.
+    // Hover events: id, Brier, p (model) and p (market) exactly as the API's per_event row serves them (#180).
     const events = page.getByTestId("results-chart-event");
     const tooltip = page.getByTestId("results-chart-tooltip");
     for (let k = 0; k < card.per_event.length; k += 7) {
@@ -114,20 +120,31 @@ test.describe("REVEAL · results by event", () => {
       await expect(tooltip).toContainText(`Brier agent${fmt4(row!.brier[card.agent_variant]!)}`);
       await expect(tooltip).toContainText(`Brier market${fmt4(row!.brier.market!)}`);
       await expect(tooltip).toContainText(`y${row!.y}`);
+      expect(typeof row!.agent_p_yes, "fixture row carries agent_p_yes").toBe("number");
+      expect(typeof row!.market_p_yes, "fixture row carries market_p_yes").toBe("number");
+      // Two API bodies agree: the row's agent_p_yes is the recorded forecast the recorded route serves.
       const rec = fixture.recorded[`${row!.event_id}|${card.agent_variant}`]!;
-      const p = rec.items.filter((f) => row!.prediction_ids.includes(f.prediction_id)).map((f) => fmt4(f.p_yes));
-      expect(p.length, "fixture has the scored forecast").toBeGreaterThan(0);
-      await expect(page.getByTestId("results-chart-tooltip-p")).toHaveText(p.join(" · "));
-      await expect(tooltip).toContainText("p (market)Not available");
+      const served = rec.items.filter((f) => row!.prediction_ids.includes(f.prediction_id)).map((f) => f.p_yes);
+      expect(served).toEqual([row!.agent_p_yes]);
+      await expect(page.getByTestId("results-chart-tooltip-p")).toHaveText(fmt4(row!.agent_p_yes!));
+      await expect(page.getByTestId("results-chart-tooltip-p-market")).toHaveText(fmt4(row!.market_p_yes!));
     }
+    await expect(page.getByTestId("results-chart-p-market")).toHaveCount(card.per_event.length);
   });
 
-  test("p (model) is NOT AVAILABLE where the recorded-forecast route serves nothing for the event (real API)", async ({ page }) => {
-    await mockCommitted(page, { recorded: false });
+  test("a row without agent_p_yes / market_p_yes shows both p as NOT AVAILABLE, never a derived value", async ({ page }) => {
+    const stripped = structuredClone(fixture.benchmark);
+    for (const c of stripped.items) for (const e of c.per_event) {
+      delete e.agent_p_yes;
+      delete e.market_p_yes;
+    }
+    await mockCommitted(page, { benchmark: stripped });
     await page.goto("/reveal/");
     await expect(page.getByTestId("results-chart")).toBeVisible();
+    await expect(page.getByTestId("results-chart-p-market")).toHaveCount(0);
     await page.getByTestId("results-chart-event").first().hover();
     await expect(page.getByTestId("results-chart-tooltip-p")).toHaveText("Not available");
+    await expect(page.getByTestId("results-chart-tooltip-p-market")).toHaveText("Not available");
   });
 
   test("score race lands on the card's means and Δ", async ({ page }) => {
@@ -171,8 +188,9 @@ test.describe("REVEAL · unsealing sequence", () => {
     const r = fixture.reveal;
     await expect(seq.getByTestId("unseal-line-prompt")).toContainText(short(r.prediction.prompt_sha256));
     await expect(seq.getByTestId("unseal-line-snapshot")).toContainText(short(r.prediction.snapshot_sha256));
-    // The reveal response has no case hash: its slot says so instead of being skipped.
-    await expect(seq.getByTestId("unseal-line-case")).toContainText("Not available");
+    // The case hash frozen with the prediction (#180), as the reveal response serves it.
+    expect(r.case_sha256, "fixture reveal carries case_sha256").toMatch(/^[0-9a-f]{64}$/);
+    await expect(seq.getByTestId("unseal-line-case")).toContainText(short(r.case_sha256));
     await expect(seq.getByTestId("unseal-line-before")).toHaveAttribute(
       "data-state",
       String(r.persisted_before_outcome_revealed),

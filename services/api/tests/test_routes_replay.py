@@ -87,13 +87,32 @@ BENCHMARK_POST_REVEAL_READ_ONLY = {("get", "/api/benchmark")}
 BENCHMARK_ADMIN_REVEALS = {("post", "/api/benchmark/compute")}
 
 RUN_KEYS = {
-    "prediction", "skeptic", "market_at_cutoff", "persisted_at", "persist_seq", "record_sha256",
-    "event_first_reveal_seq", "persisted_after_event_reveal", "store_first_reveal_seq", "persisted_after_any_reveal",
+    "prediction",
+    "skeptic",
+    "market_at_cutoff",
+    "persisted_at",
+    "persist_seq",
+    "record_sha256",
+    "event_first_reveal_seq",
+    "persisted_after_event_reveal",
+    "store_first_reveal_seq",
+    "persisted_after_any_reveal",
     "audit_note",
 }
 REVEAL_KEYS = {
-    "prediction", "y", "sealed", "revealed_at", "persisted_at", "persist_seq", "reveal_seq",
-    "event_first_revealed_at", "event_first_reveal_seq", "persisted_before_outcome_revealed", "scores", "baselines",
+    "prediction",
+    "y",
+    "sealed",
+    "revealed_at",
+    "persisted_at",
+    "persist_seq",
+    "reveal_seq",
+    "event_first_revealed_at",
+    "event_first_reveal_seq",
+    "persisted_before_outcome_revealed",
+    "scores",
+    "baselines",
+    "case_sha256",
 }
 
 
@@ -517,6 +536,8 @@ def test_reveal_contract_and_scores(world):
     assert market["brier"] == pytest.approx((0.56 - 1) ** 2) and market["log_loss"] == pytest.approx(-math.log(0.56))
     assert naive["brier"] == pytest.approx(0.25) and naive["log_loss"] == pytest.approx(math.log(2))
     assert len(PredictionStore(world.db).reveal_times(pred["prediction_id"])) == 1
+    # #180: the case hash frozen with the prediction (its scoring context), not one recomputed at reveal time.
+    assert body["case_sha256"] == PredictionStore(world.db).get_record(pred["prediction_id"]).context.case_sha256
 
 
 def test_reveal_without_market_baseline_reports_null(tmp_path, monkeypatch):
@@ -730,6 +751,10 @@ def test_local_only_real_ollama_run(tmp_path, monkeypatch):
         p = resp.json()["prediction"]
         assert PredictionStore(world.db).verify(p["prediction_id"]) == []
     else:
-        assert resp.json()["code"] in {"MODEL_UNAVAILABLE", "MODEL_OUTPUT_INVALID", "PROMPT_NOT_VERIFIED",
-                                       "PROMPT_TOO_LONG"}
+        assert resp.json()["code"] in {
+            "MODEL_UNAVAILABLE",
+            "MODEL_OUTPUT_INVALID",
+            "PROMPT_NOT_VERIFIED",
+            "PROMPT_TOO_LONG",
+        }
         assert world.records() == []

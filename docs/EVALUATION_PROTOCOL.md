@@ -317,7 +317,7 @@ below may be changed after any official reveal; a change needs a new dated subse
 | `GET /api/cases` | pre-reveal | `EvidenceStore.public_case` per case file: `evidence_ids` lists only items the gate admits at the cutoff |
 | `GET /api/cases/{case_id}/evidence?as_of=` | pre-reveal | `EvidenceStore.get_as_of`: the prompt projection of admitted evidence, the selected as-of quote per market, the market baseline at the cutoff (or NOT AVAILABLE), exclusion counts by reason (no ids). `as_of` defaults to, and may not be later than, the case cutoff (422) |
 | `POST /api/replay/run` `{case_id, variant}` | pre-reveal; admin-only in public mode | gate, provider, skeptic, then `PredictionStore.save(..., final_prompt=...)`; nothing is saved on any provider error or skeptic rejection. A run saved after a reveal is not refused but flagged from `audit_log`: `event_first_reveal_seq` / `persisted_after_event_reveal` (this event) and `store_first_reveal_seq` / `persisted_after_any_reveal` (anywhere), plus an `audit_note` |
-| `POST /api/replay/{prediction_id}/reveal` | post-reveal; admin-only in public mode | `OutcomeVault.reveal`, per-prediction Brier / log loss / accuracy at 0.5, naive and market baselines from the stored pre-reveal context |
+| `POST /api/replay/{prediction_id}/reveal` | post-reveal; admin-only in public mode | `OutcomeVault.reveal`, per-prediction Brier / log loss / accuracy at 0.5, naive and market baselines from the stored pre-reveal context, and `case_sha256`: the case content hash frozen in that prediction's stored scoring context (#180; not recomputed at reveal time). Pre-reveal responses are unchanged |
 | `GET /api/replay/recorded?case_id=&agent_variant=` (#116) | pre-reveal; read-only, public | `routes/recorded.py`: the committed RECORDED RUN forecast rows for one case from `data/recorded_runs/runs/<run_id>/`, newest run first. Only manifests with `dry_run: false` (not a mocked provider) and provenance `RECORDED_RUN`; every row is checked by `routes.benchmark.load_run` (`verify_row` + manifest index), a failing row is skipped with a note, a run whose `rows_sha256` does not recompute is skipped whole. Served fields are named one by one (prediction, model, hashes, `recorded_at`, `run_id`, cited evidence from the row's own snapshot); the response model has no outcome field. Never opens `sealed_outcomes/`, the prediction store or the case files. Nothing committed for the case: `NOT AVAILABLE` with a note (`tests/test_routes_replay_recorded.py`) |
 
 **Public mode:** run and reveal both change state, so with `FAULTLINE_MODE` anything but unset/`local` they need
@@ -358,6 +358,15 @@ Scoring reveals outcomes, so computing a scorecard and reading one are separate 
   recorded_at, agent_variant, agent_models, cases_sha256, scorecard, scorecard_sha256, snapshot_sha256}`.
   `scorecard_sha256` = SHA-256 of the canonical JSON (§5) of `scorecard`; `snapshot_sha256` = SHA-256 of the canonical JSON
   of the whole file without `snapshot_sha256`.
+- **Scorecard fields** (`core.evaluator.Scorecard`): `label, verdict, caveat, provenance, agent_variant, forecasters,
+  market_label, case_set, n_events, n_excluded, exclusions_by_reason, exclusions, ignored_predictions, per_event,
+  summary, comparison, official_blockers`. Each **`per_event` row** (`EventScore`): `event_id, n_snapshots, y,
+  prediction_ids, market_refs, brier, log_loss, accuracy_at_0_5` (each keyed by `naive`, `market` and the agent variant;
+  means over the event's snapshots), and `agent_p_yes`, `market_p_yes` (#180): the persisted prediction's `p_yes` and
+  the `market_baseline_p_yes` the gate froze with it, i.e. the exact inputs of that row's agent and market scores. They
+  add no data source and change no formula. Both are set only when `n_snapshots == 1` (one p determines the row's
+  scores) and are null on a multi-snapshot row (a mean p would not reproduce a mean Brier); null = NOT AVAILABLE. Both
+  hashes cover them (they hash the whole stored JSON).
 - **What GET serves (`verify_snapshot`).** A file that fails any of these checks is not served, and a note names it.
   - **Both hashes** recompute from the stored JSON.
   - **Display rules** (§6), re-applied to the card's own `per_event` rows:
@@ -368,6 +377,9 @@ Scoring reveals outcomes, so computing a scorecard and reading one are separate 
     - the caveat, the summary and the bootstrap CI recompute exactly;
     - the verdict is `agent better than market` iff the CI upper bound < 0;
     - naive scores are those of p = 0.5;
+    - a row's `agent_p_yes` / `market_p_yes`, when present, are the inputs of its own agent / market scores:
+      `brier == (p - y)^2`, and log loss and accuracy at 0.5 likewise, to 1e-12; present only on a single-snapshot row
+      (`p_yes_problems`, #180), so a forged p cannot sit beside a real Brier;
     - the counts and `exclusions_by_reason` match the exclusions.
   - **No dry-run model:** `ollama/dry-run-mock` is never in `agent_models`.
   - **Committed snapshots** also need all of the following:
@@ -376,6 +388,8 @@ Scoring reveals outcomes, so computing a scorecard and reading one are separate 
     - every row of that run verifies (`verify_run`);
     - every `per_event[].prediction_ids` entry is one of that run's rows for this variant and event;
     - each event's agent and market Brier, log loss and accuracy recompute from those rows' `p_yes` and market baseline;
+    - on a single-snapshot row, `agent_p_yes` and `market_p_yes` equal that run row's `prediction.p_yes` and
+      `context.market_baseline_p_yes` (required, never null); on a multi-snapshot row both are null (#180);
     - `agent_models` and `provenance` agree with the rows.
   - **Case set agreement (#118, both origins):** a REAL_HISTORICAL or `case_set: "real"` card has no per-event
     market ref starting `synthetic:` and its `market_label` is the real one; every `cases_sha256` key is an event
