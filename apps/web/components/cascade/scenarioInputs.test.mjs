@@ -11,6 +11,8 @@ import {
   maxOutageWeeks,
   scenarioName,
 } from "./scenarioInputs.ts";
+// Shockwave sequencing (#165), tested at the end of this file: display order and grouping only.
+import { actionsByNode, countFrame, dependencyLevels, peakOf } from "./shockwave.ts";
 
 const T = 26;
 // The audit's reproduction: partial availability and a δ that is not on the 1% slider grid.
@@ -76,4 +78,56 @@ test("scenario name includes φ", () => {
   assert.match(s.name, /φ 40%/);
   assert.equal(scenarioName({}, T), "baseline");
   assert.equal(buildShock(NO_SHOCK, T).name, "baseline");
+});
+
+// Shockwave sequencing (#165): no figure is derived, only order, grouping and the count-up's end frame.
+const NODES = ["Demand", "Sales", "Receipts", "Supplier", "Inventory", "Purchases", "Payables", "Rate", "Interest", "Payroll", "Revolver", "Cash"];
+const EDGES = [
+  ["Demand", "Sales"], ["Supplier", "Sales"], ["Supplier", "Purchases"], ["Demand", "Purchases"], ["Sales", "Receipts"],
+  ["Sales", "Purchases"], ["Purchases", "Inventory"], ["Purchases", "Payables"], ["Rate", "Interest"], ["Revolver", "Interest"],
+  ["Receipts", "Cash"], ["Payables", "Cash"], ["Interest", "Cash"], ["Payroll", "Cash"], ["Revolver", "Cash"],
+];
+
+test("dependency levels follow the served edges: every edge goes to a strictly later level, Cash last", () => {
+  const lv = dependencyLevels(NODES, EDGES);
+  for (const [s, t] of EDGES) assert.ok(lv.get(t) > lv.get(s), `${s} -> ${t}`);
+  assert.equal(lv.get("Demand"), 0);
+  assert.equal(lv.get("Supplier"), 0);
+  assert.ok(lv.get("Sales") < lv.get("Receipts") && lv.get("Receipts") < lv.get("Cash"));
+  assert.ok(lv.get("Purchases") < lv.get("Inventory") && lv.get("Purchases") < lv.get("Payables"));
+  assert.equal(Math.max(...lv.values()), lv.get("Cash"));
+});
+
+test("dependency levels terminate on a cycle (not in the model)", () => {
+  const lv = dependencyLevels(["a", "b"], [["a", "b"], ["b", "a"]]);
+  assert.ok(lv.get("a") <= 2 && lv.get("b") <= 2);
+});
+
+test("count-up starts at the previous API value and its last frame is exactly the new one", () => {
+  const to = -64515.38461538462;
+  assert.equal(countFrame(-16900.1, to, 0), -16900.1);
+  assert.equal(countFrame(-16900.1, to, 1), to);
+  assert.equal(countFrame(-16900.1, to, 1.7), to);
+  const mid = countFrame(0, to, 0.5);
+  assert.ok(mid < 0 && mid > to);
+});
+
+test("peakOf returns the served entry with the largest |Δ|, first on ties", () => {
+  assert.deepEqual(peakOf([1, -3, 3, 2]), { peak: -3, peakIdx: 1, maxAbs: 3 });
+  assert.equal(peakOf([]), null);
+});
+
+test("actionsByNode groups plan actions on the node they act on, in API order, without summing", () => {
+  const acts = [
+    { action: "purchase_cut", week: 18, amount: 1126.92, share: null },
+    { action: "revolver_draw", week: 5, amount: 1000, share: null },
+    { action: "purchase_cut", week: 19, amount: 1653.85, share: null },
+    { action: "payroll_cut", week: 7, amount: 500, share: 0.1 },
+    { action: "something_new", week: 1, amount: 1, share: null },
+  ];
+  const g = actionsByNode(acts);
+  assert.deepEqual(g.get("Purchases").map((a) => a.amount), [1126.92, 1653.85]);
+  assert.equal(g.get("Revolver").length, 1);
+  assert.equal(g.get("Payroll")[0].share, 0.1);
+  assert.equal([...g.values()].flat().length, 4);
 });

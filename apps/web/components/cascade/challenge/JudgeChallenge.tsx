@@ -8,6 +8,7 @@ import {
   challengeAsPreset,
   getJudgeChallenges,
   surprisePick,
+  type JudgeChallenge as Challenge,
   type JudgeChallengesResponse,
 } from "./judgeChallenges";
 
@@ -31,7 +32,8 @@ export function JudgeChallenge({
 }: {
   /** Id of the preset the workbench is currently sending, if any. */
   activeId: string | null;
-  onPick: (preset: ScenarioPreset) => void;
+  /** `challenge` is the API item as served (for the incoming-shock card); `surprisePick` is k for a Surprise me pick. */
+  onPick: (preset: ScenarioPreset, meta: { challenge: Challenge; surprisePick: number | null }) => void;
   disabled: boolean;
 }) {
   const [state, setState] = useState<State>({ kind: "loading" });
@@ -53,9 +55,9 @@ export function JudgeChallenge({
   const active = items.find((c) => c.id === activeId) ?? null;
   const off = disabled || items.length === 0;
 
-  const pick = (id: string) => {
+  const pick = (id: string, surpriseK: number | null = null) => {
     const c = items.find((x) => x.id === id);
-    if (c) onPick(challengeAsPreset(c));
+    if (c) onPick(challengeAsPreset(c), { challenge: c, surprisePick: surpriseK });
   };
 
   const surprise = () => {
@@ -64,7 +66,7 @@ export function JudgeChallenge({
     if (!id) return;
     setPicks(k);
     setLastSurprise({ k, id });
-    pick(id);
+    pick(id, k);
   };
 
   let status: string;

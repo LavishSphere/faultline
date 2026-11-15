@@ -1,8 +1,9 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import {
   API_BASE,
+  floorOf,
   getScenarios,
   optimize,
   simulate,
@@ -15,13 +16,18 @@ import {
   type ScenariosSummary,
   type SimulateRequest,
   type SimulateResponse,
+  type SimulationResult,
 } from "@/lib/api";
 import { usd, usdCentsFloor, usdDelta } from "@/lib/format";
-import { CascadeGraph } from "../CascadeGraph";
+import { usePrefersReducedMotion } from "../CascadeGraph";
 import { CashNegativeReadout, MinCashSublabel, payrollOffNote } from "../CashReadouts";
 import { FinancialReadout } from "../FinancialReadout";
 import { NotAvailable, Panel } from "../Panel";
 import { JudgeChallenge } from "./challenge/JudgeChallenge";
+import { IncomingShock, type IncomingShockInfo } from "./challenge/IncomingShock";
+import type { JudgeChallenge as Challenge } from "./challenge/judgeChallenges";
+import { CashTimeline, type TimelineSeries } from "./CashTimeline";
+import { ShockwaveGraph, type GraphPlan } from "./ShockwaveGraph";
 import type { ProvenanceInput } from "../ProvenanceBadge";
 import {
   DEFAULT_DEPENDENT_PCT,
@@ -41,8 +47,8 @@ import {
 const DEBOUNCE_MS = 150;
 
 type SimState =
-  | { kind: "loading"; last: SimulateResponse | null }
-  | { kind: "ok"; data: SimulateResponse; key: string; ms: number; at: Date; planned: boolean }
+  | { kind: "loading"; last: SimulateResponse | null; meta?: { planned: boolean; seq: number } }
+  | { kind: "ok"; data: SimulateResponse; key: string; ms: number; at: Date; planned: boolean; seq: number }
   | { kind: "error"; failure: ApiFailure };
 
 type OptState =
@@ -80,7 +86,15 @@ export function CascadeWorkbench() {
   /** T from the most recent successful response; week sliders stay disabled until the API reports it. */
   const [horizon, setHorizon] = useState<number | null>(null);
   const lastGood = useRef<SimulateResponse | null>(null);
+  /** Whether `lastGood` answered a request with a plan, and its response number (re-draws the cash path). */
+  const lastMeta = useRef<{ planned: boolean; seq: number }>({ planned: false, seq: 0 });
   const first = useRef(true);
+  /** The latest response to the shock alone (no plan), so the cash timeline can show it next to an applied plan. */
+  const [unplanned, setUnplanned] = useState<{ key: string; result: SimulationResult } | null>(null);
+  /** Judge's Challenge card over the network (#165): text from GET /api/judge-challenges only. */
+  const [incoming, setIncoming] = useState<IncomingShockInfo | null>(null);
+  const dismissIncoming = useCallback(() => setIncoming(null), []);
+  const reduce = usePrefersReducedMotion();
 
   const [protect, setProtect] = useState(false);
   const [opt, setOpt] = useState<OptState>({ kind: "loading", last: null });
@@ -100,6 +114,7 @@ export function CascadeWorkbench() {
   }, [mode, controls, horizon]);
   const optRequest: OptimizeRequest = { ...scenario, protect_payroll: protect };
   const optKey = JSON.stringify(optRequest);
+  const scenarioKey = JSON.stringify(scenario);
   /** The applied plan only while the shock and switch are exactly the ones it was solved for. */
   const activePlan = applied !== null && applied.optKey === optKey ? applied.plan : null;
   const request: SimulateRequest = activePlan ? { ...scenario, plan: activePlan } : scenario;
@@ -145,7 +160,7 @@ export function CascadeWorkbench() {
     const delay = first.current ? 0 : DEBOUNCE_MS;
     first.current = false;
     const timer = setTimeout(async () => {
-      setSim({ kind: "loading", last: lastGood.current });
+      setSim({ kind: "loading", last: lastGood.current, meta: lastMeta.current });
       const started = performance.now();
       const res = await simulate(body, controller.signal);
       if (controller.signal.aborted) return;
@@ -161,8 +176,11 @@ export function CascadeWorkbench() {
         });
       } else if (res.ok) {
         lastGood.current = res.data;
+        const planned = body.plan !== undefined;
+        lastMeta.current = { planned, seq: lastMeta.current.seq + 1 };
         setHorizon(res.data.result.horizon_weeks);
-        setSim({ kind: "ok", data: res.data, key: requestKey, ms: Math.round(performance.now() - started), at: new Date(), planned: body.plan !== undefined });
+        if (!planned) setUnplanned({ key: requestKey, result: res.data.result });
+        setSim({ kind: "ok", data: res.data, key: requestKey, ms: Math.round(performance.now() - started), at: new Date(), planned, seq: lastMeta.current.seq });
       } else {
         // Never show an older scenario's numbers as if they answered this request.
         if (unreachable(res) || res.status === 404) lastGood.current = null;
@@ -196,6 +214,40 @@ export function CascadeWorkbench() {
     ? [data.provenance as ProvenanceInput, data.business_provenance as ProvenanceInput]
     : ["NOT AVAILABLE"];
   const business = labels[1] ?? "NOT AVAILABLE";
+  /** Did the response on screen answer a request with an applied plan? */
+  const dataPlanned = sim.kind === "ok" ? sim.planned : sim.kind === "loading" ? (sim.meta?.planned ?? false) : false;
+  const drawKey = String(sim.kind === "ok" ? sim.seq : sim.kind === "loading" ? (sim.meta?.seq ?? 0) : 0);
+
+  // The optimizer's answer for exactly the current inputs (#127: no earlier plan is ever shown while one is pending).
+  const optPending = opt.kind === "loading" || (opt.kind === "ok" && opt.key !== optKey);
+  const optCurrent = opt.kind === "ok" && opt.key === optKey ? opt.data : null;
+  const graphPlan = useMemo<GraphPlan | null>(
+    () =>
+      optCurrent && optCurrent.status === "OPTIMAL" && optCurrent.actions
+        ? { actions: optCurrent.actions, applied: activePlan !== null }
+        : null,
+    [optCurrent, activePlan],
+  );
+
+  const floor = data ? floorOf(data) : null;
+  const unplannedCash = unplanned !== null && unplanned.key === scenarioKey ? unplanned.result.cash : null;
+  const timeline: TimelineSeries[] = data
+    ? [
+        { id: "baseline", label: "baseline", values: data.baseline.cash, source: "POST /api/simulate" },
+        {
+          id: "scenario",
+          label: "scenario",
+          values: dataPlanned ? unplannedCash : data.result.cash,
+          source: "POST /api/simulate",
+        },
+        {
+          id: "plan",
+          label: "with recovery plan",
+          values: optCurrent?.status === "OPTIMAL" ? optCurrent.cash : null,
+          source: "POST /api/optimize",
+        },
+      ]
+    : [];
 
   const update = (patch: Partial<ScenarioControls>) => {
     setControls((c) => ({ ...c, ...patch }));
@@ -212,12 +264,24 @@ export function CascadeWorkbench() {
     if (scenarios.kind !== "ok" || horizon === null) return;
     const preset = scenarios.data.presets.find((p) => p.id === id);
     if (!preset) return;
+    setIncoming(null);
     applyPreset(preset);
   };
 
   /** Fill the sliders from a preset's shock and send it exactly (also used by the Judge's Challenge, #123). */
-  const applyPreset = (preset: ScenarioPreset) => {
+  const applyPreset = (preset: ScenarioPreset, meta?: { challenge: Challenge; surprisePick: number | null }) => {
     if (horizon === null) return;
+    if (meta) {
+      const c = meta.challenge;
+      setIncoming((prev) => ({
+        seq: (prev?.seq ?? 0) + 1,
+        id: c.id,
+        name: c.name,
+        description: c.description,
+        rangeCitation: c.range_citation,
+        surprisePick: meta.surprisePick,
+      }));
+    }
     setControls((c) => controlsFromShock(preset.shock, horizon, c));
     // Setting `mode` changes `scenario`, hence both request keys: /api/simulate and /api/optimize (#56) re-run through
     // their usual debounced effects. A plan applied for the previous shock no longer matches `optKey`, so it is dropped.
@@ -253,20 +317,29 @@ export function CascadeWorkbench() {
         className="xl:col-span-8"
         bodyClassName="flex flex-col p-0"
       >
-        <CascadeGraph
+        <ShockwaveGraph
           className="flex-1"
-          deltas={data?.deltas ?? null}
-          baseline={data?.baseline ?? null}
-          result={data?.result ?? null}
+          data={data}
           stale={stale}
+          protect={protect}
+          plan={graphPlan}
+          incomingActive={incoming !== null}
+          overlay={
+            <>
+              {incoming ? <IncomingShock key={incoming.seq} info={incoming} reduce={reduce} onDone={dismissIncoming} /> : null}
+              <OptimizerChip opt={opt} pending={optPending} current={optCurrent} applied={activePlan !== null} protect={protect} reduce={reduce} />
+            </>
+          }
         />
         <p className="border-t border-line px-4 py-2 text-xs leading-relaxed text-muted">
           {data ? (
             <>
               Node values: the API&apos;s Δ = scenario − baseline at its peak week (MATH_MODEL §5) for{" "}
               <span className="text-text-2">{data.deltas.scenario_name}</span> vs{" "}
-              <span className="text-text-2">{data.deltas.baseline_name}</span>. Edge width and glow scale with the source
-              node&apos;s |Δ| relative to its own range.
+              <span className="text-text-2">{data.deltas.baseline_name}</span>. When a response lands, a pulse follows the
+              API&apos;s edges in dependency order and each changed node counts from its previous API value to the new
+              one. Edge width and glow scale with the source node&apos;s |Δ| relative to its own range; green edges and
+              chips are the recovery plan from POST /api/optimize.
             </>
           ) : (
             <>
@@ -282,7 +355,7 @@ export function CascadeWorkbench() {
         title="Scenario inputs"
         provenance={data ? business : "NOT AVAILABLE"}
         provenanceDetail={data ? "inputs" : undefined}
-        className="xl:col-span-4"
+        className="xl:col-span-4 xl:row-span-2"
         bodyClassName="px-4 py-3"
       >
         <fieldset disabled={controlsDisabled} className="flex flex-col gap-3 disabled:opacity-60">
@@ -346,6 +419,31 @@ export function CascadeWorkbench() {
         ) : null}
       </Panel>
 
+      <Panel
+        code="C.4"
+        title={`Cash path · ${data ? data.result.horizon_weeks : "T"} weeks`}
+        provenance={labels}
+        className="xl:col-span-8"
+        bodyClassName="px-4 py-3"
+      >
+        {data ? (
+          <CashTimeline
+            weeks={data.result.weeks}
+            series={timeline}
+            floor={
+              floor
+                ? { ...floor, of: dataPlanned ? "the scenario with the recovery plan applied" : "the scenario" }
+                : null
+            }
+            stale={stale}
+            reduce={reduce}
+            drawKey={drawKey}
+          />
+        ) : (
+          <NotAvailable note="No cash path is drawn until POST /api/simulate answers." />
+        )}
+      </Panel>
+
       <RecoveryPlan
         opt={opt}
         stale={opt.kind === "loading" || (opt.kind === "ok" && opt.key !== optKey)}
@@ -355,6 +453,7 @@ export function CascadeWorkbench() {
         }}
         onClear={() => setApplied(null)}
         onRetry={() => setOptRetry((n) => n + 1)}
+        reduce={reduce}
       />
     </div>
   );
@@ -641,9 +740,13 @@ function PayrollToggle({
   cap: number | null;
 }) {
   return (
-    <div className="mt-3 flex items-center justify-between gap-4 border-t border-line/70 pt-3">
+    <div
+      className={`mt-3 flex items-center justify-between gap-4 rounded-md border px-3 py-2.5 transition-[border-color,background-color] ${
+        checked ? "border-viable/70 bg-[color-mix(in_srgb,var(--viable)_7%,transparent)]" : "border-line/70"
+      }`}
+    >
       <div className="flex flex-col gap-0.5">
-        <span id="protect-payroll-label" className="text-[13px] font-medium uppercase tracking-[0.08em] text-text">
+        <span id="protect-payroll-label" className={`text-[13px] font-medium uppercase tracking-[0.08em] ${checked ? "text-viable" : "text-text"}`}>
           Protect payroll
         </span>
         <span id="protect-payroll-note" className="font-mono text-[10px] text-muted">
@@ -660,7 +763,7 @@ function PayrollToggle({
         disabled={disabled}
         onClick={() => onChange(!checked)}
         className={`relative h-6 w-11 shrink-0 rounded-full border border-line-strong transition-colors disabled:cursor-not-allowed disabled:opacity-60 ${
-          checked ? "bg-[var(--accent)]" : "bg-bg"
+          checked ? "border-viable bg-[var(--viable)]" : "bg-bg"
         }`}
       >
         <span
@@ -670,6 +773,97 @@ function PayrollToggle({
           aria-hidden="true"
         />
       </button>
+    </div>
+  );
+}
+
+/** Indeterminate bar: rendered only while a POST /api/optimize is pending (it carries no progress figure). */
+function SolvingBar({ reduce, tone = "accent" }: { reduce: boolean; tone?: "accent" | "viable" }) {
+  return (
+    <div className="relative h-[3px] w-full overflow-hidden rounded-full bg-line" aria-hidden="true">
+      <div
+        className={`absolute inset-y-0 left-0 w-2/5 rounded-full ${tone === "viable" ? "bg-viable" : "bg-accent"} ${reduce ? "" : "fx-solving"}`}
+      />
+    </div>
+  );
+}
+
+/**
+ * Optimizer state over the network (#165), top right: solving (only while a request is pending or debouncing),
+ * the plan on the graph, or NO FEASIBLE PLAN with the API's highest feasible floor. Text from the response only.
+ */
+function OptimizerChip({
+  opt,
+  pending,
+  current,
+  applied,
+  protect,
+  reduce,
+}: {
+  opt: OptState;
+  pending: boolean;
+  current: OptimizeResponse | null;
+  applied: boolean;
+  protect: boolean;
+  reduce: boolean;
+}) {
+  const base =
+    "pointer-events-none absolute right-3 top-3 z-20 hidden max-w-[min(22rem,calc(100%-1.5rem))] flex-col gap-1.5 rounded-md border bg-elevated/90 px-3 py-2 font-mono text-[10.5px] backdrop-blur-[12px] md:flex";
+  if (pending)
+    return (
+      <div className={`${base} border-accent/50`} data-testid="optimizer-chip" data-state="solving">
+        <p className="uppercase tracking-[0.14em] text-accent">
+          Optimizer · solving{protect ? " · payroll locked" : ""}
+        </p>
+        <SolvingBar reduce={reduce} />
+        <p className="text-muted">
+          {opt.kind === "loading" ? "POST /api/optimize in flight" : "waiting for inputs to settle (debounce)"} · no earlier
+          plan shown
+        </p>
+      </div>
+    );
+  if (opt.kind === "error")
+    return (
+      <div className={`${base} border-fail/60`} data-testid="optimizer-chip" data-state="error">
+        <p className="uppercase tracking-[0.14em] text-fail">Optimizer NOT AVAILABLE</p>
+        <p className="text-muted">See C.3 Recovery plan</p>
+      </div>
+    );
+  if (!current) return null;
+  if (current.status === "NO FEASIBLE PLAN")
+    return (
+      <div
+        className={`${base} border-fail ${reduce ? "" : "fx-infeasible"}`}
+        style={{ boxShadow: "0 0 0 1px color-mix(in srgb, var(--fail) 55%, transparent), 0 0 30px 0 color-mix(in srgb, var(--fail) 18%, transparent)" }}
+        data-testid="optimizer-chip"
+        data-state="infeasible"
+      >
+        <p className="font-semibold uppercase tracking-[0.14em] text-fail">■ No plan holds the floor</p>
+        <p className="text-text-2">
+          Highest floor a plan can hold{" "}
+          <span className="num text-sm text-fail">
+            {current.max_feasible_cash_floor === null ? "NOT AVAILABLE" : usdCentsFloor(current.max_feasible_cash_floor)}
+          </span>
+        </p>
+        <p className="text-muted">{current.protect_payroll ? "with payroll protected · " : ""}solver answer in C.3</p>
+      </div>
+    );
+  if (current.status !== "OPTIMAL") return null;
+  const n = current.actions?.length ?? 0;
+  return (
+    <div className={`${base} border-viable/60`} data-testid="optimizer-chip" data-state="optimal">
+      <p className="uppercase tracking-[0.14em] text-viable">
+        Recovery plan · {applied ? "applied" : "proposed"}
+      </p>
+      <p className="text-text-2">
+        {n === 0 ? "No action needed for this shock" : `${n} action${n === 1 ? "" : "s"} shown on the nodes they act on`}
+        {current.min_cash !== null ? (
+          <>
+            {" "}
+            · min C_t <span className="num text-text">{usd(current.min_cash)}</span>
+          </>
+        ) : null}
+      </p>
     </div>
   );
 }
@@ -691,6 +885,7 @@ function RecoveryPlan({
   onApply,
   onClear,
   onRetry,
+  reduce,
 }: {
   opt: OptState;
   stale: boolean;
@@ -698,6 +893,7 @@ function RecoveryPlan({
   onApply: () => void;
   onClear: () => void;
   onRetry: () => void;
+  reduce: boolean;
 }) {
   // Only an answer to the current inputs is rendered. While the debounce runs or a request is in flight, the
   // previous plan is withheld: it may hold payroll cuts the switch now forbids, or be OPTIMAL where the new answer
@@ -747,7 +943,13 @@ function RecoveryPlan({
       </div>
 
       {data === null ? (
-        <div data-testid="recovery-plan" data-status={pending ? "PENDING" : "NOT AVAILABLE"}>
+        <div data-testid="recovery-plan" data-status={pending ? "PENDING" : "NOT AVAILABLE"} className="flex flex-col gap-2.5">
+          {pending ? (
+            <div className="flex max-w-md flex-col gap-1.5">
+              <p className="font-mono text-[11px] uppercase tracking-[0.14em] text-accent">MILP solving · scipy.optimize.milp</p>
+              <SolvingBar reduce={reduce} />
+            </div>
+          ) : null}
           <NotAvailable
             note={
               pending
@@ -761,16 +963,25 @@ function RecoveryPlan({
           {data.status === "OPTIMAL" ? (
             <OptimalPlan data={data} applied={applied} onApply={onApply} onClear={onClear} />
           ) : data.status === "NO FEASIBLE PLAN" ? (
-            <div className="flex flex-col gap-1.5 rounded-md border border-fail/60 px-4 py-3 text-fail">
-              <p className="font-mono text-sm font-semibold uppercase tracking-[0.12em]">NO FEASIBLE PLAN</p>
-              <p className="text-sm leading-relaxed">{data.diagnostic ?? "NOT AVAILABLE: the API gave no diagnostic."}</p>
-              <p className="font-mono text-xs">
-                Highest floor a plan can hold:{" "}
-                <span className="num" data-testid="max-feasible-floor">
+            <div
+              className={`grid grid-cols-1 gap-4 rounded-md border border-fail bg-[color-mix(in_srgb,var(--fail)_7%,transparent)] px-5 py-4 text-fail lg:grid-cols-[1.6fr_1fr] ${reduce ? "" : "fx-infeasible"}`}
+              style={{ boxShadow: "0 0 0 1px color-mix(in srgb, var(--fail) 55%, transparent), 0 0 30px 0 color-mix(in srgb, var(--fail) 18%, transparent)" }}
+            >
+              <div className="flex flex-col gap-1.5">
+                <p className="font-mono text-xl font-semibold uppercase tracking-[0.14em] md:text-2xl">NO FEASIBLE PLAN</p>
+                <p className="text-sm leading-relaxed text-text">{data.diagnostic ?? "NOT AVAILABLE: the API gave no diagnostic."}</p>
+                <p className="font-mono text-[10px] text-text-2">Solver: {data.solver_message}</p>
+              </div>
+              <div className="flex flex-col gap-1 border-fail/40 lg:border-l lg:pl-4">
+                <p className="kicker !text-fail">Highest floor a plan can hold:</p>
+                <p className="num text-3xl font-medium leading-none tracking-tight md:text-4xl" data-testid="max-feasible-floor">
                   {data.max_feasible_cash_floor === null ? "NOT AVAILABLE" : usdCentsFloor(data.max_feasible_cash_floor)}
-                </span>
-              </p>
-              <p className="font-mono text-[10px] text-text-2">Solver: {data.solver_message}</p>
+                </p>
+                <p className="font-mono text-[10px] text-text-2">
+                  {data.protect_payroll ? "with payroll protected (z_t = 0)" : "with payroll cuts allowed"} · API
+                  max_feasible_cash_floor, rounded down to the cent
+                </p>
+              </div>
             </div>
           ) : (
             <div className="flex flex-col gap-1 rounded-md border border-fail/60 px-4 py-3 text-fail">
