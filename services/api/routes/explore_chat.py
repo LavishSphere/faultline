@@ -80,7 +80,9 @@ TURN_TIMEOUT_S = 150.0
 DEFAULT_PAUSE_MINUTES = 30
 MAX_PAUSE_MINUTES = 120
 WEB_RESULTS = 5
-MAX_WEB_SEARCHES_PER_TURN = 3  # paid searches (Tavily credits; Anthropic: up to 3 searches each)
+# Paid searches per turn (Tavily credits; Anthropic: up to 3 searches each): one broad search and up to three
+# follow-ups, with room for one retry (#230).
+MAX_WEB_SEARCHES_PER_TURN = 6
 TAVILY_TIMEOUT_S = 10.0
 BUSY_RETRY_AFTER_S = 5
 

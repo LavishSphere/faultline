@@ -42,7 +42,9 @@ Provider = Literal["openrouter", "openai", "anthropic"]
 OPENROUTER_BASE_URL = "https://openrouter.ai/api/v1"  # OpenRouter's documented OpenAI-compatible interface
 PROVIDER_NAMES = {"openrouter": "OpenRouter", "openai": "OpenAI", "anthropic": "Anthropic"}
 
-MAX_TOOL_ROUNDS = 4  # rounds of tool execution per turn; a 5th request for tools ends the turn with status "error"
+# Rounds of tool execution per turn; one more request for tools ends the turn with status "error". 6 fits a broad
+# search, up to three follow-up searches, monte_carlo_decision and one retry (#230).
+MAX_TOOL_ROUNDS = 6
 # Tool calls executed per round; extra calls get an error result. 8 = every Judge's Challenge in one round ("which
 # challenge hurts most?" ran out of rounds at 6 in the #195 baseline).
 MAX_CALLS_PER_ROUND = 8
@@ -52,7 +54,7 @@ MAX_OUTPUT_TOKENS = 4000
 PROVIDER_TIMEOUT_S = 60.0
 CATALOG_TTL_S = 600.0
 CATALOG_FAILURE_TTL_S = 60.0  # a failed provider list is retried sooner
-MAX_FEATURED = 12  # two groups: open-weight, then closed (FEATURED_PREFERENCE)
+MAX_FEATURED = 13  # two groups: open-weight, then closed (FEATURED_PREFERENCE)
 
 CHAT_PROVENANCE = "LIVE EXPLORE"
 CHAT_LABEL = "MODEL-WRITTEN, numbers from engine tools"
@@ -94,6 +96,7 @@ FEATURED_PREFERENCE: tuple[str, ...] = (
     "openrouter:nvidia/nemotron-3-super-120b-a12b",
     "openrouter:google/gemma-4-31b-it",
     "openrouter:meta-llama/llama-3.3-70b-instruct",
+    "openrouter:qwen/qwen3-235b-a22b-2507",
     "anthropic:claude-sonnet-5-5",
     "anthropic:claude-opus-5-5",
     "openai:gpt-6-sol",
@@ -430,15 +433,17 @@ def system_prompt(web_search: bool) -> str:
     figure check in run_chat backs the number rules up in code."""
     brief = "\n".join(f"   **{h}:**" for h in DECISION_BRIEF_HEADINGS)
     if web_search:
-        evidence = ("Step 1: Call web_search first (two to four focused queries, in one step) and build the "
-                    "Evidence from its results only: one query for the real context (the company, the person's "
-                    "current role, the board and its control structure) and at least one for PRECEDENTS and base "
-                    "rates (e.g. CEOs who faced misconduct scandals: who was ousted and who was retained, and what "
-                    "the stock and the company did next). Each point names the source, its date (published_date) "
-                    "and its url, exactly as the result gives them. Never cite a url that no tool returned. If the "
-                    "results are thin, say so.")
-        pipeline = ("(1) call web_search, (2) call monte_carlo_decision, (3) only then write the brief, from "
-                    "those tool results.")
+        evidence = ("Step 1: Call web_search first and research iteratively: ONE broad search for the real "
+                    "context (the company, the person's current role, the board and its control structure, the "
+                    "latest news), then read what it returned and make one to three FOLLOW-UP searches on what "
+                    "you learned, in later steps: why it happened, who the candidates or stakeholders are, the key "
+                    "numbers, and PRECEDENTS and base rates for similar cases (e.g. CEOs who faced misconduct "
+                    "scandals: who was ousted and who was retained, and what the stock and the company did next). "
+                    "Build the Evidence from the results only: each point names the source, its date "
+                    "(published_date) and its url, exactly as the result gives them. Never cite a url that no tool "
+                    "returned. If the results are thin, say so.")
+        pipeline = ("(1) call web_search (one broad search, then one to three follow-up searches), (2) call "
+                    "monte_carlo_decision, (3) only then write the brief, from those tool results.")
         anchor = ("anchor each range on a web_search result where you can, above all on the precedents' base rates "
                   "(source = that result's url and title, exactly as returned), and set source null where the "
                   "range is your own estimate")
@@ -489,7 +494,8 @@ def system_prompt(web_search: bool) -> str:
         "sentences, labelled as MODEL-WRITTEN judgment, not advice. If monte_carlo_decision returns an error, fix "
         "the input it names and call it once more; if it is unavailable, say so and give the brief without "
         "probabilities. Discuss people only through their public, documented business record.",
-        "   Hypothetical premises about real people or companies: when the user states something about a real "
+        "   Hypothetical premises about real people or companies (this comes before the Decision heading): when "
+        "the user states something about a real "
         "person or company that no tool result confirms (\"Jensen Huang had 3 affairs, should he stay?\"), never "
         "state or imply that it is true. Treat it as a user-supplied hypothetical: the reply's very first line is "
         "exactly \"" + HYPOTHETICAL_LINE + "\", with <premise> restated briefly in the user's own words. Then "
@@ -946,6 +952,18 @@ def unverified_numbers(reply: str, tool_results: list[dict[str, Any]]) -> list[s
     return list(dict.fromkeys(flagged))
 
 
+# Tools whose INPUT is model-written text, not a labelled assumption: their inputs never back a figure (#230). A
+# web_search query such as "Nvidia 18B buyback" must not let "$18B" through. Monte Carlo inputs (driver params,
+# probabilities, n_paths) DO count: the brief restates them as the model's own labelled assumptions.
+INPUT_NOT_FIGURE_TOOLS = frozenset({"web_search"})
+
+
+def figure_payloads(records: list[ToolCallRecord]) -> list[dict[str, Any]]:
+    """What the figure check may match against: each ok tool's result (minus MODEL-WRITTEN parts) and its input."""
+    return [{"input": {} if r.name in INPUT_NOT_FIGURE_TOOLS else r.input, "result": figure_sources(r.result_summary)}
+            for r in records if r.result_status == "ok"]
+
+
 def figure_sources(value: Any) -> Any:
     """A tool result without its MODEL-WRITTEN parts (#214): a web search's ``summary`` (marked by a ``summary_label``)
     and any ``snippet`` whose ``snippet_label`` says MODEL-WRITTEN. Only titles and verbatim snippets back figures."""
@@ -983,6 +1001,24 @@ TOOLS_FAILED_NOTE = "This model didn't call the engine tools correctly; try anot
 UNSUPPORTED_FIGURES_NOTE = ("The model stated figures the engine didn't produce, so its reply is withheld; try again "
                             "or another model.")
 REPAIRED_NOTE = "1 reply revised to remove unsupported figures."
+
+
+def recorded_premise(records: list[ToolCallRecord]) -> str | None:
+    """The hypothetical premise the model passed to an ok monte_carlo_decision call this turn, if any."""
+    for r in records:
+        premise = r.result_summary.get("premise") if r.result_status == "ok" else None
+        if isinstance(premise, dict) and isinstance(premise.get("text"), str) and premise["text"]:
+            return premise["text"]
+    return None
+
+
+def with_hypothetical_line(reply: str, records: list[ToolCallRecord]) -> str:
+    """#221: a turn modelled on a user-supplied premise always opens with the Hypothetical line. Models do not always
+    write it first, so code guarantees it, from the premise text the model recorded (the user's own words)."""
+    premise = recorded_premise(records)
+    if premise is None or reply.lstrip().startswith("Hypothetical:"):
+        return reply
+    return HYPOTHETICAL_LINE.replace("<premise>", premise.rstrip(". ")) + "\n\n" + reply
 
 
 def repair_message(flagged: list[str]) -> str:
@@ -1096,8 +1132,7 @@ async def run_chat(adapter: Adapter, toolbox: ToolBox, history: list[dict[str, s
             return done("error", "", [note])
         if step.stop == "max_tokens":
             notes.append(f"Reply cut at the {MAX_OUTPUT_TOKENS}-token cap.")
-        payloads = [{"input": r.input, "result": figure_sources(r.result_summary)} for r in records
-                    if r.result_status == "ok"]
+        payloads = figure_payloads(records)
         flagged = unverified_numbers(reply, payloads)
         no_ok_tool = not any(r.result_status == "ok" for r in records)
         # No engine result this turn: any digit outside a url could be a made-up figure, so the reply is withheld.
@@ -1124,7 +1159,7 @@ async def run_chat(adapter: Adapter, toolbox: ToolBox, history: list[dict[str, s
             notes.append("No engine tool was called for this reply.")
         if malformed:
             notes.append(f"{malformed} tool call(s) were malformed and not run.")
-        return done("ok", reply, notes)
+        return done("ok", with_hypothetical_line(reply, records), notes)
 
 
 __all__ = [

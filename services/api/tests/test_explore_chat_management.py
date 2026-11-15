@@ -131,7 +131,7 @@ def test_models_endpoint_reports_open_weights_and_features_open_models_first(env
     assert not flags["openrouter:qwen/qwen3-max"] and not flags["openrouter:google/gemini-3.1-flash-lite"]
     assert not flags["openrouter:x-ai/grok-4.3"] and not flags["anthropic:claude-sonnet-5-5"]
     featured = body["featured"]
-    assert len(featured) <= chat.MAX_FEATURED == 12
+    assert len(featured) <= chat.MAX_FEATURED == 13
     groups = [flags[i] for i in featured]
     assert groups == sorted(groups, reverse=True) and groups[0] and not groups[-1]  # open first, then closed
     assert "openrouter:google/gemini-3.1-flash-lite" not in featured and "openrouter:x-ai/grok-4.3" not in featured
@@ -146,19 +146,45 @@ def test_models_endpoint_reports_open_weights_and_features_open_models_first(env
 
 def test_featured_preference_lists_open_weight_models_before_closed_ones():
     flags = [chat.is_open_weight(*i.split(":", 1)) for i in chat.FEATURED_PREFERENCE]
-    assert flags == sorted(flags, reverse=True) and flags.count(True) == 7 and flags.count(False) == 5
+    assert flags == sorted(flags, reverse=True) and flags.count(True) == 8 and flags.count(False) == 5
     assert len(chat.FEATURED_PREFERENCE) == chat.MAX_FEATURED
     assert not [i for i in chat.FEATURED_PREFERENCE if "gemini" in i]
     assert chat.FEATURED_PREFERENCE[0] == "openrouter:z-ai/glm-5.3"
-    assert chat.FEATURED_PREFERENCE[7:] == ("anthropic:claude-sonnet-5-5", "anthropic:claude-opus-5-5",
+    assert chat.FEATURED_PREFERENCE[8:] == ("anthropic:claude-sonnet-5-5", "anthropic:claude-opus-5-5",
                                             "openai:gpt-6-sol", "openrouter:x-ai/grok-4.6",
                                             "anthropic:claude-haiku-5-5")
 
 
 def test_prompt_makes_the_search_then_monte_carlo_then_brief_pipeline_mandatory():
     system = chat.system_prompt(web_search=True)
-    assert "(1) call web_search, (2) call monte_carlo_decision, (3) only then write the brief" in system
+    assert ("(1) call web_search (one broad search, then one to three follow-up searches), (2) call "
+            "monte_carlo_decision, (3) only then write the brief") in system
+    assert "ONE broad search" in system and "FOLLOW-UP searches on what you learned" in system
     assert "is withheld automatically" in system and "Never skip a tool" in system
     offline = chat.system_prompt(web_search=False)
     assert "(1) call monte_carlo_decision, (2) only then write the brief" in offline
     assert "call web_search, (2)" not in offline
+
+
+# --------------------------------------------------------------------------- the Hypothetical line is guaranteed
+
+
+def _mc_record(premise: str | None, status: str = "ok") -> chat.ToolCallRecord:
+    summary = {"premise": {"text": premise, "label": chat.HYPOTHETICAL_PREMISE_LABEL}} if premise else {}
+    return chat.ToolCallRecord(name="monte_carlo_decision", input={}, result_status=status,  # type: ignore[arg-type]
+                               result_summary=summary, provenance="SIMULATED")
+
+
+def test_a_reply_modelled_on_a_premise_always_opens_with_the_hypothetical_line():
+    reply = "**Decision:** Keep or replace."
+    out = chat.with_hypothetical_line(reply, [_mc_record("Jensen Huang had 3 affairs.")])
+    assert out.splitlines()[0] == ("Hypothetical: you said Jensen Huang had 3 affairs. I have not verified it, and "
+                                   "I treat it as an assumption, not a fact.")
+    assert out.endswith(reply)
+
+
+def test_the_hypothetical_line_is_not_doubled_or_invented():
+    written = "Hypothetical: you said X. I have not verified it, and I treat it as an assumption, not a fact.\nB"
+    assert chat.with_hypothetical_line(written, [_mc_record("X")]) == written
+    assert chat.with_hypothetical_line("A", [_mc_record(None)]) == "A"  # no premise: nothing added
+    assert chat.with_hypothetical_line("A", [_mc_record("X", status="error")]) == "A"

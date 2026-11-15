@@ -735,9 +735,10 @@ def test_web_search_is_capped_per_turn(env):
                                           "score": 0.5}], "response_time": 0.1}
     transport = httpx.MockTransport(lambda req: httpx.Response(200, json=payload))
     box = chat_routes.EngineToolBox(get_settings(), transport)
-    results = [asyncio.run(box.run("web_search", {"query": f"q{i}"})) for i in range(4)]
-    assert [r.status for r in results] == ["ok", "ok", "ok", "error"]
-    assert "limit reached" in results[3].summary["error"]
+    cap = chat_routes.MAX_WEB_SEARCHES_PER_TURN
+    results = [asyncio.run(box.run("web_search", {"query": f"q{i}"})) for i in range(cap + 1)]
+    assert [r.status for r in results] == ["ok"] * cap + ["error"]
+    assert "limit reached" in results[cap].summary["error"]
     assert results[0].provenance == "LIVE EXPLORE" and results[0].summary["results"][0]["url"].startswith("https://")
 
 
