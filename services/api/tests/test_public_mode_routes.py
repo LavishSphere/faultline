@@ -15,7 +15,7 @@ from fastapi.routing import APIRoute
 from fastapi.testclient import TestClient
 
 import main
-from main import ADMIN, PUBLIC, PUBLIC_MODE_ROUTES, create_app, is_admin_gated
+from main import ADMIN, INFERENCE, PUBLIC, PUBLIC_MODE_ROUTES, create_app, is_admin_gated
 
 DEPLOY_MD = Path(__file__).resolve().parents[3] / "docs" / "DEPLOY.md"
 TOKEN = "f6" * 32  # not key-shaped (CI secrets scan); the `openssl rand -hex 32` shape public mode requires
@@ -70,29 +70,37 @@ def test_every_openapi_route_is_classified(local_env):
         f"unclassified: {sorted(routes - set(PUBLIC_MODE_ROUTES))}; "
         f"stale table rows: {sorted(set(PUBLIC_MODE_ROUTES) - routes)}"
     )
-    assert set(PUBLIC_MODE_ROUTES.values()) <= {ADMIN, PUBLIC}
+    assert set(PUBLIC_MODE_ROUTES.values()) <= {ADMIN, PUBLIC, INFERENCE}
+    # The conditional class is exactly the two replay routes; nothing else can become public via the flag.
+    assert {k for k, v in PUBLIC_MODE_ROUTES.items() if v == INFERENCE} == {
+        ("POST", "/api/replay/run"), ("POST", "/api/replay/{prediction_id}/reveal")}
 
 
 def test_no_hidden_route_escapes_the_table(local_env):
     assert _registered_routes() == set(PUBLIC_MODE_ROUTES)
 
 
-def test_edge_prefixes_agree_with_the_table(local_env):
-    """The edge gate refuses exactly the admin rows, and no public row sits under a gated prefix."""
-    for (_method, path), kind in PUBLIC_MODE_ROUTES.items():
-        assert is_admin_gated(_concrete(path)) == (kind == ADMIN), (path, kind)
+@pytest.mark.parametrize("flag", [False, True], ids=["inference-off", "inference-on"])
+def test_edge_prefixes_agree_with_the_table(local_env, flag):
+    """The edge gate refuses exactly the admin rows (and the inference rows while the flag is off)."""
+    for (method, path), kind in PUBLIC_MODE_ROUTES.items():
+        gated = kind == ADMIN or (kind == INFERENCE and not flag)
+        assert is_admin_gated(_concrete(path), method, public_inference=flag) == gated, (path, kind, flag)
 
 
 def test_admin_routes_also_gate_inside_the_route():
     """Defence in depth: each admin route carries the shared route-level gate, not only the edge prefix."""
+    from routes.public_inference import require_reveal_access, require_run_access
     from routes.replay import require_admin_in_public_mode
 
     seen = 0
     for path, route in _api_routes(create_app().routes):
-        admin = any(PUBLIC_MODE_ROUTES.get((m, path)) == ADMIN for m in route.methods)
+        kinds = {PUBLIC_MODE_ROUTES.get((m, path)) for m in route.methods}
         deps = {d.call for d in route.dependant.dependencies}
         gated_class = type(route).__name__ == "AdminGatedRoute"
-        assert admin == (require_admin_in_public_mode in deps or gated_class), path
+        inference_gate = bool(deps & {require_run_access, require_reveal_access})
+        assert (ADMIN in kinds) == (require_admin_in_public_mode in deps or gated_class), path
+        assert (INFERENCE in kinds) == inference_gate, path  # falls back to the admin gate while the flag is off
         seen += 1
     assert seen == len(PUBLIC_MODE_ROUTES)  # the walk is not vacuous
 
@@ -104,7 +112,7 @@ def test_public_mode_behaviour_matches_the_classification(public_env, key):
     url = _concrete(path)
     resp = client.request(method, url, json={} if method == "POST" else None)
     body = resp.json() if resp.headers.get("content-type", "").startswith("application/json") else {}
-    if PUBLIC_MODE_ROUTES[key] == ADMIN:
+    if PUBLIC_MODE_ROUTES[key] in (ADMIN, INFERENCE):  # flag off (the default): inference rows are admin
         assert resp.status_code == 401 and body.get("code") == "ADMIN_TOKEN_REQUIRED", (key, resp.text)
         wrong = client.request(method, url, json={} if method == "POST" else None,
                                headers={"Authorization": "Bearer " + "w" * 40})
@@ -119,7 +127,7 @@ def test_deploy_md_table_matches_the_code():
     text = DEPLOY_MD.read_text(encoding="utf-8")
     rows = dict(
         ((m, p), kind)
-        for m, p, kind in re.findall(r"^\| `(GET|POST) (/api/[^`]*)` \| (admin|public) \|", text, re.M)
+        for m, p, kind in re.findall(r"^\| `(GET|POST) (/api/[^`]*)` \| (admin|public|inference)\b", text, re.M)
     )
     assert rows == PUBLIC_MODE_ROUTES
 

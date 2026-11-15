@@ -17,7 +17,8 @@ those live only in the lead's `~/.ssh/config`, Cloudflare, GitHub settings, and 
 |---|---|---|
 | Set by | `FAULTLINE_MODE=public`, baked into `deploy/api.Dockerfile` and set in compose | default when `FAULTLINE_MODE` is unset |
 | Admin-only routes (table below: model inference, Tavily search, reveals, benchmark compute) | **refused (401/403 `ADMIN_TOKEN_REQUIRED`)** unless `Authorization: Bearer <FAULTLINE_ADMIN_TOKEN>` | open |
-| What the audience sees | the deterministic routes live (simulate, optimize, decision, judge challenges), cases and evidence, recorded scorecards; **no live forecast** (see "The public demo needs recorded data") | everything live, against the laptop's Ollama |
+| What the audience sees | the deterministic routes live (simulate, optimize, decision, judge challenges), cases and evidence, recorded scorecards; **no live forecast** unless `FAULTLINE_PUBLIC_INFERENCE=1` (see "Public live inference") | everything live, against the laptop's Ollama |
+| `FAULTLINE_PUBLIC_INFERENCE=1` | run and reveal become public, behind one-at-a-time inference, a bounded queue and per-IP budgets; scratch store only | no effect on access (open anyway); CORS also allows `Authorization` |
 | CORS allowlist | `FAULTLINE_CORS_ORIGINS`, else `FAULTLINE_PUBLIC_ORIGIN`; https origins only | the same, plus `http://localhost:3000` and `http://127.0.0.1:3000` |
 | Rate limit | 600 requests/min per client IPv4 address, or per IPv6 /64 (`FAULTLINE_RATE_LIMIT_PER_MIN`); `0` is refused (`ConfigError`), so it cannot be switched off | off |
 | `POST /api/optimize` | at most 2 solves at once; a request over the cap waits up to 2 s, then `503 BUSY` with `Retry-After: 2` | same |
@@ -38,12 +39,14 @@ not move a client to another bucket.
 - **public:** booleans only, nothing about which models are installed, no error text, no key details:
 
   ```json
-  {"status": "ok", "model_ready": false, "ollama_reachable": false, "tavily_configured": false}
+  {"status": "ok", "model_ready": false, "ollama_reachable": false, "tavily_configured": false,
+   "public_inference": false}
   ```
 
   `model_ready` = Ollama reachable and `FAULTLINE_OLLAMA_MODEL` installed. `ollama_reachable` = Ollama answered
   `GET /api/tags`. `tavily_configured` = `TAVILY_API_KEY` is set (Live Explore still needs the admin token, and
-  the api container has no internet route, so it cannot work on the server).
+  the api container has no internet route, so it cannot work on the server). `public_inference` =
+  `FAULTLINE_PUBLIC_INFERENCE=1`; with `model_ready` also true the site can say "PUBLIC DEMO · LIVE MODEL ON SERVER".
 - **local:** unchanged (`ollama`, `model_ready`, `ollama_status` with `models` / `required_model` / `error`,
   `optional_keys`, `data_dir_present`, `data_manifest_sha256`, `notices`).
 
@@ -63,11 +66,15 @@ disagree with it, or if this table and the code differ. A new route therefore ca
   exception is the read-only `GET /api/replay/recorded`), and inside the
   route by the shared gate `routes.replay.require_admin_in_public_mode`.
 - **public**: deterministic or read-only. Open to anyone, behind the per-IP rate limit and the body cap.
+- **inference**: admin, exactly as above, **except when `FAULTLINE_PUBLIC_INFERENCE=1`**: then public at both layers
+  (the edge lets through exactly `POST /api/replay/run` and `POST /api/replay/{id}/reveal`, anchored, POST only; the
+  route gate is `routes.public_inference.require_run_access` / `require_reveal_access`), behind the safeguards in
+  "Public live inference". Only these two rows can change class; the test pins that.
 
 | Route | Public mode | Why |
 |---|---|---|
-| `POST /api/replay/run` | admin | local-model inference; writes the prediction store |
-| `POST /api/replay/{prediction_id}/reveal` | admin | reveals a sealed outcome; writes the reveal ledger |
+| `POST /api/replay/run` | inference | admin; public when FAULTLINE_PUBLIC_INFERENCE=1. Local-model inference; writes the (scratch) prediction store |
+| `POST /api/replay/{prediction_id}/reveal` | inference | admin; public when FAULTLINE_PUBLIC_INFERENCE=1. Reveals a sealed outcome; writes the reveal ledger |
 | `GET /api/replay/recorded` | public | committed RECORDED RUN forecast rows, hash-verified; read-only, never reveals (#116) |
 | `POST /api/benchmark/compute` | admin | reveals outcomes to score them; writes a scorecard file |
 | `POST /api/explore/analyze` | admin | Tavily credits and local-model inference |
@@ -85,16 +92,79 @@ disagree with it, or if this table and the code differ. A new route therefore ca
 | `GET /api/integrity` | public | static integrity checks |
 | `GET /api/benchmark` | public | recorded scorecards only; never reveals |
 
-The web app never sends the admin token (CORS does not allow the `Authorization` header), so on the public site
-the admin-only features show their "admin only" state. On the server, Live Explore could not work anyway: the api
-container has no internet route.
+With `FAULTLINE_PUBLIC_INFERENCE` off, the web app never sends the admin token (CORS does not allow the
+`Authorization` header), so on the public site the admin-only features show their "admin only" state. With it on,
+see "Presenter mode" below. On the server, Live Explore could not work anyway: the api container has no internet
+route, and it stays admin either way.
+
+### Public live inference (`FAULTLINE_PUBLIC_INFERENCE=1`, opt-in)
+
+Off by default. When on, public visitors can run and reveal live forecasts on the server model. Safeguards
+(`services/api/routes/public_inference.py`, tests in `services/api/tests/test_public_inference.py`):
+
+| Safeguard | Default (`deploy/.env`) | Over the limit |
+|---|---|---|
+| Model runs at once, whole process | 1 (`FAULTLINE_INFERENCE_CONCURRENCY`) | the request waits in the queue |
+| Anonymous requests waiting | 3 (`FAULTLINE_INFERENCE_QUEUE`) | `503 BUSY`, `Retry-After: 60`, at once |
+| Longest wait | 240 s (`FAULTLINE_INFERENCE_MAX_WAIT_S`) | `503 BUSY`, `Retry-After: 60` |
+| Runs per client IP per 10 minutes | 3 (`FAULTLINE_INFERENCE_PER_IP`) | `429 RATE_LIMITED` with `Retry-After` |
+| Reveals per client IP per 10 minutes | 20 (`FAULTLINE_REVEAL_PER_IP`) | `429 RATE_LIMITED` with `Retry-After` |
+
+- Waiting requests poll with `asyncio.sleep` and hold no worker thread; the model call itself is async
+  (`httpx.AsyncClient`), so the event loop keeps serving the deterministic routes while a forecast runs.
+- The client IP is the same one the edge limiter uses (`services/api/client_ip.py`: the address uvicorn reports,
+  where `X-Forwarded-For` is trusted only from the `edge` subnet). IPv6 counts per /64.
+- A request refused as BUSY does not spend the visitor's run budget. Failed runs (model down, invalid answer) do.
+- **Admin token (team demos):** a valid `Authorization: Bearer <FAULTLINE_ADMIN_TOKEN>` skips the per-IP budgets,
+  goes to the front of the queue (behind earlier admin requests) and is never refused for a full queue. It still
+  waits for the running forecast (never two at once, never preempted) and still gets BUSY after the max wait.
+  A presented but wrong token is `403 ADMIN_TOKEN_REQUIRED`, not a silent downgrade to visitor limits.
+- **Scratch store only:** the api refuses to start (`ConfigError`) with the flag on unless `FAULTLINE_DEMO_STORE` is
+  set and `FAULTLINE_PREDICTIONS_DB` is not the official store. Compose sets both to
+  `/app/var/server/predictions.sqlite3`, so public runs never touch the official store and every scorecard computed
+  from them carries the `demo_scratch_store` blocker (never OFFICIAL, #155/#156).
+- Anyone can reveal any prediction id in the scratch store, so its reveal order is not controlled by the team; it is
+  a demo store, never evidence for a benchmark claim.
+- **Expected latency on this CPU server:** several minutes per forecast for an 8B model (prompt evaluation of the
+  gated evidence dominates; not measured on this server yet). With concurrency 1 and a queue of 3, a visitor far back
+  in line can exceed the 240 s maximum wait and get BUSY; that is the honest answer, never a canned forecast.
+
+To turn it on: pull the model (see "Optional: Ollama on the server"), set `COMPOSE_PROFILES=ollama` and
+`FAULTLINE_PUBLIC_INFERENCE=1` in `deploy/.env`, run `scripts/deploy-api.sh`, then check that
+`curl -s https://<api-host>/api/health` shows `"public_inference": true` and `"model_ready": true`.
+
+**Nightly scratch-store reset** (crontab of the deploy user on the server, 04:00 server time). It stops api, moves
+the scratch store (and any SQLite `-wal`/`-shm` files) aside with a UTC timestamp, kept and not deleted, then starts
+api again, which creates a fresh store:
+
+```cron
+0 4 * * * cd /opt/faultline && docker compose -f deploy/docker-compose.yml stop api && docker compose -f deploy/docker-compose.yml run --rm --no-deps --entrypoint sh api -c 'f=/app/var/server/predictions.sqlite3; t=$(date -u +\%Y\%m\%dT\%H\%M\%SZ); for x in "$f" "$f-wal" "$f-shm"; do [ -e "$x" ] && mv "$x" "$x.$t"; done; true' && docker compose -f deploy/docker-compose.yml start api
+```
+
+Change `/opt/faultline` to wherever the repo is cloned. Inside a crontab line `%` must stay escaped as `\%`. Old
+copies pile up in the `api-var` volume under `/app/var/server/`; prune them by hand.
+
+### Presenter mode (browser, admin token)
+
+With `FAULTLINE_PUBLIC_INFERENCE=1`, CORS also allows the `Authorization` request header, for the allowlisted
+origins only (still no credentials, no cookies). Opening the site with `?presenter=1` shows a password field; the
+token is kept in that tab's `sessionStorage` only (never `localStorage`, the bundle or the URL), a "PRESENTER" badge
+shows while it is set, and `clear` removes it. The web app attaches it only to run and reveal requests.
+
+Trade-off: until now the token could never be used cross-origin, so no script in a browser could spend it. Now a
+token typed into the site lives in that tab, and any script running on the allowlisted origin (for example via an
+XSS bug) could read it and use it on run/reveal, or on the other admin routes. The token is still compared in
+constant time and must be 64 lower-case hex characters. Mitigations: use presenter mode only on the team's own
+laptop, clear it after the demo, and rotate `FAULTLINE_ADMIN_TOKEN` (`openssl rand -hex 32`, redeploy) after the
+event. With the flag off nothing changes: `Authorization` stays disallowed, and a stored token makes the browser
+block run/reveal (CORS), so only use `?presenter=1` against a server with the flag on.
 
 ### The public demo needs recorded data
 
 There is no committed `RECORDED RUN` yet (`services/api/data/recorded_runs/` holds only its README).
 `GET /api/replay/recorded` (#116) serves committed forecast rows before any reveal, and DECISION shows them as its
 primary view in public mode, but until the official run is committed it answers NOT AVAILABLE. So on the public
-site, with `/api/replay/run` and reveal admin-only, **the DECISION and REVEAL screens show NOT AVAILABLE** (no
+site, with `/api/replay/run` and reveal admin-only (flag off), **the DECISION and REVEAL screens show NOT AVAILABLE** (no
 forecast, no reveal). That is the honest state, not a bug. REWIND (cases and evidence), CASCADE (simulate, optimize, judge
 challenges), RESEARCH (VC lenses), integrity and recorded benchmark scorecards work. For the full live flow use the
 local demo below.
@@ -112,7 +182,8 @@ for the official recorded run. Stage runs never touch it:
 Every API response carries `X-Faultline-Mode: public|local` (also readable cross-origin), so
 `curl -sI https://<api-host>/api/health | grep -i x-faultline-mode` tells you what is running.
 The server is a CPU-only Xeon E5-2680 v4: an 8B model there takes minutes per forecast, which is why public mode
-serves recorded runs and keeps inference behind the admin token.
+serves recorded runs and keeps inference behind the admin token unless `FAULTLINE_PUBLIC_INFERENCE=1` opts in to
+the queued, rate-limited public path above.
 
 ## One-time setup
 
@@ -267,9 +338,12 @@ in the remote home) and `FAULTLINE_API_HOST` (otherwise read from the server's `
 - **Containers:** api runs as uid 10001 with a read-only root filesystem (writable: the `api-var` volume at
   `/app/var` and a small `/tmp` tmpfs), all capabilities dropped, `no-new-privileges`, 2 GB memory and 256 pids.
   Caddy: all capabilities dropped except `NET_BIND_SERVICE`, read-only. Ollama: the image has no non-root user,
-  so it runs as uid 0 but with all capabilities dropped, `no-new-privileges`, 32 GB memory and 512 pids.
-- **CORS:** allowlist only, methods GET/POST, header `Content-Type`, no credentials. `Authorization` is not an
-  allowed header, so a browser page cannot send the admin token cross-origin; use it from a terminal.
+  so it runs as uid 0 but with all capabilities dropped, `no-new-privileges`, 16 GB memory, 14 CPUs and 512 pids
+  (the server VM has 30 GB RAM; this leaves headroom for api, Caddy and the OS).
+- **CORS:** allowlist only, methods GET/POST, header `Content-Type`, no credentials. With
+  `FAULTLINE_PUBLIC_INFERENCE` off, `Authorization` is not an allowed header, so a browser page cannot send the admin
+  token cross-origin; use it from a terminal. With it on, `Authorization` is allowed for the allowlisted origins
+  (presenter mode; see the trade-off above).
 - **Client address:** Caddy overwrites `X-Forwarded-For` with the TCP peer (`header_up X-Forwarded-For
   {remote_host}`), so it carries exactly one, unspoofable entry; uvicorn (`--proxy-headers`) uses it as the client IP.
   uvicorn trusts that header only from the `edge` network: `deploy/docker-compose.yml` pins the `edge` subnet once
@@ -300,7 +374,7 @@ curl -sS -X POST "https://api.faultline.khayrul.com/api/replay/run" \
 ## Optional: Ollama on the server
 
 `COMPOSE_PROFILES=ollama` in `deploy/.env` (or `--profile ollama`) starts `ollama/ollama` on the internal `models`
-network: CPU only, 32 GB memory limit, never published. Because that network has no internet access, pull models
+network: CPU only, 16 GB memory and 14 CPU limit, never published. Because that network has no internet access, pull models
 out of band into the same volume:
 
 ```bash
@@ -310,7 +384,11 @@ docker stop ollama-pull
 docker compose -f deploy/docker-compose.yml --profile ollama up -d
 ```
 
-`/api/health` then reports `ollama: true` and whether `FAULTLINE_OLLAMA_MODEL` is installed. Without the profile it
+Check that the model is in the volume: `docker compose -f deploy/docker-compose.yml --profile ollama exec ollama
+ollama list`. The first forecast after a start also loads the model into RAM (about 5 GB for `llama3.1:8b`, kept for
+`OLLAMA_KEEP_ALIVE=30m`); expect several minutes per forecast on this CPU.
+
+`/api/health` then reports `model_ready: true` (public shape) once `FAULTLINE_OLLAMA_MODEL` is installed. Without the profile it
 honestly reports Ollama unreachable; replay inference returns `MODEL_UNAVAILABLE`, never a canned answer.
 
 ## Renaming the subdomain

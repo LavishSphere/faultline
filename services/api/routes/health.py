@@ -3,7 +3,7 @@
 Two shapes (docs/DEPLOY.md "Health"):
 - local mode: ``HealthResponse`` (installed model tags, required model, notices, manifest hash), unchanged;
 - public mode: ``PublicHealthResponse``, booleans only (``model_ready``, ``ollama_reachable``,
-  ``tavily_configured``): no model list, no model tag, no error text, no key details.
+  ``tavily_configured``, ``public_inference``): no model list, no model tag, no error text, no key details.
 ``model_ready`` means the same in both, so the web app can read it whatever the mode.
 """
 
@@ -37,6 +37,10 @@ class PublicHealthResponse(BaseModel):
     model_ready: bool = Field(description="Ollama reachable AND the configured replay model is installed.")
     ollama_reachable: bool = Field(description="Ollama reachable at OLLAMA_BASE_URL.")
     tavily_configured: bool = Field(description="TAVILY_API_KEY is set (Live Explore still needs the admin token).")
+    public_inference: bool = Field(
+        description="FAULTLINE_PUBLIC_INFERENCE=1: anyone may run and reveal live forecasts here (with safeguards). "
+        "A live forecast also needs model_ready."
+    )
 
 
 OLLAMA_PROBE_TIMEOUT_S = 1.5
@@ -99,6 +103,7 @@ async def health(
             model_ready=present,
             ollama_reachable=probe.reachable,
             tavily_configured=settings.tavily_api_key_set,
+            public_inference=settings.public_inference,
         )
     manifest = manifest_sha256(settings)
 

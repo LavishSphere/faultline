@@ -19,6 +19,7 @@
  */
 
 import { API_BASE } from "./api";
+import { presenterAuthHeader } from "./presenter";
 
 export const BENCHMARK_PATH = "/api/benchmark";
 export const revealPath = (predictionId: string) => `/api/replay/${encodeURIComponent(predictionId)}/reveal`;
@@ -581,6 +582,8 @@ async function request(
   path: string,
   timeoutMs: number,
   signal: AbortSignal | undefined,
+  /** true only for the reveal: attach the presenter token, if one is stored (lib/presenter.ts). */
+  presenterAuth = false,
 ): Promise<{ ok: true; status: number; body: unknown; parsed: boolean; request: string } | BenchmarkFailure> {
   const url = `${API_BASE}${path}`;
   const label = `${method} ${url}`;
@@ -590,7 +593,8 @@ async function request(
   if (signal?.aborted) onAbort();
   signal?.addEventListener("abort", onAbort, { once: true });
   try {
-    const res = await fetch(url, { method, headers: { Accept: "application/json" }, cache: "no-store", signal: controller.signal });
+    const headers = { Accept: "application/json", ...(presenterAuth ? presenterAuthHeader() : {}) };
+    const res = await fetch(url, { method, headers, cache: "no-store", signal: controller.signal });
     let body: unknown = null;
     let parsed = true;
     try {
@@ -626,11 +630,12 @@ async function request(
 /**
  * POST /api/replay/{prediction_id}/reveal. A logged, state-changing call: the server records the reveal, and any
  * forecast for the same event persisted afterwards is excluded from scoring. Call it only on an explicit click.
- * In public mode the API refuses it (401/403 ADMIN_TOKEN_REQUIRED); the browser never holds the admin token.
+ * In public mode the API refuses it (401/403 ADMIN_TOKEN_REQUIRED) unless FAULTLINE_PUBLIC_INFERENCE=1; the presenter
+ * token (lib/presenter.ts, sessionStorage only) is sent only when one is stored in this tab.
  * Never throws.
  */
 export async function revealPrediction(predictionId: string, signal?: AbortSignal): Promise<Result<RevealResponse>> {
-  const res = await request("POST", revealPath(predictionId), 10_000, signal);
+  const res = await request("POST", revealPath(predictionId), 10_000, signal, true);
   if (!res.ok) return res;
   if (!res.parsed) return { ok: false, kind: "malformed", message: "response was not JSON", status: res.status, request: res.request };
   const problem = checkRevealResponse(res.body, predictionId);
