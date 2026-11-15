@@ -11,6 +11,7 @@ import {
   checkChatResponse,
   checkModelsResponse,
   contextLabel,
+  describeChatChip,
   describeChatFailure,
   featuredModels,
   groupModels,
@@ -338,4 +339,26 @@ test("presenter mode: storage that throws means presenter mode is off, never a c
     assert.equal(setPresenterToken("x"), false);
     clearPresenterToken();
   });
+});
+
+test("describeChatChip (#236): LIVE only when the models route answered with an available model", () => {
+  const ok = { ok: true, data: { models: [model("a", "anthropic"), model("b", "openai"), model("c", "openai", false)], default: "a", featured: [] } };
+  assert.equal(describeChatChip(ok, false).chip, "CHAT LIVE · 2 models");
+  assert.equal(describeChatChip(ok, false).tone, "viable");
+  assert.equal(describeChatChip(ok, true).chip, "CHAT LIVE · 2 models · PAUSED");
+  assert.match(describeChatChip(ok, true).explain, /paused by the presenter/);
+  const one = { ok: true, data: { models: [model("a", "anthropic")], default: "a", featured: [] } };
+  assert.equal(describeChatChip(one, false).chip, "CHAT LIVE · 1 model");
+  assert.equal(describeChatChip(null, false).chip, "CHAT checking");
+  const none = { ok: true, data: { models: [model("c", "openai", false)], default: null, featured: [] } };
+  assert.equal(describeChatChip(none, false).chip, "CHAT NOT AVAILABLE");
+  for (const fail of [
+    { ok: false, kind: "network", error: "Failed to fetch" },
+    { ok: false, kind: "http", status: 404, error: "HTTP 404" },
+    { ok: false, kind: "malformed", error: "malformed chat models payload: x" },
+  ]) {
+    const v = describeChatChip(fail, true);
+    assert.equal(v.chip, "CHAT NOT AVAILABLE");
+    assert.doesNotMatch(v.chip, /LIVE/);
+  }
 });
