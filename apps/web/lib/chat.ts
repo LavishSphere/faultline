@@ -34,7 +34,8 @@ export const CHAT_PROVIDERS = ["openrouter", "openai", "anthropic"] as const;
 export type ChatProvider = (typeof CHAT_PROVIDERS)[number];
 /** OpenAI and Claude models are served through their native APIs; OpenRouter carries the open-weight models. */
 export const PROVIDER_LABEL: Record<ChatProvider, string> = {
-  openrouter: "Open models via OpenRouter",
+  // OpenRouter serves open-weight and closed models alike (e.g. Gemini, Grok), so the label never says "open".
+  openrouter: "Via OpenRouter",
   openai: "OpenAI (direct)",
   anthropic: "Anthropic Claude (direct)",
 };
@@ -59,6 +60,8 @@ export interface ChatModel {
   /** Context window in tokens, when the server reports it. */
   context_length?: number | null;
   pricing?: ChatModelPricing | null;
+  /** True for open-weight (self-hostable) models, false for closed APIs; absent when the server does not say. */
+  open_weights?: boolean | null;
 }
 
 export interface ChatModelsResponse {
@@ -127,6 +130,9 @@ export function checkModelsResponse(v: unknown): string | null {
       return `models[${i}] context_length`;
     }
     if (!(m.pricing === undefined || m.pricing === null || isObj(m.pricing))) return `models[${i}] pricing`;
+    if (!(m.open_weights === undefined || m.open_weights === null || typeof m.open_weights === "boolean")) {
+      return `models[${i}] open_weights`;
+    }
     if (isObj(m.pricing)) {
       for (const k of ["input_per_mtok", "output_per_mtok"]) {
         const x = m.pricing[k];
@@ -171,6 +177,28 @@ export function checkChatResponse(v: unknown): string | null {
   }
   if (!Array.isArray(v.notes) || !v.notes.every((n) => typeof n === "string")) return "notes malformed";
   return null;
+}
+
+export interface ModelGroup {
+  key: string;
+  label: string;
+  models: ChatModel[];
+}
+
+/**
+ * Picker groups. When the server reports `open_weights` for any model: "Open weights · self-hostable" (true), then
+ * "Closed APIs" (false), then "Openness not reported" for models without the field. Otherwise by provider. A model
+ * is only ever listed as open when the server says `open_weights: true`; nothing is inferred from the provider.
+ */
+export function pickerGroups(models: readonly ChatModel[]): ModelGroup[] {
+  if (models.some((m) => typeof m.open_weights === "boolean")) {
+    return [
+      { key: "open", label: "Open weights · self-hostable", models: models.filter((m) => m.open_weights === true) },
+      { key: "closed", label: "Closed APIs", models: models.filter((m) => m.open_weights === false) },
+      { key: "unknown", label: "Openness not reported", models: models.filter((m) => typeof m.open_weights !== "boolean") },
+    ].filter((g) => g.models.length > 0);
+  }
+  return groupModels(models).map((g) => ({ key: g.provider, label: PROVIDER_LABEL[g.provider], models: g.models }));
 }
 
 /** Models grouped by provider in the fixed order OpenRouter, OpenAI, Anthropic; empty groups are dropped. */

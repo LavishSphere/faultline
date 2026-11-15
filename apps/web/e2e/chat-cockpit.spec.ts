@@ -94,7 +94,7 @@ function recordEngine(page: Page) {
 
 async function open(page: Page) {
   await page.goto("/explore/");
-  await expect(page.getByRole("radio", { name: /TEST FIXTURE claude-fixture/ })).toBeChecked();
+  await expect(page.getByTestId("chat-model-current")).toHaveText("TEST FIXTURE claude-fixture");
 }
 
 async function ask(page: Page, text: string) {

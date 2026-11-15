@@ -21,6 +21,7 @@ import {
   type ChatModelsResponse,
   type ChatResponse,
 } from "@/lib/chat";
+import { MC_CASH_TOOL, MC_DECISION_TOOL, monteCarloCalls } from "@/lib/montecarlo";
 import { costLabel, drivesUniverse, replyCostUsd } from "@/lib/universe";
 import { usePrefersReducedMotion } from "../../CascadeGraph";
 import { ProvenanceBadge } from "../../ProvenanceBadge";
@@ -86,6 +87,25 @@ function historyOf(turns: readonly Turn[], lane = 0): ChatMessage[] {
 }
 
 const laneDrives = (l: Lane) => l.outcome.kind === "done" && drivesUniverse(l.outcome.response.tool_calls);
+/** A lane whose ok reply ran a Monte Carlo engine tool: on wide screens its panels take the right pane. */
+const laneHasMc = (l: Lane) =>
+  l.outcome.kind === "done" &&
+  l.outcome.response.status === "ok" &&
+  monteCarloCalls(l.outcome.response.tool_calls).some((c) => c.name === MC_DECISION_TOOL || c.name === MC_CASH_TOOL);
+const laneShows = (l: Lane) => laneDrives(l) || laneHasMc(l);
+
+/** True at Tailwind's xl breakpoint and up, where the cockpit has two columns. False before mount (static export). */
+function useWide(): boolean {
+  const [wide, setWide] = useState(false);
+  useEffect(() => {
+    const mq = window.matchMedia("(min-width: 1280px)");
+    const on = () => setWide(mq.matches);
+    on();
+    mq.addEventListener("change", on);
+    return () => mq.removeEventListener("change", on);
+  }, []);
+  return wide;
+}
 
 function Elapsed({ since, testId = "chat-elapsed" }: { since: number; testId?: string }) {
   const [now, setNow] = useState(() => Date.now());
@@ -102,13 +122,15 @@ function Elapsed({ since, testId = "chat-elapsed" }: { since: number; testId?: s
 
 export function ChatPanel() {
   const reduce = usePrefersReducedMotion();
+  const wide = useWide();
   const [models, setModels] = useState<ModelsState>({ kind: "loading" });
   const [modelsRetry, setModelsRetry] = useState(0);
   const [picked, setPicked] = useState<string | null>(null);
   const [pickedB, setPickedB] = useState<string | null>(null);
   const [race, setRace] = useState(false);
   const [palette, setPalette] = useState<null | "A" | "B">(null);
-  const [galaxyOpen, setGalaxyOpen] = useState(true);
+  /** The model galaxy starts collapsed to one line ("Model: … ▾"); a click opens it. */
+  const [galaxyOpen, setGalaxyOpen] = useState(false);
   const [paused, setPaused] = useState<{ until: string | null } | null>(null);
   const isPaused = paused !== null;
   const [turns, setTurns] = useState<Turn[]>([]);
@@ -245,9 +267,9 @@ export function ChatPanel() {
     send(turn.question, [model], turns.filter((t) => t.id !== turn.id));
   };
 
-  // The universe: the chosen answer, else the latest answer whose model called simulate or optimize.
+  // The right pane: the chosen answer, else the latest answer whose model called simulate, optimize or a Monte Carlo tool.
   const shownTurn =
-    (shown ? turns.find((t) => t.id === shown.turn) : undefined) ?? [...turns].reverse().find((t) => t.lanes.some(laneDrives));
+    (shown ? turns.find((t) => t.id === shown.turn) : undefined) ?? [...turns].reverse().find((t) => t.lanes.some(laneShows));
   const sources: UniverseSource[] = shownTurn
     ? shownTurn.lanes.flatMap((l, i) =>
         l.outcome.kind === "done"
@@ -263,6 +285,19 @@ export function ChatPanel() {
       )
     : [];
   const focusKey = shown && shownTurn?.id === shown.turn ? `${shown.turn}:${shown.lane}` : undefined;
+  // On wide screens a Monte Carlo answer is the money shot: its panels fill the right pane (the cascade graph shows
+  // only when there is no Monte Carlo result). Narrow screens keep the panels inline in the reply.
+  const paneLaneIndex = shownTurn ? (focusKey && shown ? shown.lane : Math.max(0, shownTurn.lanes.findIndex(laneHasMc))) : -1;
+  const paneLane = shownTurn?.lanes[paneLaneIndex];
+  const mcPane =
+    wide && shownTurn && paneLane && laneHasMc(paneLane) && paneLane.outcome.kind === "done"
+      ? { turn: shownTurn, lane: paneLaneIndex, response: paneLane.outcome.response }
+      : null;
+
+  // The cash-flow cascade graph appears only for an answer that called simulate or optimize; it is never the default.
+  const showUniverse = !mcPane && sources.some((src) => drivesUniverse(src.calls));
+  // Starters render once: in the right pane on wide screens, above the composer otherwise.
+  const starters = <StarterCards onPick={(p) => send(p, lanesToAsk(), turns)} disabled={!selected || waiting || (race && !selectedB)} />;
 
   const canSend = !!selected && !waiting && !!text.trim() && (!race || (!!selectedB && selectedB.id !== selected.id));
 
@@ -278,7 +313,7 @@ export function ChatPanel() {
             Ask the <em>engine</em>
           </h1>
           <p className="text-[15px] leading-snug text-text-2 md:text-base">
-            Any business decision. Cited sources. Monte Carlo odds.
+            Leadership and strategy decisions. Cited sources. Monte Carlo odds.
           </p>
         </div>
         <ProvenanceKey />
@@ -299,8 +334,27 @@ export function ChatPanel() {
 
       <div className="flex min-w-0 flex-col gap-3 border-b border-line px-4 py-3 md:px-8">
         <div className="flex min-w-0 flex-wrap items-center justify-between gap-3">
-          <p className="kicker">Model</p>
-          <div className="flex min-w-0 flex-wrap items-center gap-2">
+          {catalogue && catalogue.models.length > 0 ? (
+            <button
+              type="button"
+              onClick={() => setGalaxyOpen((o) => !o)}
+              aria-expanded={galaxyOpen}
+              aria-controls="chat-galaxy"
+              className="flex min-w-0 max-w-full items-center gap-2 rounded-md border border-line-strong px-3 py-1.5 text-left font-mono text-[12px] text-text-2 transition-colors hover:border-accent/60 hover:bg-hover hover:text-text"
+              data-testid="chat-model-toggle"
+            >
+              <span className="shrink-0 text-muted">Model{race ? " A" : ""}:</span>
+              <span className="min-w-0 truncate text-[13px] font-medium text-text" data-testid="chat-model-current">
+                {selected?.label ?? "none selected"}
+              </span>
+              <span aria-hidden="true" className={`shrink-0 text-muted transition-transform ${galaxyOpen ? "rotate-180" : ""}`}>
+                ▾
+              </span>
+              <kbd className="hidden shrink-0 rounded-sm border border-line px-1 py-px text-[10px] text-muted sm:inline">⌘K</kbd>
+            </button>
+          ) : (
+            <p className="kicker">Model</p>
+          )}
             <button
               type="button"
               role="switch"
@@ -317,18 +371,6 @@ export function ChatPanel() {
               </span>
               Race two models
             </button>
-            {catalogue ? (
-              <button
-                type="button"
-                onClick={() => setGalaxyOpen((o) => !o)}
-                aria-expanded={galaxyOpen}
-                aria-controls="chat-galaxy"
-                className="rounded-full border border-line-strong px-3 py-1.5 font-mono text-[11px] uppercase tracking-[0.12em] text-text-2 hover:bg-hover hover:text-text"
-              >
-                {galaxyOpen ? "Hide models" : "Show models"}
-              </button>
-            ) : null}
-          </div>
         </div>
         {models.kind === "loading" ? (
           <p className="font-mono text-[11px] uppercase tracking-[0.14em] text-muted" role="status">
@@ -342,11 +384,6 @@ export function ChatPanel() {
               <div id="chat-galaxy" hidden={!galaxyOpen}>
                 <ModelGalaxy data={catalogue} selected={selectedId} onSelect={setPicked} disabled={waiting} onBrowse={() => setPalette("A")} />
               </div>
-              {!galaxyOpen ? (
-                <p className="min-w-0 break-words font-mono text-[11px] text-muted">
-                  Model{race ? " A" : ""}: <span className="text-text">{selected?.label ?? "none selected"}</span>
-                </p>
-              ) : null}
               {race ? (
                 <div className="flex min-w-0 flex-wrap items-center gap-2 rounded-lg border border-accent/40 bg-accent-soft px-3 py-2" data-testid="chat-race-setup">
                   <span className="font-mono text-[11px] uppercase tracking-[0.12em] text-text-2">Race</span>
@@ -391,13 +428,19 @@ export function ChatPanel() {
         ) : null}
       </div>
 
-      <div className="grid min-w-0 grid-cols-1 xl:grid-cols-[minmax(0,3fr)_minmax(0,2fr)]" data-testid="chat-cockpit">
+      <div
+        className={`grid min-w-0 grid-cols-1 ${mcPane ? "xl:grid-cols-[minmax(0,2fr)_minmax(0,3fr)]" : "xl:grid-cols-[minmax(0,3fr)_minmax(0,2fr)]"}`}
+        data-testid="chat-cockpit"
+        data-pane={mcPane ? "monte-carlo" : "universe"}
+      >
         <div className="flex min-w-0 flex-col xl:border-r xl:border-line">
           <div className="flex min-w-0 flex-1 flex-col gap-5 px-4 py-4 md:px-8 md:py-5">
             {turns.length === 0 ? (
-              <div className="flex flex-col gap-3">
-                <StarterCards onPick={(p) => send(p, lanesToAsk(), turns)} disabled={!selected || waiting || (race && !selectedB)} />
-              </div>
+              wide ? (
+                <p className="font-mono text-[11px] uppercase tracking-[0.12em] text-muted">Pick a decision on the right, or ask your own below.</p>
+              ) : (
+                starters
+              )
             ) : (
               <ol role="log" aria-live="polite" aria-label="Conversation" className="flex min-w-0 flex-col gap-6" data-testid="chat-log">
                 {turns.map((t, i) => {
@@ -418,7 +461,9 @@ export function ChatPanel() {
                             isLast={i === turns.length - 1}
                             busy={waiting}
                             onUniverse={onUniverse && (focusKey ? focusKey === `${t.id}:${li}` : li === 0)}
-                            onShow={laneDrives(l) ? () => setShown({ turn: t.id, lane: li }) : null}
+                            onShow={laneShows(l) ? () => setShown({ turn: t.id, lane: li }) : null}
+                            mcOnPane={!!mcPane && mcPane.turn.id === t.id && mcPane.lane === li}
+                            mcPaneMode={wide && laneHasMc(l)}
                             catalogue={catalogue}
                           />
                         ))}
@@ -447,8 +492,8 @@ export function ChatPanel() {
                   race
                     ? "Ask both models the same question…"
                     : selected
-                      ? `Ask ${selected.label} any business decision…`
-                      : "Pick a model, then ask any business decision…"
+                      ? `Ask ${selected.label} a leadership or strategy decision…`
+                      : "Pick a model, then ask a leadership or strategy decision…"
                 }
                 className="min-h-[3.25rem] w-full min-w-0 resize-y rounded-lg border border-line-strong bg-bg px-4 py-3 text-base leading-relaxed text-text placeholder:text-muted focus:border-accent focus:outline-none disabled:opacity-60 2xl:text-lg"
               />
@@ -488,11 +533,33 @@ export function ChatPanel() {
           </form>
         </div>
 
-        <div className="min-w-0 border-t border-line p-3 md:p-5 xl:border-t-0">
-          <div className="xl:sticky xl:top-4">
-            <Universe sources={sources} reduce={reduce} focusKey={focusKey} armed={turns.length > 0} />
-          </div>
+        {mcPane || showUniverse || wide ? (
+        <div className="min-w-0 border-t border-line p-3 md:p-5 xl:border-t-0" data-testid="chat-right-pane">
+          {mcPane ? (
+            <div className="xl:sticky xl:top-16 xl:max-h-[calc(100dvh-5rem)] xl:overflow-y-auto" data-testid="chat-mc-pane">
+              <p className="mb-2 flex min-w-0 flex-wrap items-center gap-2 font-mono text-[11px] text-muted" data-testid="chat-mc-pane-caption">
+                <span className="text-text-2">
+                  Answer {turns.indexOf(mcPane.turn) + 1}
+                  {mcPane.turn.lanes.length > 1 ? ` · model ${RACE_LETTERS[mcPane.lane]}` : ""} · {mcPane.response.model_id}
+                </span>
+                <span>· engine Monte Carlo, as served</span>
+              </p>
+              <MonteCarloCards calls={mcPane.response.tool_calls} reduce={reduce} />
+            </div>
+          ) : showUniverse ? (
+            <div className="xl:sticky xl:top-4">
+              <Universe sources={sources} reduce={reduce} focusKey={focusKey} armed={turns.length > 0} />
+            </div>
+          ) : (
+            <div className="flex min-w-0 flex-col gap-4 xl:sticky xl:top-16" data-testid="chat-pane-empty">
+              <p className="display text-[clamp(1.5rem,2vw,2.1rem)] leading-tight text-text">
+                Ask a leadership or strategy decision. <em>The odds appear here.</em>
+              </p>
+              {starters}
+            </div>
+          )}
         </div>
+        ) : null}
       </div>
 
       {catalogue ? (
@@ -584,6 +651,8 @@ function LaneView({
   busy,
   onUniverse,
   onShow,
+  mcOnPane,
+  mcPaneMode,
   catalogue,
 }: {
   lane: Lane;
@@ -596,6 +665,10 @@ function LaneView({
   busy: boolean;
   onUniverse: boolean;
   onShow: (() => void) | null;
+  /** This lane's Monte Carlo panels are drawn in the right pane, so they are not repeated inline. */
+  mcOnPane: boolean;
+  /** Wide screen and this lane has Monte Carlo results: the show button targets the right pane, not the universe. */
+  mcPaneMode: boolean;
   catalogue: ChatModelsResponse | null;
 }) {
   const o = lane.outcome;
@@ -702,7 +775,13 @@ function LaneView({
       ) : null}
 
       {/* Numbers first: the engine's Monte Carlo results lead the answer; the model's words follow. */}
-      {!notOk ? <MonteCarloCards calls={r.tool_calls} reduce={reduce} /> : null}
+      {!notOk && mcOnPane ? (
+        <p className="font-mono text-[11px] uppercase tracking-[0.12em] text-accent" data-testid="chat-mc-on-pane">
+          Monte Carlo results shown large on the right <span aria-hidden="true">→</span>
+        </p>
+      ) : !notOk ? (
+        <MonteCarloCards calls={r.tool_calls} reduce={reduce} />
+      ) : null}
 
       {r.reply.trim() && !notOk ? <ReplyText text={r.reply} className="max-w-[80ch]" /> : null}
       {!r.reply.trim() && !notOk ? (
@@ -748,13 +827,13 @@ function LaneView({
           <button
             type="button"
             onClick={onShow}
-            aria-pressed={onUniverse}
+            aria-pressed={mcPaneMode ? mcOnPane : onUniverse}
             className={`rounded-full border px-3 py-1 font-mono text-[10.5px] uppercase tracking-[0.12em] transition-colors ${
               onUniverse ? "border-accent bg-accent-soft text-text" : "border-line-strong text-text-2 hover:bg-hover hover:text-text"
             }`}
             data-testid="chat-replay"
           >
-            {onUniverse ? "On the universe" : "Replay on the universe"}
+            {mcPaneMode ? (mcOnPane ? "Shown on the right" : "Show on the right") : onUniverse ? "On the universe" : "Replay on the universe"}
           </button>
         ) : null}
       </div>

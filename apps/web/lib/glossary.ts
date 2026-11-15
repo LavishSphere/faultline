@@ -835,7 +835,7 @@ export const GLOSSARY = {
   "Live Explore": {
     uiLabels: ["Live Explore", "LIVE EXPLORE", "Live Explore: current, not point-in-time"],
     short: "Current, unfiltered content: not point-in-time, never used by a Blind Replay.",
-    long: "On the Research screen, a mode that shows every curated item with its full sourcing (archive capture, access date, limitations) and ignores the cutoff. The Live Explore screen searches today's web through Tavily. Neither is point-in-time, so neither may be used for a Blind Replay.",
+    long: "On the Research screen, a mode that shows every curated item with its full sourcing (archive capture, access date, limitations) and ignores the cutoff. The Live Explore screen searches today's web on the server: the chat uses the server's configured web search (Anthropic, with OpenAI as fallback), the headline analyzer uses Tavily. Neither is point-in-time, so neither may be used for a Blind Replay.",
     example: "6 curated items, with as_of null.",
     source: "services/api/data/research_lenses.json; apps/web/components/ThesisCourt.tsx; apps/web/components/explore/LiveExplorePanel.tsx.",
     screens: ["RESEARCH", "EXPLORE"],

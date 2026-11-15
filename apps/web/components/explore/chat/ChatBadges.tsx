@@ -1,3 +1,6 @@
+"use client";
+
+import { useEffect, useRef } from "react";
 import { PROVENANCE_KINDS, ProvenanceBadge, WIRE_PROVENANCE, type ProvenanceInput } from "../../ProvenanceBadge";
 
 /**
@@ -22,8 +25,30 @@ export function ModelWrittenBadge() {
  * one-line definition. Every reply and panel still carries its own badge; this is the key to them.
  */
 export function ProvenanceKey() {
+  const ref = useRef<HTMLDetailsElement | null>(null);
+  // A click outside the popover, or Esc, closes it (a native <details> only toggles from its own summary).
+  useEffect(() => {
+    const close = () => {
+      if (ref.current?.open) ref.current.open = false;
+    };
+    const onDown = (e: PointerEvent) => {
+      if (ref.current?.open && e.target instanceof Node && !ref.current.contains(e.target)) close();
+    };
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape" && ref.current?.open) {
+        close();
+        ref.current.querySelector("summary")?.focus();
+      }
+    };
+    document.addEventListener("pointerdown", onDown);
+    document.addEventListener("keydown", onKey);
+    return () => {
+      document.removeEventListener("pointerdown", onDown);
+      document.removeEventListener("keydown", onKey);
+    };
+  }, []);
   return (
-    <details className="group relative shrink-0" data-testid="chat-provenance-key">
+    <details ref={ref} className="group relative shrink-0" data-testid="chat-provenance-key">
       <summary
         className="flex cursor-pointer list-none items-center gap-1.5 rounded-sm border border-line-strong px-2 py-1 font-mono text-[10.5px] uppercase tracking-[0.1em] text-text-2 transition-colors hover:border-accent/60 hover:text-text [&::-webkit-details-marker]:hidden"
         aria-label="Provenance labels on this screen"
@@ -56,9 +81,9 @@ export function ProvenanceKey() {
           </div>
           <div className="flex flex-col gap-1">
             <dt>
-              <ProvenanceBadge kind="SYNTHETIC" detail="demo business" />
+              <ProvenanceBadge kind="ILLUSTRATIVE" />
             </dt>
-            <dd className="text-[13px] leading-snug text-text-2">The stress-test company is a made-up demo business, not a real one.</dd>
+            <dd className="text-[13px] leading-snug text-text-2">Assumption ranges the model estimated; the engine samples them, cited where a source is shown.</dd>
           </div>
         </dl>
       </div>
