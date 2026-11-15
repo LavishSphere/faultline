@@ -351,7 +351,7 @@ export const GLOSSARY = {
     mathModel: "§4",
   },
   "Recovery plan": {
-    uiLabels: ["Recovery plan", "Recovery plan · deterministic optimizer", "Chosen actions"],
+    uiLabels: ["Recovery plan", "Chosen actions"],
     short: "The least harmful set of actions that keeps every hard limit.",
     long: "A deterministic optimizer (MILP, MATH_MODEL §4) picks from: backup supplier, defer capex, delay expansion, purchase cuts, revolver draws and, only if allowed, a payroll cut. It minimizes weighted disruption cost while holding the cash floor, revolver limit and inventory floor. No LLM can override it.",
     example: "Bad quarter, payroll protected: purchase cuts in weeks 22 to 24 plus revolver draws in weeks 20 to 24 keep minimum cash at exactly 25,000, for a disruption cost of 1,924.71.",
@@ -378,7 +378,7 @@ export const GLOSSARY = {
     mathModel: "§3, §4, §10",
   },
   "Disruption cost (objective)": {
-    uiLabels: ["Objective", "disruption cost"],
+    uiLabels: ["disruption cost"],
     short: "The optimizer's score for how harmful a plan is; lower is better.",
     long: "Objective = weighted disruption cost of the chosen actions, minus a tiny tie-break for more cash: 0.0001 × minimum cash (MATH_MODEL §4). The weights are the finance owner's non-cash harm per action (§10), from 0.01 per dollar drawn on the revolver to 5.00 per dollar of payroll cut.",
     example: "Bad quarter plan: disruption cost 1,924.71; objective 1,924.71 − 0.0001 × 25,000 = 1,922.21.",
@@ -800,11 +800,11 @@ export const GLOSSARY = {
     screens: ["REWIND", "DECISION", "CASCADE", "REVEAL", "RESEARCH", "EXPLORE"],
   },
   "MODEL-SUGGESTED": {
-    uiLabels: ["MODEL-SUGGESTED", "Model-suggested"],
+    uiLabels: ["MODEL-SUGGESTED"],
     short: "A scenario input the local model proposed, for a human to confirm or edit.",
     long: "On Live Explore the local model reads cited news results and may propose shock sizes. Each must sit inside the finance owner's guidance range for its category, and the presenter edits and confirms before the engine runs. It is neither a forecast nor a fact.",
     example: "The badge appears only when at least 1 number came from the model; otherwise the inputs are guidance defaults.",
-    source: "apps/web/components/explore/ExploreScenario.tsx; apps/web/lib/explore.ts.",
+    source: "apps/web/lib/explore.ts.",
     screens: ["EXPLORE"],
   },
   // --- RESEARCH ---------------------------------------------------------------------------------------------------------
@@ -907,7 +907,7 @@ export const GLOSSARY = {
   },
   // --- LIVE EXPLORE -----------------------------------------------------------------------------------------------------
   "Guidance range and default": {
-    uiLabels: ["Guidance category", "Guidance default"],
+    uiLabels: ["GUIDANCE DEFAULTS, HUMAN TO CONFIRM"],
     short: "The finance owner's plausible shock sizes for each kind of news.",
     long: "ILLUSTRATIVE modelling choices for the SYNTHETIC business, by news category: a minimum, default and maximum for each shock field (MATH_MODEL §1, §10). They bound what the model may suggest and fill in when it gives no usable numbers. They are not forecasts of what any event will do.",
     example: "Central-bank rate surprise: Δr from +25 bp to +100 bp, default +50 bp.",

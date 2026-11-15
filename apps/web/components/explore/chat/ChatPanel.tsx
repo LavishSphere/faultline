@@ -307,9 +307,9 @@ export function ChatPanel() {
       className="chat-hero-glow relative flex min-w-0 flex-col rounded-xl border border-line bg-elevated"
       data-testid="chat-panel"
     >
-      <header className="flex items-start justify-between gap-3 border-b border-line px-4 pb-4 pt-5 md:items-end md:px-8">
+      <header className="flex items-start justify-between gap-3 px-4 pb-3 pt-5 md:items-end md:px-8 md:pt-6">
         <div className="flex min-w-0 flex-col gap-1.5">
-          <h1 id="chat-title" className="display text-[clamp(2.25rem,3.6vw,3.75rem)] leading-[0.95] text-text">
+          <h1 id="chat-title" className="display text-[clamp(2.1rem,2.6vw,3.5rem)] leading-[0.95] text-text">
             Ask the <em>engine</em>
           </h1>
           <p className="text-[15px] leading-snug text-text-2 md:text-base">
@@ -332,7 +332,7 @@ export function ChatPanel() {
         </div>
       ) : null}
 
-      <div className="flex min-w-0 flex-col gap-3 border-b border-line px-4 py-3 md:px-8">
+      <div className="flex min-w-0 flex-col gap-3 border-b border-line px-4 pb-4 md:px-8">
         <div className="flex min-w-0 flex-wrap items-center justify-between gap-3">
           {catalogue && catalogue.models.length > 0 ? (
             <button
@@ -479,7 +479,7 @@ export function ChatPanel() {
             <label htmlFor="chat-input" className="sr-only">
               Ask the engine a question
             </label>
-            <div className="flex min-w-0 flex-col gap-2 sm:flex-row sm:items-end">
+            <div className={`flex min-w-0 flex-col gap-2 ${mcPane ? "" : "sm:flex-row sm:items-end"}`}>
               <textarea
                 id="chat-input"
                 ref={inputRef}
@@ -492,7 +492,7 @@ export function ChatPanel() {
                   race
                     ? "Ask both models the same question…"
                     : selected
-                      ? `Ask ${selected.label} a leadership or strategy decision…`
+                      ? "Ask a leadership or strategy decision…"
                       : "Pick a model, then ask a leadership or strategy decision…"
                 }
                 className="min-h-[3.25rem] w-full min-w-0 resize-y rounded-lg border border-line-strong bg-bg px-4 py-3 text-base leading-relaxed text-text placeholder:text-muted focus:border-accent focus:outline-none disabled:opacity-60 2xl:text-lg"

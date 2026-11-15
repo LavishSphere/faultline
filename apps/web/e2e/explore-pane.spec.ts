@@ -56,6 +56,8 @@ test("before any question: no cash graph, one line plus management starters in t
   await expect(pane.getByTestId("chat-starter")).toHaveCount(4);
   await expect(page.getByTestId("starter-news")).toHaveCount(0);
   await expect(page.getByTestId("chat-panel")).not.toContainText(/cutting a single wage|cash floor|demo business/i);
+  // Management decisions only: no starter is about cash, wages, payroll or a floor.
+  for (const text of await page.getByTestId("chat-starter").allInnerTexts()) expect(text).not.toMatch(/cash|wage|payroll|floor/i);
 });
 
 test("a decision Monte Carlo answer fills the right pane large; the reply points to it", async ({ page }) => {
@@ -70,6 +72,34 @@ test("a decision Monte Carlo answer fills the right pane large; the reply points
   await expect(page.getByTestId("universe")).toHaveCount(0);
   await expect(pane.locator('[data-provenance="SIMULATED"]').first()).toBeVisible();
 });
+
+// The giant headline percentage is gradient text (background-clip: text): its box must hold every glyph, "%" included.
+for (const [w, h] of [
+  [1920, 1080],
+  [1512, 982],
+  [1440, 900],
+  [390, 844],
+] as const) {
+  test(`the headline percentage is not clipped at ${w}×${h}`, async ({ page }) => {
+    await page.setViewportSize({ width: w, height: h });
+    await mock(page, [{ name: "monte_carlo_decision", input: {}, result_status: "ok", result_summary: fixture("mc-decision"), provenance: "SIMULATED" }]);
+    await page.goto("/explore/");
+    await ask(page, "TEST FIXTURE headline");
+    const num = page.getByTestId("mc-headline-prob");
+    await expect(num).toHaveText(/%$/);
+    const m = await num.evaluate((el) => {
+      const r = el.getBoundingClientRect();
+      const range = document.createRange();
+      range.selectNodeContents(el);
+      const t = range.getBoundingClientRect();
+      const panel = el.closest('[data-testid="mc-decision"]')!.getBoundingClientRect();
+      return { scroll: el.scrollWidth, client: el.clientWidth, textRight: t.right, boxRight: r.right, panelRight: panel.right };
+    });
+    expect(m.scroll, "headline scrollWidth vs clientWidth").toBeLessThanOrEqual(m.client);
+    expect(m.textRight, "last glyph inside the painted box").toBeLessThanOrEqual(m.boxRight);
+    expect(m.boxRight, "headline inside its panel").toBeLessThanOrEqual(m.panelRight);
+  });
+}
 
 test("at 390 px the Monte Carlo panel stays inline in the reply", async ({ page }) => {
   await page.setViewportSize({ width: 390, height: 844 });

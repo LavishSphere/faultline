@@ -39,7 +39,7 @@ export const STEPS: readonly Step[] = [
     section: "live",
     titlePre: "Live",
     titleEm: "Explore",
-    lede: "Paste a headline: cited news, suggested stress inputs you confirm, the engine's cascade.",
+    lede: "Ask a leadership or strategy decision; the engine returns Monte Carlo odds with cited sources.",
   },
   {
     slug: "rewind",
