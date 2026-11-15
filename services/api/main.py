@@ -24,6 +24,7 @@ from routes import (
     explore_chat,
     health,
     integrity,
+    internal_data,
     judge_challenges,
     montecarlo,
     optimize,
@@ -77,6 +78,8 @@ PUBLIC_MODE_ROUTES: dict[tuple[str, str], str] = {
     ("GET", "/api/vc-lenses"): PUBLIC,
     ("GET", "/api/integrity"): PUBLIC,
     ("GET", "/api/benchmark"): PUBLIC,  # recorded scorecards only; never reveals
+    ("GET", "/api/internal-data"): PUBLIC,  # SYNTHETIC mock data room (#209); read-only, like /api/scenarios
+    ("GET", "/api/internal-data/{table}"): PUBLIC,
 }
 # Edge gate (defence in depth, runs before routing and body parsing). Prefixes, not exact paths, so a new route
 # under /api/replay or /api/explore is admin-only until someone decides otherwise (fail closed).
@@ -332,6 +335,7 @@ def create_app() -> FastAPI:
     app.include_router(recorded.router, prefix="/api")
     app.include_router(integrity.router, prefix="/api")
     app.include_router(benchmark.router, prefix="/api")
+    app.include_router(internal_data.router, prefix="/api")  # SYNTHETIC mock data room (#209)
     # LIVE EXPLORE (Tavily). Admin-gated inside the route in public mode; never used by the Blind Replay (#60).
     app.include_router(explore.router, prefix="/api")
     # LIVE EXPLORE chat (#187): hosted models calling the engine tools. Walled off from the Blind Replay.

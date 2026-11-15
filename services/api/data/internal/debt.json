@@ -1,0 +1,76 @@
+{
+ "provenance": "SYNTHETIC",
+ "label": "SYNTHETIC (mock internal data)",
+ "table": "debt",
+ "description": "Debt facilities (limits, balances, rates) and their covenants.",
+ "generator": "scripts/gen_internal_data.py",
+ "seed": 20261115,
+ "snapshot_date": "2026-11-15",
+ "schema": {
+  "item_id": "str",
+  "facility": "str",
+  "kind": "facility | covenant",
+  "limit": "USD or null",
+  "balance": "USD or null",
+  "annual_rate": "0..1 or null",
+  "weekly_interest": "USD or null",
+  "maturity": "date or null",
+  "threshold": "covenant threshold or null",
+  "unit": "USD | ratio",
+  "note": "str"
+ },
+ "rows": [
+  {
+   "item_id": "D1",
+   "facility": "Term loan",
+   "kind": "facility",
+   "limit": 600000.0,
+   "balance": 600000.0,
+   "annual_rate": 0.08,
+   "weekly_interest": 923.08,
+   "maturity": "2029-06-30",
+   "threshold": null,
+   "unit": "USD",
+   "note": "floating at the base rate; no scheduled amortization"
+  },
+  {
+   "item_id": "D2",
+   "facility": "Revolving credit facility",
+   "kind": "facility",
+   "limit": 150000.0,
+   "balance": 0.0,
+   "annual_rate": 0.1,
+   "weekly_interest": 0.0,
+   "maturity": "2027-12-31",
+   "threshold": null,
+   "unit": "USD",
+   "note": "base rate plus spread on drawn balance"
+  },
+  {
+   "item_id": "D3",
+   "facility": "Revolving credit facility",
+   "kind": "covenant",
+   "limit": null,
+   "balance": null,
+   "annual_rate": null,
+   "weekly_interest": null,
+   "maturity": null,
+   "threshold": 25000.0,
+   "unit": "USD",
+   "note": "minimum cash balance at every week end"
+  },
+  {
+   "item_id": "D4",
+   "facility": "Term loan",
+   "kind": "covenant",
+   "limit": null,
+   "balance": null,
+   "annual_rate": null,
+   "weekly_interest": null,
+   "maturity": null,
+   "threshold": 1.2,
+   "unit": "ratio",
+   "note": "fixed-charge cover tested quarterly (mock covenant; the cash engine does not test it)"
+  }
+ ]
+}

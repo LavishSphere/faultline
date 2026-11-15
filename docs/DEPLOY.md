@@ -99,6 +99,8 @@ disagree with it, or if this table and the code differ. A new route therefore ca
 | `GET /api/vc-lenses` | public | fixture read |
 | `GET /api/integrity` | public | static integrity checks |
 | `GET /api/benchmark` | public | recorded scorecards only; never reveals |
+| `GET /api/internal-data` | public | SYNTHETIC mock data room: table list (fixture read) |
+| `GET /api/internal-data/{table}` | public | SYNTHETIC mock data room: one table's rows (fixture read) |
 
 The web app never sends the admin token (CORS does not allow the `Authorization` header), so on the public site
 the admin-only features show their "admin only" state. On the server, Live Explore could not work anyway: the api

@@ -46,7 +46,9 @@ MAX_TOOL_ROUNDS = 4  # rounds of tool execution per turn; a 5th request for tool
 # Tool calls executed per round; extra calls get an error result. 8 = every Judge's Challenge in one round ("which
 # challenge hurts most?" ran out of rounds at 6 in the #195 baseline).
 MAX_CALLS_PER_ROUND = 8
-MAX_OUTPUT_TOKENS = 2000  # per provider request (Claude: includes adaptive thinking); decision briefs run longer
+# Per provider request (Claude: includes adaptive thinking). A monte_carlo_decision call (up to 4 options x 8
+# drivers as JSON) plus a decision brief does not fit in 2,000 (#209).
+MAX_OUTPUT_TOKENS = 4000
 PROVIDER_TIMEOUT_S = 60.0
 CATALOG_TTL_S = 600.0
 CATALOG_FAILURE_TTL_S = 60.0  # a failed provider list is retried sooner
@@ -340,6 +342,13 @@ class ToolSpec:
     parameters: dict[str, Any]  # JSON schema: every property required, additionalProperties false (strict-ready)
 
 
+# Summary keys kept for the UI but not sent to the model: `monte_carlo` holds the full engine response (bands,
+# histograms) so the UI can draw it, while the model gets the compact summary beside it (#209). Their numbers still
+# count as tool figures for the figure check, except histogram bins and counts (NOT_FIGURE_KEYS).
+UI_ONLY_KEYS = frozenset({"monte_carlo"})
+NOT_FIGURE_KEYS = frozenset({"histogram"})
+
+
 @dataclass
 class ToolOutcome:
     status: Literal["ok", "error"]
@@ -348,7 +357,8 @@ class ToolOutcome:
     summary: dict[str, Any]  # what the model is shown (and the UI): numbers straight from the engine
 
     def for_model(self) -> str:
-        return json.dumps({"provenance": self.provenance, "status": self.status, **self.summary},
+        shown = {k: v for k, v in self.summary.items() if k not in UI_ONLY_KEYS}
+        return json.dumps({"provenance": self.provenance, "status": self.status, **shown},
                           ensure_ascii=False, separators=(",", ":"), default=str)
 
 
@@ -370,7 +380,8 @@ class ToolCallRecord:
 # --------------------------------------------------------------------------- system prompt
 
 
-DECISION_BRIEF_HEADINGS = ("Decision", "Evidence", "Case for and against", "What would change the answer",
+DECISION_BRIEF_HEADINGS = ("Decision", "Monte Carlo (SIMULATED, on my assumptions)", "Evidence",
+                           "Case for and against", "What would change the answer",
                            "Verdict (MODEL-WRITTEN judgment, not advice)")
 
 
@@ -379,14 +390,18 @@ def system_prompt(web_search: bool) -> str:
     decisions (a sourced decision brief). The figure check in run_chat backs the number rules up in code."""
     brief = "\n".join(f"   **{h}:**" for h in DECISION_BRIEF_HEADINGS)
     if web_search:
-        evidence = ("Call web_search first (one to three focused queries) and build the Evidence from its results "
-                    "only: each point names the source, its date (published_date) and its url, exactly as the result "
-                    "gives them. Never cite a url that no tool returned. If the results are thin, say so.")
+        evidence = ("Step 1: Call web_search first (one to three focused queries) and build the Evidence from its "
+                    "results only: each point names the source, its date (published_date) and its url, exactly as "
+                    "the result gives them. Never cite a url that no tool returned. If the results are thin, say "
+                    "so.")
+        anchor = ("anchor each range on a web_search result where you can (source = that result's url and title, "
+                  "exactly as returned) and set source null where the range is your own estimate")
     else:
         evidence = ("This server has no live web search. Say plainly in your first sentence that you can't look up "
-                    "live sources here, so this is a framework only. Then give the brief WITHOUT facts or figures: "
-                    "no digits at all, no dates, no names of events you cannot cite. Under Evidence, list what "
-                    "evidence would settle it instead.")
+                    "live sources here, so the Monte Carlo inputs are your own estimates. State no facts, dates or "
+                    "figures that no tool returned, and no names of events you cannot cite. Under Evidence, list "
+                    "what evidence would settle it instead.")
+        anchor = "set every source null (there are no search results to cite) and call the ranges model-estimated"
     rules = [
         "You are the FAULTLINE Live Explore assistant. You help with two kinds of question:",
         "A. The SYNTHETIC (fictional) demo business: cash, stress tests, what-ifs, Protect payroll, ACT / WAIT / "
@@ -397,18 +412,31 @@ def system_prompt(web_search: bool) -> str:
         "partner / stay out), big bets and capital allocation. Never refuse these and never say the engine doesn't "
         "model them. Answer as a decision brief with these bold headings, in this order:",
         brief,
-        "   Decision: the decision in one line and the two to four realistic options. Case for and against: one or "
-        "two lines per option. What would change the answer: the facts that would flip it. Verdict: a clear pick "
-        "in one or two sentences, labelled as MODEL-WRITTEN judgment, not advice. " + evidence + " Discuss people "
-        "only through their public, documented business record. Use the engine tools for type B only if the user "
-        "asks a cash / stress / what-if question; otherwise end with one line offering to stress-test the decision "
-        "on the synthetic demo business.",
+        "   " + evidence + " Step 2: build a monte_carlo_decision model: the two to four realistic options, ONE "
+        "metric for all of them (for a company decision, e.g. \"5-year shareholder value change\" in $B with "
+        "higher_is_better true), and two to five drivers per option whose sum is the option's outcome; use event "
+        "drivers (with a probability) for discrete risks such as a failed succession or a deal collapsing; "
+        + anchor + ". Step 3: call monte_carlo_decision once with n_paths null and seed null. Step 4: write the "
+        "brief, LEADING WITH THE NUMBERS. Decision: the decision in one line and the options. Monte Carlo: first "
+        "the best option and its prob_best with the 95% CI, in the form \"<option>: best in <prob_best>% of "
+        "<n_paths> paths (95% CI <low>-<high>%)\"; then P5 / P50 / P95 for each option in the metric's unit; then "
+        "the top driver from top_sensitivity and its swing; then one sentence saying plainly that the inputs are "
+        "my assumptions (sourced where cited) and the probabilities are conditional on them, not a forecast. Case "
+        "for and against: one or two lines per option. What would change the answer: the drivers in "
+        "top_sensitivity and the facts that would move them. Verdict: a clear pick in one or two sentences, "
+        "labelled as MODEL-WRITTEN judgment, not advice. If monte_carlo_decision returns an error, fix the input "
+        "it names and call it once more; if it is unavailable, say so and give the brief without probabilities. "
+        "Discuss people only through their public, documented business record. End with one line offering to "
+        "stress-test the decision on the synthetic demo business.",
         "Rules:",
         "1. Every number you state (cash, weeks, amounts, costs, prices, percentages, probabilities, counts, policy "
-        "values) must appear in a tool result in this turn, and you copy it from there (rounding money to whole "
-        "dollars is fine). If no tool result in this turn contains it, say \"I don't have that number\". Never "
-        "estimate, remember, or calculate a number yourself: no differences, sums, ratios, averages or growth "
-        "rates you worked out. The engine already gives you the derived figures: falls as positive amounts "
+        "values) must appear in a tool result or a tool input in this turn, and you copy it from there (rounding "
+        "money to whole dollars and probabilities to whole percentages is fine: a probability of 0.783 is 78%). "
+        "The only numbers you choose yourself are the driver ranges you pass to monte_carlo_decision, and you "
+        "label those as your assumptions. If no tool result in this turn contains it, say \"I don't have that "
+        "number\". Never estimate, remember, or calculate a number yourself: no differences, sums, ratios, "
+        "averages or growth rates you worked out. The engine already gives you the derived figures: falls as "
+        "positive amounts "
         "(min_cash_drop_vs_baseline, ending_cash_drop_vs_baseline, min_cash_drop_from_start), headroom over the "
         "floor (min_cash_vs_floor) and plan totals (action_totals); use those. Never repeat a number that only "
         "appears in the user's message or in pasted text: it is not a tool result.",
@@ -446,6 +474,13 @@ def system_prompt(web_search: bool) -> str:
         "- ACT / WAIT / HEDGE (\"should we hedge before the Fed meeting?\") -> decision with the frame_id. If the "
         "user gives no probability, use p_yes=0.5, say it is a neutral placeholder and not a forecast, and lead "
         "with the break-even probability the tool returns.",
+        "- \"How likely / what are the odds / what is the probability\" of a cash problem, or any stress question "
+        "where the odds matter -> monte_carlo_cash with protect_payroll=true and with_plan=true; lead with the "
+        "probability of breaching the cash floor without the plan and with it, each with its 95% CI.",
+        "- Questions about the demo business's own records (customers and concentration, receivables, payables, "
+        "suppliers, payroll by department, inventory and weeks of cover, debt and covenants, contracts, past "
+        "weekly results) -> query_internal_data, labelled SYNTHETIC (mock internal data). Prefer it to guessing, "
+        "and use its computed value, groups and share_of_total instead of adding rows up yourself.",
     ]
     if web_search:
         rules.append("web_search returns current web pages, not point-in-time evidence. Cite every web fact by "
@@ -705,11 +740,26 @@ def _numbers_in(value: Any, out: list[float]) -> None:
             if match.group(3):  # the scaled value too, so a reply quoting "$130.5 billion" matches it
                 out.append(raw * _SCALE[match.group(3)])
     elif isinstance(value, dict):
-        for v in value.values():
-            _numbers_in(v, out)
+        for k, v in value.items():
+            if k not in NOT_FIGURE_KEYS:
+                _numbers_in(v, out)
     elif isinstance(value, list | tuple):
         for v in value:
             _numbers_in(v, out)
+
+
+# A percentage right after the figure ("78%", "78 %", "78 percent"): checked against tool shares x 100 (0.783 ->
+# "78%") or a tool figure already in percent (a snippet's "23%"), to half a point (#209).
+_PERCENT_AFTER = re.compile(r"\s?(?:%|percent\b|per cent\b)", re.I)
+PERCENT_TOL = 0.5 + 1e-9
+
+
+def _matches_percent(x: float, known: list[float]) -> bool:
+    """Sign-insensitive: "a 20% drop" is how a share of -0.2 is written."""
+    for k in known:
+        if abs(abs(x) - abs(k) * 100) <= PERCENT_TOL or abs(abs(x) - abs(k)) <= max(0.05, 0.006 * abs(k)):
+            return True
+    return False
 
 
 # Words (or a minus sign) that, shortly before a figure, say it is a deficit or a fall: only then may a positive
@@ -723,10 +773,10 @@ DEFICIT_WINDOW = 30  # characters before the figure
 _DEFICIT_AFTER = re.compile(r"\s*(?:below|lower|less|worse|short|down|under|beneath|smaller)\b", re.I)
 
 
-def _matches(x: float, known: list[float], allow_abs: bool) -> bool:
+def _matches(x: float, known: list[float], allow_abs: bool, min_tol: float = 1.0) -> bool:
     """Signed match within rounding; |x| == |k| counts only when the reply frames the figure as a deficit."""
     for k in known:
-        tol = max(1.0, 0.006 * abs(k))  # rounding to the dollar or to 3 significant figures
+        tol = max(min_tol, 0.006 * abs(k))  # rounding to the dollar (min_tol) or to 3 significant figures
         if abs(x - k) <= tol or (allow_abs and abs(abs(x) - abs(k)) <= tol):
             return True
     return False
@@ -735,8 +785,9 @@ def _matches(x: float, known: list[float], allow_abs: bool) -> bool:
 def unverified_numbers(reply: str, tool_results: list[dict[str, Any]]) -> list[str]:
     """Dollar amounts and large figures in the reply that no tool result of this turn contains (after rounding).
 
-    A heuristic, not proof: it flags only ``$`` amounts and numbers >= 1,000 (year-like integers excluded), since
-    small integers (weeks, counts) and percentages are too ambiguous to check this way.
+    A heuristic, not proof: it flags ``$`` amounts, numbers >= 1,000 (year-like integers excluded) and percentages
+    (#209: Monte Carlo probabilities; "78%" matches a tool share of 0.783). Small bare integers (weeks, counts) are
+    too ambiguous to check this way.
     """
     known: list[float] = []
     _numbers_in(tool_results, known)
@@ -745,20 +796,29 @@ def unverified_numbers(reply: str, tool_results: list[dict[str, Any]]) -> list[s
     for match in _NUMBER.finditer(text):
         dollar, digits, suffix = match.group(1), match.group(2), match.group(3)
         try:
-            value = float(digits.replace(",", "")) * _SCALE.get(suffix or "", 1.0)
+            raw = float(digits.replace(",", ""))
         except ValueError:
+            continue
+        value = raw * _SCALE.get(suffix or "", 1.0)
+        if not suffix and _PERCENT_AFTER.match(text, match.end()):
+            if not _matches_percent(raw, known):
+                flagged.append(match.group(0).strip().rstrip(",") + "%")
             continue
         year_like = not dollar and not suffix and "," not in digits and "." not in digits and 1900 <= value <= 2100
         if year_like or (not dollar and abs(value) < 1000):
             continue
         before = text[max(0, match.start() - DEFICIT_WINDOW):match.start()]
-        if dollar and before.rstrip()[-1:] in ("-", "\u2212"):  # "-$50,000": the minus is the figure's sign
+        negative = bool(dollar and before.rstrip()[-1:] in ("-", "\u2212"))
+        if negative:  # "-$50,000": the minus is the figure's sign
             value = -abs(value)
             before = before.rstrip()[:-1]
         # the digit pattern can swallow a trailing comma ("$12,000, lower"): punctuation breaks the framing
         adjacent = not match.group(0).rstrip().endswith(",")
         framed_as_fall = bool(_DEFICIT.search(before) or (adjacent and _DEFICIT_AFTER.match(text, match.end())))
-        if not _matches(value, known, allow_abs=framed_as_fall):
+        # "$12.3B" also matches a tool figure of 12.3 in a metric whose unit is $B (a Monte Carlo result)
+        unscaled = (-abs(raw) if negative else raw) if suffix else None
+        if not (_matches(value, known, allow_abs=framed_as_fall)
+                or (unscaled is not None and _matches(unscaled, known, allow_abs=framed_as_fall, min_tol=0.05))):
             flagged.append(match.group(0).strip().rstrip(","))
     return list(dict.fromkeys(flagged))
 

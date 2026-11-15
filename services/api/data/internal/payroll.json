@@ -1,0 +1,112 @@
+{
+ "provenance": "SYNTHETIC",
+ "label": "SYNTHETIC (mock internal data)",
+ "table": "payroll",
+ "description": "Weekly payroll by store and department. Totals the demo business's weekly payroll, which FAULTLINE protects as a hard rule.",
+ "generator": "scripts/gen_internal_data.py",
+ "seed": 20261115,
+ "snapshot_date": "2026-11-15",
+ "schema": {
+  "store": "str",
+  "department": "str",
+  "headcount": "people",
+  "weekly_cost": "USD",
+  "avg_weekly_cost_per_head": "USD"
+ },
+ "anchors": {
+  "weekly_payroll": 12000.0
+ },
+ "rows": [
+  {
+   "store": "Store 1",
+   "department": "Front of house",
+   "headcount": 10,
+   "weekly_cost": 1351.3,
+   "avg_weekly_cost_per_head": 135.13
+  },
+  {
+   "store": "Store 1",
+   "department": "Deli and fresh",
+   "headcount": 6,
+   "weekly_cost": 1192.32,
+   "avg_weekly_cost_per_head": 198.72
+  },
+  {
+   "store": "Store 1",
+   "department": "Stock and receiving",
+   "headcount": 4,
+   "weekly_cost": 715.39,
+   "avg_weekly_cost_per_head": 178.85
+  },
+  {
+   "store": "Store 1",
+   "department": "Store management",
+   "headcount": 2,
+   "weekly_cost": 715.39,
+   "avg_weekly_cost_per_head": 357.69
+  },
+  {
+   "store": "Store 2",
+   "department": "Front of house",
+   "headcount": 9,
+   "weekly_cost": 1276.22,
+   "avg_weekly_cost_per_head": 141.8
+  },
+  {
+   "store": "Store 2",
+   "department": "Deli and fresh",
+   "headcount": 6,
+   "weekly_cost": 1126.08,
+   "avg_weekly_cost_per_head": 187.68
+  },
+  {
+   "store": "Store 2",
+   "department": "Stock and receiving",
+   "headcount": 4,
+   "weekly_cost": 675.65,
+   "avg_weekly_cost_per_head": 168.91
+  },
+  {
+   "store": "Store 2",
+   "department": "Store management",
+   "headcount": 2,
+   "weekly_cost": 675.65,
+   "avg_weekly_cost_per_head": 337.82
+  },
+  {
+   "store": "Store 3",
+   "department": "Front of house",
+   "headcount": 8,
+   "weekly_cost": 1126.08,
+   "avg_weekly_cost_per_head": 140.76
+  },
+  {
+   "store": "Store 3",
+   "department": "Deli and fresh",
+   "headcount": 5,
+   "weekly_cost": 993.6,
+   "avg_weekly_cost_per_head": 198.72
+  },
+  {
+   "store": "Store 3",
+   "department": "Stock and receiving",
+   "headcount": 4,
+   "weekly_cost": 596.16,
+   "avg_weekly_cost_per_head": 149.04
+  },
+  {
+   "store": "Store 3",
+   "department": "Store management",
+   "headcount": 2,
+   "weekly_cost": 596.16,
+   "avg_weekly_cost_per_head": 298.08
+  },
+  {
+   "store": "Head office",
+   "department": "Admin and finance",
+   "headcount": 2,
+   "weekly_cost": 960.0,
+   "avg_weekly_cost_per_head": 480.0
+  }
+ ]
+}
