@@ -17,7 +17,7 @@ const SCREENS: Record<StepSlug, (props: { step: Step }) => ReactNode> = {
   explore: ExploreScreen,
 };
 
-/** One presenter screen plus the bottom pager. Shared by `/` (Rewind) and `/[step]`. */
+/** One presenter screen plus the bottom pager. Shared by `/` (Live Explore) and `/[step]`. */
 export function StepView({ step }: { step: Step }) {
   const Screen = SCREENS[step.slug];
   return (

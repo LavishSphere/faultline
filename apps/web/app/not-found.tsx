@@ -6,10 +6,10 @@ export default function NotFound() {
       <p className="kicker">404</p>
       <h1 className="display text-[clamp(3rem,8vw,7rem)]">No such <em>screen</em></h1>
       <Link
-        href="/rewind"
+        href="/"
         className="w-fit rounded-md border border-line px-4 py-2 font-mono text-xs uppercase tracking-[0.16em] hover:border-line-strong"
       >
-        Go to Rewind →
+        Go to Live Explore →
       </Link>
     </div>
   );

@@ -1,5 +1,7 @@
 "use client";
 
+import { usePathname } from "next/navigation";
+import { stepFromPath } from "@/lib/steps";
 import { ProvenanceBadge } from "./ProvenanceBadge";
 import { useReplayCases, useSelectedCase } from "./replay/hooks";
 
@@ -11,6 +13,9 @@ import { useReplayCases, useSelectedCase } from "./replay/hooks";
 export function HeaderCase() {
   const { load } = useReplayCases();
   const { selected, cases } = useSelectedCase(load);
+  // The replay case belongs to the Blind Replay screens only; Live Explore (the home screen) never uses it.
+  const onReplay = stepFromPath(usePathname())?.section === "replay";
+  if (!onReplay) return null;
 
   let body;
   if (load.kind === "loading") {
