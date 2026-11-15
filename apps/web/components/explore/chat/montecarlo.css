@@ -14,10 +14,16 @@
 }
 
 .mc-headline-num {
+  /* inline-block + right padding: background-clip: text paints only the element's box, and the negative tracking
+     pulled the last glyph ("%") past it, so it was clipped. The padding gives the final glyph its full width. */
+  display: inline-block;
+  max-width: 100%;
+  padding: 0 0.08em 0.06em 0;
+  white-space: nowrap;
   font-family: var(--font-mono);
   font-variant-numeric: tabular-nums;
-  letter-spacing: -0.04em;
-  line-height: 0.9;
+  letter-spacing: -0.03em;
+  line-height: 0.95;
   background: linear-gradient(180deg, var(--text) 30%, color-mix(in srgb, var(--accent) 70%, var(--text)));
   -webkit-background-clip: text;
   background-clip: text;

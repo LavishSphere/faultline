@@ -113,7 +113,7 @@ const STYLES: Record<ProvenanceKind, BadgeStyle> = {
   "LIVE EXPLORE": {
     glyph: "◎",
     className: "border-risk/60 text-risk bg-risk/10",
-    description: "Current web content retrieved now via Tavily. Not point-in-time; never used by the Blind Replay",
+    description: "Current content retrieved now (web search runs on the server). Not point-in-time; never used by the Blind Replay",
   },
   "MODEL-SUGGESTED": {
     glyph: "◇",
