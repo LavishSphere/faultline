@@ -284,7 +284,7 @@ export function describeChatFailure(f: ApiFailure): ChatFailureView {
     return { kind: "malformed", heading: "The reply did not match the chat contract, so none of it is shown.", detail };
   }
   if (f.status === 503 && f.code === "PAUSED") {
-    return { kind: "paused", heading: "The team is presenting right now. Chat is back in a few minutes.", detail: null };
+    return { kind: "paused", heading: "The team is presenting right now. Public chat is paused by the presenter.", detail: null };
   }
   if (f.status === 429) return { kind: "rate_limited", heading: "Limit reached, try again in a few minutes.", detail };
   if (f.status === 401 || f.status === 403) {
@@ -300,4 +300,23 @@ export function describeChatFailure(f: ApiFailure): ChatFailureView {
   }
   if (f.kind === "validation") return { kind: "validation", heading: "The server rejected this message.", detail };
   return { kind: "http", heading: `The chat request failed${f.status ? ` (HTTP ${f.status})` : ""}.`, detail };
+}
+
+export const CHAT_STATUS_PATH = "/api/explore/chat/status";
+
+/** GET /api/explore/chat/status: the presenter pause switch (routes/explore_chat.py `ChatStatus`). */
+export interface ChatPauseStatus {
+  paused: boolean;
+  until: string | null;
+}
+
+/** GET /api/explore/chat/status. Never throws; a body that does not match is `malformed` (no banner is shown). */
+export async function getChatStatus(signal?: AbortSignal): Promise<ApiResult<ChatPauseStatus>> {
+  const res = await requestJson<ChatPauseStatus>("GET", CHAT_STATUS_PATH, 6000, signal);
+  if (!res.ok) return res;
+  const v: unknown = res.data;
+  if (!isObj(v) || typeof v.paused !== "boolean" || !strOrNull(v.until)) {
+    return { ok: false, kind: "malformed", error: "malformed chat status payload" };
+  }
+  return res;
 }
