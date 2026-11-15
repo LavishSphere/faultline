@@ -1,5 +1,5 @@
 # FAULTLINE developer targets. Run `make help` for a list.
-.PHONY: help pull agent-start setup setup-deps api web dev test test-api check guard-test preflight web-build demo demo-scratch demo-api demo-web deploy-api
+.PHONY: help pull agent-start setup setup-deps api web dev test test-api check guard-test preflight web-build demo demo-scratch demo-api demo-web deploy-api chat-models
 
 API_DIR  := services/api
 VENV     := $(API_DIR)/.venv
@@ -61,6 +61,9 @@ guard-test:             ## guardrail hook self-test
 
 preflight:              ## release preflight: PASS/WARN/FAIL per check (ARGS=--tests also runs pytest)
 	@$(LOAD_ENV) $(API_PY) scripts/preflight.py $(ARGS)
+
+chat-models:            ## list the LIVE EXPLORE chat catalogue from each configured provider (ids only, never keys)
+	@$(LOAD_ENV) $(API_PY) scripts/check_chat_models.py $(ARGS)
 
 web-build:              ## production build of apps/web (served by `make demo`)
 	@cd apps/web && NEXT_PUBLIC_API_BASE=http://localhost:$(API_PORT) npm run build

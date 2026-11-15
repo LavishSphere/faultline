@@ -15,7 +15,7 @@ from fastapi.routing import APIRoute
 from fastapi.testclient import TestClient
 
 import main
-from main import ADMIN, PUBLIC, PUBLIC_MODE_ROUTES, create_app, is_admin_gated
+from main import ADMIN, PUBLIC, PUBLIC_IF_CHAT_FLAG, PUBLIC_MODE_ROUTES, create_app, is_admin_gated
 
 DEPLOY_MD = Path(__file__).resolve().parents[3] / "docs" / "DEPLOY.md"
 TOKEN = "f6" * 32  # not key-shaped (CI secrets scan); the `openssl rand -hex 32` shape public mode requires
@@ -25,7 +25,8 @@ ORIGIN = "https://faultline.khayrul.com"
 @pytest.fixture
 def local_env(monkeypatch):
     for name in ("FAULTLINE_MODE", "FAULTLINE_ADMIN_TOKEN", "FAULTLINE_CORS_ORIGINS", "FAULTLINE_PUBLIC_ORIGIN",
-                 "FAULTLINE_RATE_LIMIT_PER_MIN", "FAULTLINE_MAX_BODY_BYTES", "TAVILY_API_KEY"):
+                 "FAULTLINE_RATE_LIMIT_PER_MIN", "FAULTLINE_MAX_BODY_BYTES", "TAVILY_API_KEY", "FAULTLINE_PUBLIC_CHAT",
+                 "OPENROUTER_API_KEY", "OPENAI_API_KEY", "ANTHROPIC_API_KEY", "FAULTLINE_CHAT_MODELS"):
         monkeypatch.delenv(name, raising=False)
     return monkeypatch
 
@@ -70,7 +71,7 @@ def test_every_openapi_route_is_classified(local_env):
         f"unclassified: {sorted(routes - set(PUBLIC_MODE_ROUTES))}; "
         f"stale table rows: {sorted(set(PUBLIC_MODE_ROUTES) - routes)}"
     )
-    assert set(PUBLIC_MODE_ROUTES.values()) <= {ADMIN, PUBLIC}
+    assert set(PUBLIC_MODE_ROUTES.values()) <= {ADMIN, PUBLIC, PUBLIC_IF_CHAT_FLAG}
 
 
 def test_no_hidden_route_escapes_the_table(local_env):
@@ -80,31 +81,43 @@ def test_no_hidden_route_escapes_the_table(local_env):
 def test_edge_prefixes_agree_with_the_table(local_env):
     """The edge gate refuses exactly the admin rows, and no public row sits under a gated prefix."""
     for (_method, path), kind in PUBLIC_MODE_ROUTES.items():
+        if kind == PUBLIC_IF_CHAT_FLAG:  # conditional row: admin with the flag off, public with it on
+            assert is_admin_gated(_concrete(path), public_chat=False), path
+            assert not is_admin_gated(_concrete(path), public_chat=True), path
+            continue
         assert is_admin_gated(_concrete(path)) == (kind == ADMIN), (path, kind)
 
 
 def test_admin_routes_also_gate_inside_the_route():
     """Defence in depth: each admin route carries the shared route-level gate, not only the edge prefix."""
+    from routes.explore_chat import require_chat_access
     from routes.replay import require_admin_in_public_mode
 
     seen = 0
     for path, route in _api_routes(create_app().routes):
         admin = any(PUBLIC_MODE_ROUTES.get((m, path)) == ADMIN for m in route.methods)
+        conditional = any(PUBLIC_MODE_ROUTES.get((m, path)) == PUBLIC_IF_CHAT_FLAG for m in route.methods)
         deps = {d.call for d in route.dependant.dependencies}
         gated_class = type(route).__name__ == "AdminGatedRoute"
         assert admin == (require_admin_in_public_mode in deps or gated_class), path
+        assert conditional == (require_chat_access in deps), path
         seen += 1
     assert seen == len(PUBLIC_MODE_ROUTES)  # the walk is not vacuous
 
 
+@pytest.mark.parametrize("chat_flag", ["", "1"], ids=["chat-flag-off", "chat-flag-on"])
 @pytest.mark.parametrize("key", sorted(PUBLIC_MODE_ROUTES), ids=lambda k: f"{k[0]} {k[1]}")
-def test_public_mode_behaviour_matches_the_classification(public_env, key):
+def test_public_mode_behaviour_matches_the_classification(public_env, key, chat_flag):
+    public_env.setenv("FAULTLINE_PUBLIC_CHAT", chat_flag)
     method, path = key
     client = TestClient(create_app())
     url = _concrete(path)
     resp = client.request(method, url, json={} if method == "POST" else None)
     body = resp.json() if resp.headers.get("content-type", "").startswith("application/json") else {}
-    if PUBLIC_MODE_ROUTES[key] == ADMIN:
+    kind = PUBLIC_MODE_ROUTES[key]
+    if kind == PUBLIC_IF_CHAT_FLAG:
+        kind = PUBLIC if chat_flag == "1" else ADMIN
+    if kind == ADMIN:
         assert resp.status_code == 401 and body.get("code") == "ADMIN_TOKEN_REQUIRED", (key, resp.text)
         wrong = client.request(method, url, json={} if method == "POST" else None,
                                headers={"Authorization": "Bearer " + "w" * 40})
@@ -119,7 +132,7 @@ def test_deploy_md_table_matches_the_code():
     text = DEPLOY_MD.read_text(encoding="utf-8")
     rows = dict(
         ((m, p), kind)
-        for m, p, kind in re.findall(r"^\| `(GET|POST) (/api/[^`]*)` \| (admin|public) \|", text, re.M)
+        for m, p, kind in re.findall(r"^\| `(GET|POST) (/api/[^`]*)` \| (admin|public-if-flag|public) \|", text, re.M)
     )
     assert rows == PUBLIC_MODE_ROUTES
 

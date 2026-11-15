@@ -55,16 +55,21 @@ FAKE_KEY = "tvly-test-" + "k" * 32  # never a real key; asserted absent from out
 ALLOWED_IMPORTERS = {
     "agents/tavily.py",
     "routes/explore.py",
+    "routes/explore_chat.py",  # #187: the LIVE EXPLORE chat routes (agents/explore_chat.py is under the prefix)
 }
 ALLOWED_IMPORTER_PREFIXES = ("agents/explore_",)  # #61: agents/explore_analyst.py
-ALLOWED_SCRIPTS = {"tavily_curate.py"}  # relative to the repo scripts/ directory
+# Relative to the repo scripts/ directory. #187: `make chat-models` (check_chat_models.py) prints the chat catalogue.
+ALLOWED_SCRIPTS = {"tavily_curate.py", "check_chat_models.py"}
 # Exact references other files may contain. main.py mounts the router (and nothing else). The CI secret
 # scanner names the Tavily key pattern so it can block committed keys.
 ALLOWED_REFS = {
     # main.py mounts the router and, in its edge block, names the explore paths so the public-mode admin gate and
     # route table can refuse them (#13). Path strings only: no import of Tavily or explore internals.
     "main.py": {"import:routes.explore", "name:explore", "const:/api/explore", "const:/api/explore/analyze",
-                "const:/api/explore/search"},
+                "const:/api/explore/search",
+                # #187: mounts the chat router and classifies its exact paths (edge gate, body cap, route table).
+                "import:routes.explore_chat", "const:/api/explore/chat", "const:/api/explore/chat/models",
+                "const:/api/explore/chat/status", "const:/api/explore/chat/pause"},
     "ci/content_scan.py": {"const:Tavily API key"},
 }
 
@@ -595,3 +600,98 @@ def test_retrieved_at_is_now_not_a_historical_date():
     resp = _search_once()
     after = datetime.now(UTC)
     assert before <= resp.retrieved_at <= after
+
+
+# --------------------------------------------------------------------------- (d) the LIVE EXPLORE chat (#187)
+
+CHAT_MODULES = ("agents.explore_chat", "routes.explore_chat")
+# Everything on the Blind Replay / scoring side, plus the replay-side agents. The chat may import the deterministic
+# engine (core.financials, core.optimizer, core.decision, core.research) and its public routes, nothing else.
+REPLAY_SIDE = (
+    "core.temporal_gate", "core.store", "core.evaluator", "core.provenance", "core.forecasting", "core.scoring",
+    "markets", "routes.replay", "routes.cases", "routes.benchmark", "routes.recorded", "routes.integrity",
+    "routes.evidence", "routes.health", "agents.provider", "agents.local_ollama", "agents.skeptic",
+    "agents.model_cards", "agents.explore_analyst",
+)
+# Replay data locations (directory / file names). Prose such as the system prompt's "no access to sealed outcomes"
+# rule is allowed; a path or store name is not.
+_REPLAY_DATA = re.compile(r"sealed_outcomes|demo_cases|recorded_runs|predictions\.sqlite|scorecards?/|raw/|"
+                          r"FAULTLINE_PREDICTIONS_DB|FAULTLINE_DEMO_STORE", re.I)
+
+
+def _imports(path: Path) -> set[str]:
+    tree = ast.parse(path.read_text(encoding="utf-8"))
+    names = {a.name for n in ast.walk(tree) if isinstance(n, ast.Import) for a in n.names}
+    for n in ast.walk(tree):
+        if isinstance(n, ast.ImportFrom):
+            names.add(n.module or "")
+            names |= {f"{n.module}.{a.name}" for a in n.names}
+    return names
+
+
+@pytest.mark.parametrize("module", CHAT_MODULES)
+def test_chat_modules_import_no_replay_code(module):
+    names = _imports(_module_path(module))
+    assert [n for n in names if n.startswith(REPLAY_SIDE)] == []
+    tree = ast.parse(_module_path(module).read_text(encoding="utf-8"))
+    consts = {n.value for n in ast.walk(tree) if isinstance(n, ast.Constant) and isinstance(n.value, str)}
+    # Docstrings may describe the walls; code constants may not name replay data.
+    docstrings = {n.body[0].value.value for n in ast.walk(tree)
+                  if isinstance(n, ast.Module | ast.ClassDef | ast.FunctionDef | ast.AsyncFunctionDef)
+                  and n.body and isinstance(n.body[0], ast.Expr) and isinstance(n.body[0].value, ast.Constant)}
+    assert [c for c in consts - docstrings if _REPLAY_DATA.search(c)] == []
+
+
+def test_chat_modules_do_not_load_replay_code_transitively():
+    code = textwrap.dedent(
+        f"""
+        import importlib, json, sys
+        for name in {CHAT_MODULES!r}:
+            importlib.import_module(name)
+        side = {REPLAY_SIDE!r}
+        print(json.dumps(sorted(m for m in sys.modules if m.startswith(side))))
+        """
+    )
+    env = {**os.environ, "PYTHONPATH": str(API_DIR)}
+    out = subprocess.run([sys.executable, "-c", code], cwd=API_DIR, env=env, capture_output=True, text=True,
+                         timeout=60, check=True)
+    assert json.loads(out.stdout.strip().splitlines()[-1]) == []
+
+
+def test_replay_modules_do_not_load_the_chat():
+    present = [m for m in REPLAY_MODULES if _module_path(m).is_file()]
+    code = textwrap.dedent(
+        f"""
+        import importlib, json, sys
+        for name in {present!r}:
+            importlib.import_module(name)
+        print(json.dumps(sorted(m for m in sys.modules if "explore_chat" in m)))
+        """
+    )
+    env = {**os.environ, "PYTHONPATH": str(API_DIR)}
+    out = subprocess.run([sys.executable, "-c", code], cwd=API_DIR, env=env, capture_output=True, text=True,
+                         timeout=60, check=True)
+    assert json.loads(out.stdout.strip().splitlines()[-1]) == []
+
+
+@pytest.mark.parametrize("source", [
+    "from agents import explore_chat",
+    "import agents.explore_chat",
+    "from routes import explore_chat",
+    "import routes.explore_chat",
+    "import httpx\nhttpx.post('http://localhost:8000/api/explore/chat', json={})",
+])
+def test_sweep_flags_references_to_the_chat(source):
+    assert live_explore_refs(source), source
+
+
+def test_chat_tools_expose_no_replay_surface(monkeypatch):
+    """The model can only call engine tools: nothing that names a case, a reveal, a prediction or a score."""
+    from config import get_settings
+    from routes.explore_chat import EngineToolBox
+
+    monkeypatch.setenv("TAVILY_API_KEY", FAKE_KEY)
+    names = [t.name for t in EngineToolBox(get_settings(), None).specs()]
+    assert names == ["simulate", "optimize", "decision", "list_scenarios", "list_judge_challenges",
+                     "list_decision_frames", "vc_lenses", "web_search"]
+    assert not [n for n in names if re.search(r"replay|case|reveal|outcome|predict|benchmark|score|seal", n)]

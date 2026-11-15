@@ -49,6 +49,18 @@ MIN_ADMIN_TOKEN_LEN = 32
 # (a passphrase, a pasted-with-quotes value, upper case) is a ConfigError at startup and never matches.
 PUBLIC_ADMIN_TOKEN_PATTERN = re.compile(r"^[0-9a-f]{64}$")
 
+# LIVE EXPLORE chat (routes/explore_chat.py). Hosted-model keys are read by the chat adapters at call time and never
+# kept here; Settings only says whether each is set.
+CHAT_PROVIDERS = ("openrouter", "openai", "anthropic")  # also the display order of the catalogue
+CHAT_KEY_ENV = {"openrouter": "OPENROUTER_API_KEY", "openai": "OPENAI_API_KEY", "anthropic": "ANTHROPIC_API_KEY"}
+DEFAULT_CHAT_PER_IP = 10  # chat turns per client IP per CHAT_WINDOW_S
+CHAT_WINDOW_S = 600
+DEFAULT_CHAT_CONCURRENCY = 4
+DEFAULT_CHAT_MAX_PRICE_PER_MTOK = 20.0  # USD per million OUTPUT tokens; dearer models leave the public catalogue
+# OpenAI and Claude models are called only through their native APIs (lead rule): OpenRouter copies are never offered.
+NATIVE_ONLY_PREFIXES = ("openai/", "anthropic/")
+_CHAT_MODEL_ENTRY = re.compile(r"^(openrouter|openai|anthropic):([A-Za-z0-9._:/@-]{1,120})$")
+
 
 class ConfigError(ValueError):
     """A deployment variable has an unusable value. Raised at startup so misconfiguration is loud."""
@@ -76,6 +88,18 @@ class Settings:
     # FAULTLINE_DEMO_STORE is set (scripts/demo_api.py, `make demo-scratch`): this process serves a demo scratch
     # store, so no scorecard computed or served from it may be OFFICIAL (#155). Presence only, read per call.
     demo_store_set: bool
+    # LIVE EXPLORE chat (#187). Booleans only for keys.
+    openrouter_api_key_set: bool = False
+    openai_api_key_set: bool = False
+    chat_models_pinned: tuple[tuple[str, str], ...] | None = None  # FAULTLINE_CHAT_MODELS; None = dynamic catalogue
+    chat_per_ip: int = DEFAULT_CHAT_PER_IP  # turns per CHAT_WINDOW_S; 0 = off (local mode only)
+    chat_concurrency: int = DEFAULT_CHAT_CONCURRENCY
+    public_chat: bool = False  # FAULTLINE_PUBLIC_CHAT=1: POST /api/explore/chat open to visitors in public mode
+    chat_max_price_per_mtok: float = DEFAULT_CHAT_MAX_PRICE_PER_MTOK
+
+    def chat_key_set(self, provider: str) -> bool:
+        return {"openrouter": self.openrouter_api_key_set, "openai": self.openai_api_key_set,
+                "anthropic": self.anthropic_api_key_set}.get(provider, False)
 
     @property
     def predictions_db_is_official(self) -> bool:
@@ -203,6 +227,58 @@ def _rate_limit_per_min(mode: Mode) -> int:
     return value
 
 
+def public_chat_enabled() -> bool:
+    """FAULTLINE_PUBLIC_CHAT=1 exactly (anything else, including "true", keeps the chat admin-only in public mode)."""
+    return os.environ.get("FAULTLINE_PUBLIC_CHAT", "").strip() == "1"
+
+
+def _chat_models_pinned() -> tuple[tuple[str, str], ...] | None:
+    raw = os.environ.get("FAULTLINE_CHAT_MODELS", "").strip()
+    if not raw:
+        return None
+    out: list[tuple[str, str]] = []
+    for entry in (e.strip() for e in raw.split(",")):
+        if not entry:
+            continue
+        match = _CHAT_MODEL_ENTRY.fullmatch(entry)
+        if not match:
+            raise ConfigError(
+                f"FAULTLINE_CHAT_MODELS entry {entry!r} is not provider:model_id with provider one of {CHAT_PROVIDERS}."
+            )
+        if match.group(1) == "openrouter" and match.group(2).startswith(NATIVE_ONLY_PREFIXES):
+            raise ConfigError(
+                f"FAULTLINE_CHAT_MODELS entry {entry!r}: OpenAI and Anthropic models go through their native APIs "
+                "(openai:<model> / anthropic:<model>), never through OpenRouter."
+            )
+        out.append((match.group(1), match.group(2)))
+    if not out:
+        return None
+    # Display order: OpenRouter, then OpenAI, then Anthropic (stable within a provider); duplicates dropped.
+    unique = list(dict.fromkeys(out))
+    return tuple(sorted(unique, key=lambda pm: CHAT_PROVIDERS.index(pm[0])))
+
+
+def _chat_per_ip(mode: Mode) -> int:
+    value = _non_negative_int("FAULTLINE_CHAT_PER_IP", DEFAULT_CHAT_PER_IP)
+    if value == 0 and mode == "public":
+        raise ConfigError("FAULTLINE_CHAT_PER_IP=0 would switch the chat's per-IP limit off, which public mode "
+                          f"does not allow. Leave it empty for the default ({DEFAULT_CHAT_PER_IP} per 10 minutes).")
+    return value
+
+
+def _chat_max_price() -> float:
+    raw = os.environ.get("FAULTLINE_CHAT_MAX_PRICE_PER_MTOK", "").strip()
+    if not raw:
+        return DEFAULT_CHAT_MAX_PRICE_PER_MTOK
+    try:
+        value = float(raw)
+    except ValueError:
+        value = -1.0
+    if not (value > 0 and value < 1e6):
+        raise ConfigError(f"FAULTLINE_CHAT_MAX_PRICE_PER_MTOK must be a positive number of USD, got {raw!r}.")
+    return value
+
+
 def admin_token_matches(presented: str | None) -> bool:
     """Constant-time check of a presented admin token. False when no (strong enough) token is configured."""
     expected = _admin_token()
@@ -231,4 +307,11 @@ def get_settings() -> Settings:
         max_body_bytes=max_body_bytes,
         predictions_db=predictions_db_from_env(),
         demo_store_set=_is_set("FAULTLINE_DEMO_STORE"),
+        openrouter_api_key_set=_is_set("OPENROUTER_API_KEY"),
+        openai_api_key_set=_is_set("OPENAI_API_KEY"),
+        chat_models_pinned=_chat_models_pinned(),
+        chat_per_ip=_chat_per_ip(mode),
+        chat_concurrency=max(1, _non_negative_int("FAULTLINE_CHAT_CONCURRENCY", DEFAULT_CHAT_CONCURRENCY)),
+        public_chat=public_chat_enabled(),
+        chat_max_price_per_mtok=_chat_max_price(),
     )
