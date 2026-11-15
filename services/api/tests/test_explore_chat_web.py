@@ -163,7 +163,8 @@ def test_figures_cited_from_a_web_snippet_pass(web_env, figure):
 
 @pytest.mark.parametrize("figure", ["$145 billion", "$131.9B", "$1.3 trillion"])
 def test_figures_not_in_any_web_result_are_withheld(web_env, figure):
-    h = web_harness(oa_tool_calls(("web_search", {"query": "Nvidia revenue"})), oa_text(_brief(figure)))
+    h = web_harness(oa_tool_calls(("web_search", {"query": "Nvidia revenue"})), oa_text(_brief(figure)),
+                    oa_text(_brief(figure)))  # the repair round (#221) repeats it
     out = h.turn("Should Nvidia keep Jensen Huang as CEO?").json()
     assert out["status"] == "error" and out["reply"] == ""
     assert any("withheld" in n for n in out["notes"])

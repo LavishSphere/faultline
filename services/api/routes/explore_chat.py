@@ -733,10 +733,13 @@ class EngineToolBox:
         return chat.ToolOutcome("ok", "REAL HISTORICAL", {"as_of": as_of} if as_of else {}, summary)
 
     async def _tool_monte_carlo_decision(self, args: dict[str, Any]) -> chat.ToolOutcome:
+        args = dict(args)
+        premise = mc.premise_note(args.pop("premise", None))  # a label for the UI and the model; never an engine input
         request = mc.DecisionRequest.model_validate(_mc_args(args))
         body = mc.decision_body(request)
         out = await _run_engine(mc.run_decision(body))
-        return chat.ToolOutcome("ok", "SIMULATED", body, {**mc.decision_summary(out), "monte_carlo": out})
+        summary = {**mc.decision_summary(out), **({"premise": premise} if premise else {}), "monte_carlo": out}
+        return chat.ToolOutcome("ok", "SIMULATED", body, summary)
 
     async def _tool_monte_carlo_cash(self, args: dict[str, Any]) -> chat.ToolOutcome:
         # The resolved shock always travels (it wins over scenario_id in the engine), so Judge's Challenges work too;
@@ -791,8 +794,19 @@ class EngineToolBox:
                 found = await web_llm.search(self.web_provider, query, self.web_clients)
             except web_llm.WebSearchError as err:
                 logger.warning("chat web_search (%s) failed: %s", self.web_provider, err.kind)
-                return chat.ToolOutcome("error", "LIVE EXPLORE", {"query": query},
-                                        {"error": f"Web search unavailable ({err.kind}). No results were made up."})
+                # #221: an Anthropic search that fails gets ONE try on OpenAI's web search when its key is set. The
+                # result carries the attribution of the provider that actually answered (WebSearchResult.provider).
+                kind, recovered = err.kind, None
+                if self.web_provider == "anthropic" and self.web_clients.key("openai"):
+                    try:
+                        recovered = await web_llm.search("openai", query, self.web_clients)
+                    except web_llm.WebSearchError as again:
+                        logger.warning("chat web_search fallback (openai) failed: %s", again.kind)
+                        kind = again.kind
+                if recovered is None:
+                    return chat.ToolOutcome("error", "LIVE EXPLORE", {"query": query},
+                                            {"error": f"Web search unavailable ({kind}). No results were made up."})
+                found = recovered
             return chat.ToolOutcome("ok", "LIVE EXPLORE", {"query": query},
                                     found.as_summary(web_label(found.retrieved_at)))
         try:
@@ -917,6 +931,8 @@ class ChatModelOut(BaseModel):
     label: str
     provider: Literal["openrouter", "openai", "anthropic"]
     available: bool = Field(description="The provider's key is configured on this server (never the key itself).")
+    open_weights: bool = Field(description="On FAULTLINE's explicit allow-list of open-weight model ids (#221); "
+                               "false for closed or uncertain models.")
     note: str | None
     context_length: int | None
     pricing: ChatPricing | None = Field(description="As the provider publishes it; null when not provided.")
@@ -928,7 +944,8 @@ class ChatModelsResponse(BaseModel):
     models: list[ChatModelOut]
     default: str | None = Field(description="The preselected model: the first of DEFAULT_MODEL_PREFERENCE that is "
                                 "featured, else the first featured model, else the first available; null if none.")
-    featured: list[str] = Field(description="5-8 suggested ids, OpenRouter first, then OpenAI, then Claude.")
+    featured: list[str] = Field(description="Up to 12 suggested ids in two groups: open-weight models first "
+                                "(open_weights true), then closed ones.")
     max_output_price_per_mtok: float | None = Field(
         description="Public catalogue price cap (USD per million output tokens); null for an admin caller.")
     notes: list[str]
@@ -971,7 +988,7 @@ def _model_out(m: chat.CatalogModel, catalog: chat.Catalog, settings: Settings) 
     available = catalog.available(m, settings)
     priced = m.input_per_mtok is not None or m.output_per_mtok is not None
     return ChatModelOut(
-        id=m.id, label=m.label, provider=m.provider, available=available, note=m.note,
+        id=m.id, label=m.label, provider=m.provider, available=available, open_weights=m.open_weights, note=m.note,
         context_length=m.context_length,
         pricing=ChatPricing(input_per_mtok=m.input_per_mtok, output_per_mtok=m.output_per_mtok) if priced else None,
     )
