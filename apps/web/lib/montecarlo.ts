@@ -41,6 +41,8 @@ export interface McAssumption {
   params: Record<string, unknown> | null;
   probability: number | null;
   source: McSource | null;
+  /** Per-assumption provenance label, when the engine sends one (cash runs: ILLUSTRATIVE). */
+  provenance: string | null;
 }
 
 export interface McRun {
@@ -109,8 +111,25 @@ export interface McCash extends McRun {
   floor: number | null;
   noPlan: McCashSide | null;
   withPlan: McCashSide | null;
-  plan: Record<string, unknown> | null;
+  plan: McPlan | null;
   assumptions: McAssumption[];
+  notes: string[];
+}
+
+export interface McPlanAction {
+  action: string | null;
+  week: number | null;
+  amount: number | null;
+  share: number | null;
+}
+
+/** The recovery plan the with-plan run applied: one /api/optimize solve on the central shock. */
+export interface McPlan {
+  status: string | null;
+  actions: McPlanAction[] | null;
+  centralMinCash: number | null;
+  /** A string or a structured diagnostic, shown as served. */
+  diagnostic: unknown;
 }
 
 export interface InternalData {
@@ -157,6 +176,7 @@ function assumptionsOf(v: unknown): McAssumption[] {
       params: isObj(a.params) ? a.params : null,
       probability: num(a.probability),
       source: s ? { url: safeUrl(s.url), title: str(s.title), note: str(s.note) } : null,
+      provenance: str(a.provenance),
     };
   });
 }
@@ -260,8 +280,20 @@ export function readCash(call: ChatToolCall): McCash | null {
     floor: num(m.floor),
     noPlan: sideOf(m.no_plan, weeks),
     withPlan: sideOf(m.with_plan, weeks),
-    plan: isObj(m.plan) ? m.plan : null,
+    plan: isObj(m.plan) ? planOf(m.plan) : null,
     assumptions: assumptionsOf(m.assumptions),
+    notes: Array.isArray(m.notes) ? m.notes.filter((n): n is string => typeof n === "string" && !!n.trim()) : [],
+  };
+}
+
+function planOf(p: Record<string, unknown>): McPlan {
+  return {
+    status: str(p.status),
+    actions: Array.isArray(p.actions)
+      ? p.actions.filter(isObj).map((a) => ({ action: str(a.action), week: num(a.week), amount: num(a.amount), share: num(a.share) }))
+      : null,
+    centralMinCash: num(p.central_min_cash),
+    diagnostic: p.diagnostic ?? null,
   };
 }
 
@@ -280,6 +312,18 @@ export function monteCarloCalls(calls: readonly ChatToolCall[]): ChatToolCall[] 
   return calls.filter(
     (c) => c.result_status === "ok" && (c.name === MC_DECISION_TOOL || c.name === MC_CASH_TOOL || c.name === INTERNAL_DATA_TOOL),
   );
+}
+
+/** Assumptions grouped by `option_id` in first-seen order; rows without one form a shared group (key null) first. */
+export function groupAssumptions(rows: readonly McAssumption[]): { optionId: string | null; rows: McAssumption[] }[] {
+  const groups = new Map<string | null, McAssumption[]>();
+  if (rows.some((r) => r.optionId === null)) groups.set(null, []);
+  for (const r of rows) {
+    const g = groups.get(r.optionId);
+    if (g) g.push(r);
+    else groups.set(r.optionId, [r]);
+  }
+  return [...groups].map(([optionId, rs]) => ({ optionId, rows: rs }));
 }
 
 /** Sensitivity rows sorted by served swing, largest first; rows without a swing go last in served order. Display only. */
@@ -315,6 +359,9 @@ const INT = new Intl.NumberFormat("en-US", { maximumFractionDigits: 0 });
 export const count = (n: number | null): string | null => (n === null ? null : INT.format(n));
 
 const isMoney = (unit: string | null) => !!unit && /^(usd|\$|dollars?)$/i.test(unit);
+/** "USD bn" / "USD m" / "USD k": dollars in a served scale, shown as "$606.7bn". */
+const SCALED_USD = /^(?:usd|\$)\s*(bn|b|m|mn|k)$/i;
+const SIG = new Intl.NumberFormat("en-US", { maximumSignificantDigits: 4 });
 const COMPACT_USD = new Intl.NumberFormat("en-US", { style: "currency", currency: "USD", notation: "compact", maximumFractionDigits: 2 });
 const FULL_USD = new Intl.NumberFormat("en-US", { style: "currency", currency: "USD", maximumFractionDigits: 0 });
 const COMPACT = new Intl.NumberFormat("en-US", { notation: "compact", maximumFractionDigits: 2 });
@@ -324,6 +371,8 @@ const PLAIN = new Intl.NumberFormat("en-US", { maximumFractionDigits: 3 });
 export function metricValue(v: number | null, unit: string | null, full = false): string | null {
   if (v === null) return null;
   if (isMoney(unit)) return (full ? FULL_USD : COMPACT_USD).format(v);
+  const scaled = unit ? SCALED_USD.exec(unit) : null;
+  if (scaled) return `${v < 0 ? "−" : ""}$${(full ? PLAIN : SIG).format(Math.abs(v))}${scaled[1]!.toLowerCase()}`;
   const n = full || Math.abs(v) < 10_000 ? PLAIN.format(v) : COMPACT.format(v);
   if (!unit) return n;
   return unit === "%" ? `${n}%` : `${n} ${unit}`;
@@ -336,10 +385,14 @@ export const cash = (v: number | null, full = false): string | null =>
 /** The first 12 hex characters of a SHA-256 for display; the full hash is copied. */
 export const shortSha = (h: string | null): string | null => (h ? h.slice(0, 12) : null);
 
-/** Assumption params as "key=value" pairs, values exactly as served. */
+const PARAM = new Intl.NumberFormat("en-US", { maximumFractionDigits: 4, useGrouping: false });
+
+/** Assumption params as "key=value" pairs; numbers to at most 4 decimals (0.30000000000000004 → 0.3). */
 export function paramsLabel(p: Record<string, unknown> | null): string | null {
   if (!p) return null;
-  const parts = Object.entries(p).map(([k, v]) => `${k}=${typeof v === "object" ? JSON.stringify(v) : String(v)}`);
+  const parts = Object.entries(p).map(
+    ([k, v]) => `${k}=${typeof v === "number" ? PARAM.format(v) : typeof v === "object" ? JSON.stringify(v) : String(v)}`,
+  );
   return parts.length ? parts.join(", ") : null;
 }
 

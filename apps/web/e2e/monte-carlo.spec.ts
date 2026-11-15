@@ -4,9 +4,10 @@ import { expect, test, type Page } from "@playwright/test";
 import { E2E_API_BASE } from "./ports";
 
 /**
- * Monte Carlo panels in a chat reply (#210), against the static export. Only the two chat routes are intercepted:
- * the tool results below are TEST FIXTURES (e2e/fixtures/*.fixture.json) shaped like the engine contract, never real
- * engine or model output. The page must draw them as served: the headline equals `best.prob_best`, the tornado follows
+ * Monte Carlo panels in a chat reply (#210), against the static export. Only the two chat routes are intercepted.
+ * The tool results come from e2e/fixtures: mc-decision / mc-cash are engine responses RECORDED from POST
+ * /api/montecarlo/{decision,cash} on the local API (request kept in the file); internal-data is a hand-built TEST
+ * FIXTURE. The chat reply wrapping them is a TEST FIXTURE, never real model output. The page must draw them as served: the headline equals `best.prob_best`, the tornado follows
  * the served swings, unsafe links are dropped, every panel carries its provenance badge.
  *
  * Set MC_SHOTS=<dir> to also save screenshots (1920 dark and light, 390 wide).
@@ -19,7 +20,10 @@ const SHOTS = process.env.MC_SHOTS;
 const fixture = (name: string) =>
   JSON.parse(readFileSync(resolve(__dirname, "fixtures", `${name}.fixture.json`), "utf8")).result_summary as Record<string, any>; // eslint-disable-line @typescript-eslint/no-explicit-any
 
+// The recorded decision run has no linked source, so a copy adds one safe and one javascript: link to test both paths.
 const DECISION = fixture("mc-decision");
+DECISION.monte_carlo.assumptions[0].source = { url: "https://example.com/test-fixture-source", title: "TEST FIXTURE source", note: "fixture link" };
+DECISION.monte_carlo.assumptions[1].source = { url: "javascript:alert(1)", title: "TEST FIXTURE unsafe link", note: null };
 const CASH = fixture("mc-cash");
 const INTERNAL = fixture("internal-data");
 
@@ -57,6 +61,8 @@ async function ask(page: Page, text: string) {
 }
 
 const pct = (p: number) => `${(p * 100).toFixed(1)}%`;
+const ci = (c: [number, number]) => `95% CI ${(c[0] * 100).toFixed(1)}–${pct(c[1])}`;
+const n = (v: number) => v.toLocaleString("en-US");
 
 const ALL = [
   toolCall("query_internal_data", INTERNAL),
@@ -74,8 +80,9 @@ test.describe("Monte Carlo panels", () => {
     const mc = DECISION.monte_carlo;
 
     await expect(panel.getByTestId("mc-headline-prob")).toHaveText(pct(mc.best.prob_best));
-    await expect(panel.getByTestId("mc-headline-text")).toHaveText(`Keep · best in ${pct(mc.best.prob_best)} of 20,000 paths`);
-    await expect(panel.getByTestId("mc-headline-ci")).toHaveText("95% CI 77.7–78.9%");
+    const bestLabel = mc.options.find((o: { id: string }) => o.id === mc.best.id).label;
+    await expect(panel.getByTestId("mc-headline-text")).toHaveText(`${bestLabel} · best in ${pct(mc.best.prob_best)} of ${n(mc.n_paths)} paths`);
+    await expect(panel.getByTestId("mc-headline-ci")).toHaveText(ci(mc.best.ci95));
     await expect(panel.locator('[data-provenance="SIMULATED"]').first()).toBeVisible();
 
     // One ridge per option, every bin drawn with its served count.
@@ -86,21 +93,25 @@ test.describe("Monte Carlo panels", () => {
     await expect(panel.getByTestId("mc-pair-prob")).toHaveText(mc.pairwise.map((p: { prob_a_better: number }) => pct(p.prob_a_better)));
 
     const expected = [...mc.sensitivity].sort((a: { swing: number }, b: { swing: number }) => b.swing - a.swing).map((s: { driver: string }) => s.driver);
+    expect(expected.length).toBeGreaterThan(1);
     const order = await panel.getByTestId("mc-tornado-row").evaluateAll((els) => els.map((e) => e.getAttribute("data-driver")));
     expect(order).toEqual(expected);
 
     // http(s) source is linked safely; the javascript: one is not rendered as a link; no source reads model-estimated.
     const links = panel.getByTestId("mc-source-link");
     await expect(links).toHaveCount(1);
-    await expect(links).toHaveAttribute("href", "https://example.com/test-fixture-capex");
+    await expect(links).toHaveAttribute("href", "https://example.com/test-fixture-source");
     await expect(links).toHaveAttribute("rel", "noopener noreferrer");
-    await expect(panel.getByTestId("mc-model-estimated")).toHaveCount(3);
+    await expect(panel.getByTestId("mc-model-estimated")).toHaveCount(mc.assumptions.length - 1);
+    // Grouped by option, in the served order.
+    const groups = await panel.getByTestId("mc-assumption-group").evaluateAll((els) => els.map((e) => e.getAttribute("data-option")));
+    expect(groups).toEqual([...new Set(mc.assumptions.map((a: { option_id: string }) => a.option_id))]);
     await expect(panel.locator('a[href^="javascript:"]')).toHaveCount(0);
 
-    await expect(panel.getByTestId("mc-n-paths")).toHaveText("20,000");
+    await expect(panel.getByTestId("mc-n-paths")).toHaveText(n(mc.n_paths));
     await expect(panel.getByTestId("mc-seed")).toHaveText(String(mc.seed));
     await expect(panel.getByTestId("mc-sha")).toContainText(mc.input_sha256.slice(0, 12));
-    await expect(panel.getByTestId("mc-runtime")).toHaveText(`${mc.runtime_ms} ms`);
+    await expect(panel.getByTestId("mc-runtime")).toHaveText(`${mc.runtime_ms.toLocaleString("en-US", { maximumFractionDigits: 1 })} ms`);
     await expect(panel.getByTestId("mc-computed-by")).toContainText("Computed by FAULTLINE in Python, not by the language model.");
   });
 
@@ -113,7 +124,9 @@ test.describe("Monte Carlo panels", () => {
     const mc = CASH.monte_carlo;
     await expect(panel.getByTestId("mc-breach-no-plan")).toHaveText(pct(mc.no_plan.prob_below_floor_any));
     await expect(panel.getByTestId("mc-breach-with-plan")).toHaveText(pct(mc.with_plan.prob_below_floor_any));
-    await expect(panel.getByTestId("mc-breach")).toContainText("no plan 95% CI 63.1–64.9% · with plan 95% CI 2.7–3.3%");
+    await expect(panel.getByTestId("mc-breach")).toContainText(`no plan ${ci(mc.no_plan.prob_below_floor_ci95)} · with plan ${ci(mc.with_plan.prob_below_floor_ci95)}`);
+    await expect(panel.getByTestId("mc-plan-status")).toHaveText(mc.plan.status);
+    await expect(panel.getByTestId("mc-plan-action")).toHaveCount(mc.plan.actions.length);
     for (const kind of ["SIMULATED", "SYNTHETIC", "ILLUSTRATIVE"]) await expect(panel.locator(`[data-provenance="${kind}"]`).first()).toBeVisible();
 
     await expect(panel.getByTestId("mc-fan-no-plan")).toHaveCount(1);
@@ -124,7 +137,7 @@ test.describe("Monte Carlo panels", () => {
     await expect(panel.getByTestId("mc-fan-no-plan")).toHaveCount(0);
     await expect(panel.getByTestId("mc-fan-with-plan")).toHaveCount(1);
 
-    await expect(panel.getByTestId("mc-heat-no-plan").getByTestId("mc-heat-cell")).toHaveCount(26);
+    await expect(panel.getByTestId("mc-heat-no-plan").getByTestId("mc-heat-cell")).toHaveCount(mc.weeks);
     await expect(panel.getByTestId("mc-heat-no-plan").getByTestId("mc-heat-cell").nth(25)).toHaveAttribute(
       "title",
       `Week 26: ${pct(mc.no_plan.prob_below_floor_by_week[25])} of paths below the floor`,

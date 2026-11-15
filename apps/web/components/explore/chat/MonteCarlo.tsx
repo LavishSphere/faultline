@@ -10,6 +10,7 @@ import {
   cell,
   ciLabel,
   count,
+  groupAssumptions,
   metricValue,
   monteCarloCalls,
   paramsLabel,
@@ -24,6 +25,7 @@ import {
   type McCashSide,
   type McDecision,
   type McOption,
+  type McPlan,
   type McRun,
 } from "@/lib/montecarlo";
 import { ProvenanceBadge } from "../../ProvenanceBadge";
@@ -97,7 +99,7 @@ function HowMade({ run, tool }: { run: McRun; tool: string }) {
       ),
       "mc-sha",
     ],
-    ["runtime", run.runtimeMs === null ? NA : `${count(run.runtimeMs)} ms`, "mc-runtime"],
+    ["runtime", run.runtimeMs === null ? NA : `${run.runtimeMs.toLocaleString("en-US", { maximumFractionDigits: 1 })} ms`, "mc-runtime"],
   ];
   return (
     <div className="flex min-w-0 flex-col gap-2 rounded-md border border-viable/40 bg-[color-mix(in_srgb,var(--viable)_5%,transparent)] p-3" data-testid="mc-how-made">
@@ -140,21 +142,28 @@ function Assumptions({ rows, optionLabel }: { rows: McAssumption[]; optionLabel?
             <thead className="font-mono text-[10px] uppercase tracking-[0.12em] text-muted">
               <tr className="border-b border-line">
                 <th className="px-3 py-2 font-normal">Driver</th>
-                {optionLabel ? <th className="px-3 py-2 font-normal">Option</th> : null}
                 <th className="px-3 py-2 font-normal">Distribution</th>
                 <th className="px-3 py-2 font-normal">Params</th>
                 <th className="px-3 py-2 font-normal">P</th>
                 <th className="px-3 py-2 font-normal">Source</th>
               </tr>
             </thead>
-            <tbody>
-              {rows.map((a, i) => (
+            {(optionLabel ? groupAssumptions(rows) : [{ optionId: null, rows }]).map((g, gi) => (
+            <tbody key={gi} data-testid="mc-assumption-group" data-option={g.optionId ?? ""}>
+              {optionLabel ? (
+                <tr className="border-b border-line/60 bg-hover/40">
+                  <th colSpan={5} className="px-3 py-1.5 text-left font-mono text-[10.5px] font-normal uppercase tracking-[0.12em] text-text-2">
+                    {g.optionId ? optionLabel(g.optionId) : "All options"}
+                  </th>
+                </tr>
+              ) : null}
+              {g.rows.map((a, i) => (
                 <tr key={i} className="border-b border-line/60 last:border-0" data-testid="mc-assumption">
                   <td className="px-3 py-2 align-top text-text">
                     {na(a.name)}
                     {a.kind ? <span className="ml-1.5 font-mono text-[10px] text-muted">{a.kind}</span> : null}
+                    {a.provenance ? <span className="ml-1.5 align-middle"><WireBadge value={a.provenance} /></span> : null}
                   </td>
-                  {optionLabel ? <td className="px-3 py-2 align-top text-text-2">{a.optionId ? optionLabel(a.optionId) : "all options"}</td> : null}
                   <td className="px-3 py-2 align-top font-mono text-text-2">{na(a.distribution)}</td>
                   <td className="px-3 py-2 align-top font-mono text-[11.5px] text-text-2 [overflow-wrap:anywhere]">{na(paramsLabel(a.params))}</td>
                   <td className="num px-3 py-2 align-top text-text-2">{a.probability === null ? "—" : na(pct(a.probability))}</td>
@@ -180,6 +189,7 @@ function Assumptions({ rows, optionLabel }: { rows: McAssumption[]; optionLabel?
                 </tr>
               ))}
             </tbody>
+            ))}
           </table>
         </div>
       )}
@@ -630,7 +640,6 @@ function CashPanel({ call, c, reduce }: { call: ChatToolCall; c: McCash; reduce:
     ["with_plan", "With plan", hasPlan],
     ["overlay", "Overlay", hasPlan],
   ];
-  const planScalars = c.plan ? Object.entries(c.plan).filter(([, v]) => v === null || typeof v !== "object") : [];
   return (
     <section className={`mc-panel @container ${reduce ? "" : "mc-rise"} flex min-w-0 flex-col gap-5 rounded-xl border border-fail/40 p-4 md:p-6`} data-testid="mc-cash" aria-label="Monte Carlo cash">
       <PanelHeader
@@ -751,23 +760,59 @@ function CashPanel({ call, c, reduce }: { call: ChatToolCall; c: McCash; reduce:
         ))}
       </dl>
 
-      {planScalars.length ? (
-        <div className="flex min-w-0 flex-col gap-1" data-testid="mc-plan">
-          <Kicker>The plan tested</Kicker>
-          <dl className="grid min-w-0 grid-cols-1 gap-x-4 gap-y-1 @xl:grid-cols-2">
-            {planScalars.map(([k, v]) => (
-              <div key={k} className="flex min-w-0 justify-between gap-3 border-b border-line/60 py-1 text-[12.5px]">
-                <dt className="font-mono text-muted">{k}</dt>
-                <dd className="num min-w-0 break-words text-right text-text">{cell(v) ?? NA}</dd>
-              </div>
-            ))}
-          </dl>
-        </div>
-      ) : null}
+
+      {c.plan ? <PlanTested plan={c.plan} /> : null}
 
       <Assumptions rows={c.assumptions} />
+      {c.notes.length ? (
+        <ul className="flex flex-col gap-0.5 border-l border-line-strong pl-3" data-testid="mc-notes">
+          {c.notes.map((n, k) => (
+            <li key={k} className="break-words font-mono text-[10.5px] text-muted [overflow-wrap:anywhere]">
+              {n}
+            </li>
+          ))}
+        </ul>
+      ) : null}
       <HowMade run={c} tool={call.name} />
     </section>
+  );
+}
+
+const ACTION_LABEL: Record<string, string> = {
+  purchase_cut: "Cut purchases",
+  revolver_draw: "Draw revolver",
+  revolver_repay: "Repay revolver",
+};
+
+function PlanTested({ plan }: { plan: McPlan }) {
+  const diag = plan.diagnostic === null || plan.diagnostic === undefined ? null : typeof plan.diagnostic === "string" ? plan.diagnostic : JSON.stringify(plan.diagnostic);
+  return (
+    <div className="flex min-w-0 flex-col gap-2" data-testid="mc-plan">
+      <p className="flex min-w-0 flex-wrap items-baseline gap-x-3 gap-y-1">
+        <Kicker>The plan tested · one optimizer solve on the central shock</Kicker>
+        <span className={`font-mono text-[11px] uppercase tracking-[0.1em] ${plan.status === "OPTIMAL" ? "text-viable" : "text-fail"}`} data-testid="mc-plan-status">
+          {na(plan.status)}
+        </span>
+        <span className="num text-[11px] text-text-2">
+          central min cash <span className="text-text">{na(cash(plan.centralMinCash))}</span>
+        </span>
+      </p>
+      {diag ? <p className="break-words font-mono text-[11px] text-fail [overflow-wrap:anywhere]">{diag}</p> : null}
+      {plan.actions === null ? (
+        <NotAvailable what="Plan actions" />
+      ) : plan.actions.length === 0 ? (
+        <p className="font-mono text-[11px] text-muted">The plan takes no actions.</p>
+      ) : (
+        <ul className="flex min-w-0 flex-wrap gap-1.5">
+          {plan.actions.map((a, k) => (
+            <li key={k} className="rounded-sm border border-line bg-bg/40 px-2 py-1 font-mono text-[11px] text-text-2" data-testid="mc-plan-action">
+              <span className="text-muted">wk {a.week ?? NA}</span> {a.action ? (ACTION_LABEL[a.action] ?? a.action) : NA}{" "}
+              <span className="num text-text">{a.amount !== null ? cash(a.amount, true) : a.share !== null ? (pct(a.share) ?? NA) : NA}</span>
+            </li>
+          ))}
+        </ul>
+      )}
+    </div>
   );
 }
 

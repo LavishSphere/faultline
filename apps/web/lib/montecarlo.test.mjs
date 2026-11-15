@@ -1,9 +1,10 @@
 // Monte Carlo readers (#210). Pure functions, no network. Run: npm test.
-// The bodies are the TEST FIXTURES in e2e/fixtures (contract shapes, hand-picked numbers), never shown in the product.
+// mc-decision / mc-cash are RECORDED engine responses from the local API (see each file's _note); internal-data is a
+// hand-built TEST FIXTURE. None of them is shown in the product.
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { test } from "node:test";
-import { ciLabel, metricValue, monteCarloCalls, pct, readCash, readDecision, readInternalData, safeUrl, tornadoRows } from "./montecarlo.ts";
+import { ciLabel, groupAssumptions, metricValue, monteCarloCalls, pct, readCash, readDecision, readInternalData, safeUrl, tornadoRows } from "./montecarlo.ts";
 
 const fixture = (name) => JSON.parse(readFileSync(new URL(`../e2e/fixtures/${name}.fixture.json`, import.meta.url), "utf8")).result_summary;
 const call = (name, result_summary, status = "ok") => ({ name, input: {}, result_status: status, result_summary, provenance: "SIMULATED" });
@@ -35,11 +36,11 @@ test("readDecision drops counts that do not fit the edges and unsafe source link
   const body = structuredClone(fixture("mc-decision"));
   body.monte_carlo.options[0].histogram.counts = [1, 2, 3];
   delete body.monte_carlo.best;
+  body.monte_carlo.assumptions[0].source = { url: "javascript:alert(1)", title: "TEST FIXTURE unsafe", note: null };
   const d = readDecision(call("monte_carlo_decision", body));
   assert.equal(d.options[0].counts, null);
   assert.equal(d.best, null);
-  const unsafe = d.assumptions.find((a) => a.name === "Export-control shock");
-  assert.equal(unsafe.source.url, null);
+  assert.equal(d.assumptions[0].source.url, null);
   assert.equal(safeUrl("javascript:alert(1)"), null);
   assert.equal(safeUrl("https://example.com/x").protocol, "https:");
 });
@@ -88,8 +89,28 @@ test("readInternalData uses the served columns; monteCarloCalls keeps only ok ca
   assert.deepEqual(picked.map((c) => c.name), ["monte_carlo_decision", "query_internal_data"]);
 });
 
+test("assumptions group by option in first-seen order", () => {
+  const d = readDecision(call("monte_carlo_decision", fixture("mc-decision")));
+  const groups = groupAssumptions(d.assumptions);
+  assert.deepEqual(groups.map((g) => g.optionId), ["keep", "replace"]);
+  assert.equal(groups.reduce((n, g) => n + g.rows.length, 0), d.assumptions.length);
+  const shared = groupAssumptions([{ optionId: "a" }, { optionId: null }, { optionId: "a" }]);
+  assert.deepEqual(shared.map((g) => [g.optionId, g.rows.length]), [[null, 1], ["a", 2]]);
+});
+
+test("readCash reads the plan and notes as served", () => {
+  const raw = fixture("mc-cash").monte_carlo;
+  const c = readCash(call("monte_carlo_cash", fixture("mc-cash")));
+  assert.equal(c.plan.status, raw.plan.status);
+  assert.equal(c.plan.actions.length, raw.plan.actions.length);
+  assert.equal(c.plan.centralMinCash, raw.plan.central_min_cash);
+  assert.deepEqual(c.notes, raw.notes ?? []);
+});
+
 test("metricValue formats in the served unit", () => {
   assert.equal(metricValue(18, "%"), "18%");
+  assert.equal(metricValue(606.6804, "USD bn"), "$606.7bn");
+  assert.equal(metricValue(-238.25, "USD bn"), "−$238.3bn");
   assert.equal(metricValue(1250000, "USD"), "$1.25M");
   assert.equal(metricValue(null, "%"), null);
 });
