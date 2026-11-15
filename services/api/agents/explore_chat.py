@@ -86,14 +86,14 @@ OPENAI_VETTED: tuple[tuple[str, str], ...] = (
 # key on the test server) and keep their earlier order.
 FEATURED_PREFERENCE: tuple[str, ...] = (
     "openrouter:google/gemini-3.1-flash-lite",
-    "openrouter:qwen/qwen3-235b-a22b-2507",
     "openrouter:x-ai/grok-4.3",
+    "openrouter:qwen/qwen3-235b-a22b-2507",
     "openai:gpt-5.1",
     "openai:gpt-5",
     "openai:gpt-4.1",
     "anthropic:claude-opus-5-5",
-    "anthropic:claude-haiku-5-5",
     "anthropic:claude-sonnet-5-5",
+    "anthropic:claude-haiku-5-5",
 )
 
 # Vendors whose OpenRouter models are open-weight (for the honest per-model note).
@@ -152,8 +152,9 @@ def featured_ids(models: Iterable[CatalogModel], catalog: Catalog, settings: Set
     return [i for i in FEATURED_PREFERENCE if i in by_id][:MAX_FEATURED]
 
 
-# The preselected model. Featured order (the picker) stays OpenRouter first; the default is the model that handled
-# the live "bad quarter" test correctly on the public server (2026-11-14) until the chat QA bank (#195) picks again.
+# The preselected model. Featured order (the picker) stays OpenRouter first. The chat QA bank (#195,
+# docs/CHAT_QA.md) confirmed Sonnet: the highest share of passing turns of the models run on the full bank, at about
+# 4.6 s. Opus scored higher on its 10-prompt subset only, at about twice Sonnet's cost per turn.
 DEFAULT_MODEL_PREFERENCE: tuple[str, ...] = ("anthropic:claude-sonnet-5-5",)
 
 

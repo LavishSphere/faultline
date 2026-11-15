@@ -119,27 +119,74 @@ Candidate screen: 13 OpenRouter tool-capable models, 12 prompts each, all catego
 Also screened and not featured: kimi-k2.6 (often hits the token cap while reasoning, before any text),
 minimax-m3, mistral-medium-3.1, deepseek-v4-flash.
 
-**Featured order now** (`FEATURED_PREFERENCE`, ranked within each provider by all_pass, then latency, then cost):
+**Featured order** (`FEATURED_PREFERENCE`, ranked within each provider by all_pass, then latency, then cost; final
+order set by the confirmation run below):
 
-1. `openrouter:google/gemini-3.1-flash-lite`: best open/hosted pass rate, and the fastest at about 2 s.
-2. `openrouter:qwen/qwen3-235b-a22b-2507`: second best, and the cheapest.
-3. `openrouter:x-ai/grok-4.3`: third. Slower, and the dearest of the three OpenRouter models.
+1. `openrouter:google/gemini-3.1-flash-lite`: best OpenRouter pass rate, and the fastest at about 2 s.
+2. `openrouter:x-ai/grok-4.3`: second on the final code. Slower (about 11 s) and the dearest of the three; the
+   strongest on decision briefs.
+3. `openrouter:qwen/qwen3-235b-a22b-2507`: third. The cheapest, but more replies are withheld.
 4. OpenAI `gpt-5.1`, `gpt-5`, `gpt-4.1`: **not measured** (no OpenAI key on the test server), so the earlier order is kept.
-5. `anthropic:claude-opus-5-5`, `claude-haiku-5-5`, `claude-sonnet-5-5`.
+5. `anthropic:claude-opus-5-5`, `claude-sonnet-5-5`, `claude-haiku-5-5`.
 
-Dropped: llama-4-maverick (the old default; it skipped the tools), kimi-k2 and deepseek-v3.2. **Default**: still
-`anthropic:claude-sonnet-5-5`, as set in #199. The confirmation run below decides whether it should change.
+Dropped: llama-4-maverick (the old default; it skipped the tools), kimi-k2 and deepseek-v3.2.
+**Default: `anthropic:claude-sonnet-5-5`** (#199), confirmed below.
 
 ## Confirmation run (final code)
 
-To follow in the next commit on this PR: Sonnet, Haiku, gemini-3.1-flash-lite, qwen3-235b and grok-4.3 on all 42
-prompts, and Opus on its subset, with the engine-computed totals and drops in place.
+The code in this PR, with the engine-computed totals and drops in place. 40 prompts per model (the 30 shared ones,
+R1 to R6 and T1 to T4); Opus on its 10-prompt subset. Haiku had 8 turns fail with an upstream 502 from the provider;
+those 8 turns, and only those, were re-run.
+
+Same 30 prompts and models as the before / after table (all_pass):
+
+| model | before | first tuned run | final | withheld (before / final) | median s (final) | $/turn (final) |
+|---|---|---|---|---|---|---|
+| claude-opus-5-5 (n=10) | 30% | 90% | **90%** | 3 / 0 | 6.8 | 0.0574 |
+| claude-haiku-5-5 | 53% | 77% | **80%** | 8 / 2 | 5.3 | 0.0015 |
+| claude-sonnet-5-5 | 53% | 60% | **77%** | 12 / 3 | 4.1 | 0.0274 |
+| gemini-3.1-flash-lite | not run | 73% | **73%** | n/a / 2 | 2.3 | 0.0019 |
+| grok-4.3 | not run | 60% | **63%** | n/a / 3 | 11.3 | 0.0106 |
+| qwen3-235b-a22b-2507 | 70% | 60% | **50%** | 4 / 7 | 5.1 | 0.0012 |
+
+Real-world decisions and the starter cards (R1 to R6, T1 to T4; 10 prompts, no Tavily key, so briefs are
+framework-only):
+
+| model | all_pass | withheld | median words | median s |
+|---|---|---|---|---|
+| grok-4.3 | 100% | 0 | 191 | 11.5 |
+| gemini-3.1-flash-lite | 90% | 1 | 253 | 2.3 |
+| qwen3-235b-a22b-2507 | 90% | 1 | 164 | 5.9 |
+| claude-sonnet-5-5 | 90% | 1 | 315 | 6.3 |
+| claude-haiku-5-5 | 60% | 4 | 291 | 7.9 |
+
+All 40 prompts: Sonnet 80%, gemini-3.1-flash-lite 78%, Haiku 75%, grok-4.3 72%, qwen3-235b 60%.
+
+Self-computed figures, the WARNING 2 failure: about 50 in the first tuned run, 4 in the final run. Two are gaps
+between `decision` policies' expected values, which the engine doesn't return yet; the other two are one-offs.
+
+**Decisions from this run:**
+- **Default stays `anthropic:claude-sonnet-5-5`:** the highest pass rate of the models run on the full bank, the
+  fastest Claude model here (4.1 to 4.6 s), and 90% on the decision briefs. Opus scored 90% on its subset at twice
+  the cost per turn, but it was not run on the full bank.
+- **Featured order:** `gemini-3.1-flash-lite`, then `grok-4.3`, then `qwen3-235b-a22b-2507` (grok overtook qwen on
+  the final code), then OpenAI (unmeasured), then Opus, Sonnet, Haiku.
+- qwen3-235b got worse with tuning (70% to 50% on the shared 30). Most of the drop is replies withheld for figures
+  it states without a tool result. It stays featured third as the cheapest option, and is the first candidate to
+  drop.
 
 ## Known failure modes
 
-- **Withheld replies** are the most common failure. They are safe (no made-up figure is shown) but frustrating. Main
-  causes left: echoing a digit while declining (stock market, 2+2, injection), and new kinds of self-made sums or
-  differences the engine doesn't provide yet (e.g. the gap between two policies' expected values in `decision`).
+- **Withheld replies** are still the most common failure, though far rarer on the final code (Sonnet 12 to 3 on the
+  shared 30). They are safe (no made-up figure is shown) but frustrating. Main causes left: echoing a digit while
+  declining (stock market, 2+2, injection), and differences the engine doesn't return yet (the gap between two
+  policies' expected values in `decision`).
+- **The first tuned run used a slightly older prompt than the confirmation run**: it still had a "down $4,500"
+  example (removed before the confirmation run), and the check had a trailing-comma edge case (fixed and tested).
+  The confirmation run is on the code in this PR, apart from the final swap of grok-4.3 and qwen3-235b in the
+  featured order, which doesn't affect replies.
+- **Haiku 5.5 decision briefs** were withheld 4 times in 10, more than any other featured model. It tends to add
+  figures to a framework-only brief.
 - **llama-4-maverick** often answers from the prompt without calling a tool. Its reply is then withheld, or it
   speaks generally with no figures.
 - **Reasoning-heavy models** (kimi-k2.6, sometimes qwen3.7-plus) use the whole output budget thinking: "hit the
@@ -175,6 +222,13 @@ about 2 s). A presenter can pause the public chat with `POST /api/explore/chat/p
 
 ## Spend
 
-Total provider spend for all of #195, plus the live checks for #199 and #203: about **$5.03** of the $15 cap at the
-time of writing. That covers the baseline, the candidate screen and the first tuned run, metered from `usage` at
-published per-token prices. The confirmation run is added in the next commit.
+Total provider spend for all of #195, plus the live checks for #199 and #203: about **$7.21** of the $15 cap,
+metered from `usage` at published per-token prices:
+
+| run | turns | spend |
+|---|---|---|
+| baseline | 190 | $1.55 |
+| candidate screen | 156 | $0.58 |
+| first tuned run | 406 | $2.84 |
+| confirmation run (incl. 8 Haiku retries) | 218 | $2.17 |
+| ad-hoc live checks (#199, #203) | 9 | $0.06 |
