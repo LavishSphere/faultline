@@ -345,7 +345,7 @@ export function ChatPanel() {
             Ask the <em>engine</em>
           </h1>
           <p className="text-[15px] leading-snug text-text-2 md:text-base">
-            Leadership and strategy decisions. Cited sources. Monte Carlo odds.
+            Leadership and strategy decisions. Live research by Tavily. Monte Carlo odds.
           </p>
         </div>
         <span className="flex flex-col items-end gap-1.5">

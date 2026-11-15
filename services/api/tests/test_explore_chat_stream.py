@@ -291,6 +291,9 @@ def test_previews_for_web_search_and_monte_carlo():
     assert steps.call_preview("web_search", {"query": "Nvidia CEO succession"}) == \
         "Searching the web: “Nvidia CEO succession”"
     assert steps.result_preview("web_search", web) == "5 sources: sec.gov, cnbc.com, ft.com, …"
+    credited = chat.ToolOutcome("ok", "LIVE EXPLORE", {"query": "q"}, {"results": [{"domain": "cnbc.com"}],
+                                "attribution": "Search powered by Tavily"})
+    assert steps.result_preview("web_search", credited) == "1 source via Tavily: cnbc.com"
     mc = chat.ToolOutcome("ok", "SIMULATED", {}, {
         "n_paths": 20000, "best": {"id": "keep", "prob_best": 0.624, "ci95": [0.617, 0.631]},
         "options": [{"id": "keep", "label": "Keep"}, {"id": "sell", "label": "Sell"}]})
