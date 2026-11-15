@@ -728,4 +728,4 @@ def test_web_search_is_capped_per_turn(env):
     results = [asyncio.run(box.run("web_search", {"query": f"q{i}"})) for i in range(4)]
     assert [r.status for r in results] == ["ok", "ok", "ok", "error"]
     assert "limit reached" in results[3].summary["error"]
-    assert results[0].provenance == "LIVE EXPLORE" and results[0].summary["items"][0]["url"].startswith("https://")
+    assert results[0].provenance == "LIVE EXPLORE" and results[0].summary["results"][0]["url"].startswith("https://")
