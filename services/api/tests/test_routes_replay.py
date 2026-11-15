@@ -86,6 +86,9 @@ NOT_REPLAY = {
     "/api/explore/chat/models",
     "/api/explore/chat/status",
     "/api/explore/chat/pause",
+    # routes/montecarlo.py (#208): seeded Monte Carlo on request inputs or the SYNTHETIC business; no case or outcome.
+    "/api/montecarlo/decision",
+    "/api/montecarlo/cash",
 }
 # routes/benchmark.py (tests/test_routes_benchmark*.py): GET serves recorded post-reveal scorecards, read-only (it
 # never reveals and never opens the store or sealed folder); compute reveals and is admin-only in public mode.

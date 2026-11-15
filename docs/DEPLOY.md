@@ -88,6 +88,8 @@ disagree with it, or if this table and the code differ. A new route therefore ca
 | `GET /api/health` | public | readiness booleans only |
 | `POST /api/simulate` | public | deterministic cash recurrence |
 | `POST /api/optimize` | public | deterministic MILP |
+| `POST /api/montecarlo/decision` | public | seeded Monte Carlo (same input + seed, same output); no model calls (#208) |
+| `POST /api/montecarlo/cash` | public | seeded Monte Carlo on the SYNTHETIC business; one MILP solve, shares the optimize cap (#208) |
 | `GET /api/scenarios` | public | fixture read |
 | `GET /api/decision/frames` | public | fixture read |
 | `POST /api/decision` | public | deterministic ACT/WAIT/HEDGE payoffs |

@@ -25,6 +25,7 @@ from routes import (
     health,
     integrity,
     judge_challenges,
+    montecarlo,
     optimize,
     rate_limit_key,  # noqa: F401 - re-exported: tests and docs name main.rate_limit_key
     recorded,
@@ -65,6 +66,8 @@ PUBLIC_MODE_ROUTES: dict[tuple[str, str], str] = {
     ("GET", "/api/health"): PUBLIC,
     ("POST", "/api/simulate"): PUBLIC,
     ("POST", "/api/optimize"): PUBLIC,
+    ("POST", "/api/montecarlo/decision"): PUBLIC,  # seeded numpy Monte Carlo; deterministic per seed (#208)
+    ("POST", "/api/montecarlo/cash"): PUBLIC,  # seeded Monte Carlo on the SYNTHETIC business + one MILP solve (#208)
     ("GET", "/api/scenarios"): PUBLIC,
     ("GET", "/api/decision/frames"): PUBLIC,
     ("POST", "/api/decision"): PUBLIC,
@@ -319,6 +322,7 @@ def create_app() -> FastAPI:
     app.include_router(health.router, prefix="/api")
     app.include_router(simulate.router, prefix="/api")
     app.include_router(optimize.router, prefix="/api")
+    app.include_router(montecarlo.router, prefix="/api")
     app.include_router(scenarios.router, prefix="/api")
     app.include_router(decision.router, prefix="/api")
     app.include_router(judge_challenges.router, prefix="/api")

@@ -1,7 +1,7 @@
 # FAULTLINE Mathematical Model
 
 **Status:** DRAFT v0, written by the systems lead. **Pending sign-off by Yaseen (finance owner).**
-**Rule:** `services/api/core/financials.py`, `optimizer.py`, `forecasting.py`, `evaluator.py`, and
+**Rule:** `services/api/core/financials.py`, `optimizer.py`, `montecarlo.py` (§11), `forecasting.py`, `evaluator.py`, and
 `markets/normalize.py` implement *exactly* what is written here. A PR that changes a formula must update
 this document in the same PR, and a finance-owner or lead review is required.
 
@@ -768,3 +768,121 @@ NON-PAYROLL LEVERS (the last three together); and TRIM PAYROLL 10% ($z_t = 0.10$
   makes things worse.
 
 **Sign-off:** ☐ Yaseen has reviewed the §10b parameters and scenarios (issue #109).
+
+## 11. Monte Carlo engines (`core/montecarlo.py`, issue #208)
+
+**Assumptions for review by Yaseen (finance owner). Not signed off.** Every spread, distribution choice and tie rule
+in this section is a modelling choice made under hackathon time pressure, marked `[assumed]`. Yaseen has final say.
+Changing any of them means changing one constant in `core/montecarlo.py` and this section.
+
+Both engines are seeded: the only randomness is `numpy.random.Generator`. The same request (with the same seed,
+default `20261115`) gives the same output. The one exception is `runtime_ms`, which is timing metadata and never
+feeds a number. `input_sha256` = SHA-256 of the canonical JSON of the validated request (defaults filled in, keys
+sorted, separators `,` `:`, ASCII). An LLM may *propose* inputs; every output number is computed here (AGENTS.md §4).
+
+**Random streams.** Each named quantity $k$ gets its own generator, seeded with `SeedSequence([seed, h(k)])`, where
+$h(k)$ is the first 8 bytes of SHA-256 of the name. Adding a driver or an option therefore never changes the other
+draws. Uniforms are clipped to $[10^{-12}, 1 - 10^{-12}]$ so the normal and lognormal inverse CDFs stay finite.
+
+### 11.1 Decision Monte Carlo (`POST /api/montecarlo/decision`)
+
+There are $K \in \{2,3,4\}$ options. Option $k$ has drivers $d = 1..D_k$ with $D_k \le 8$. On path $i = 1..N$:
+$$M_{k,i} = \sum_{d} X_{k,d,i},\qquad
+X_{k,d,i} = \begin{cases} F_d^{-1}(U_{d,i}) & \text{value driver}\\[2pt]
+\mathbb{1}[V_{d,i} < p_d]\; F_d^{-1}(U_{d,i}) & \text{event driver (probability } p_d\text{)}\end{cases}$$
+$F_d^{-1}$ is the inverse CDF of the driver's distribution, in metric units:
+
+| distribution | params | $F^{-1}(u)$ | validation |
+|---|---|---|---|
+| triangular | low $a$, mode $c$, high $b$ | $a + \sqrt{u(b-a)(c-a)}$ if $u < \frac{c-a}{b-a}$, else $b - \sqrt{(1-u)(b-a)(b-c)}$; point mass if $a=b$ | $a \le c \le b$ |
+| normal | mean $\mu$, sd $\sigma$ | $\mu + \sigma\,\Phi^{-1}(u)$ | $\sigma > 0$ |
+| lognormal | median $m$, P90 $q$ | $\exp(\ln m + s\,\Phi^{-1}(u))$, $s = (\ln q - \ln m)/\Phi^{-1}(0.9)$, $\Phi^{-1}(0.9) = 1.28155$ | $0 < m < q$ |
+| uniform | low $a$, high $b$ | $a + (b-a)u$ | $a \le b$ |
+
+Every parameter must be finite, with $|x| \le 10^{12}$ `[assumed]`. Lognormal values are always positive, so a
+downside driver should use a triangular, normal or uniform distribution with negative values.
+
+**Common random numbers.** $U_{d,i}$ and $V_{d,i}$ depend only on the seed and the driver *name*. Drivers with the same
+name in different options therefore use the same draws: "execution" is equally lucky on path $i$ for every option,
+which makes the comparisons paired. Drivers with different names are independent.
+
+**Per-option statistics** over the $N$ paths:
+- the mean and the sample sd ($N-1$ denominator);
+- P5, P25, P50, P75 and P95 (numpy linear quantiles);
+- $\Pr(M_k < 0)$;
+- a 40-bin histogram on 41 edges shared by all options, evenly spaced from $\min_{k,i} M_{k,i}$ to $\max_{k,i} M_{k,i}$
+  (widened by ±0.5 if every value is equal).
+
+**Pairwise.** For every pair $a < b$ (in request order), "better" means higher when `higher_is_better` and lower otherwise:
+$$\hat p_{a \succ b} = \frac1N \sum_i \Big(\mathbb{1}[M_{a,i} \text{ better than } M_{b,i}] + \tfrac12\,\mathbb{1}[M_{a,i} = M_{b,i}]\Big)$$
+An exact tie counts as half `[assumed]`. Under common random numbers, two identical options tie on every path, so
+$\hat p = 0.5$ exactly, not 0.
+
+**Best option.** On each path, the $m$ options tied for best get $1/m$ each, and $\hat p_k^{best}$ is the average over
+paths. `best` is the option with the largest $\hat p^{best}$; on an exact tie, the first in request order wins.
+
+**Wilson 95% interval** for any of these proportions, with $z = 1.959964$ and $n = N$:
+$$\frac{\hat p + \frac{z^2}{2n}}{1+\frac{z^2}{n}} \pm \frac{z}{1+\frac{z^2}{n}}\sqrt{\frac{\hat p(1-\hat p)}{n} + \frac{z^2}{4n^2}}$$
+The interval is clipped to $[0,1]$, and its end is exactly 0 or 1 when $\hat p$ is 0 or 1. Worked checks:
+$\hat p = 0.5$, $n = 100$ gives $[0.4038, 0.5962]$; $\hat p = 0$, $n = 20{,}000$ gives $[0, 0.000192]$. The interval
+covers Monte Carlo sampling error only. It says nothing about whether the input ranges are right.
+
+**Sensitivity (tornado).** For option $k$ and driver $d$, let $q^{10}_{d}$ and $q^{90}_{d}$ be the empirical P10 and P90
+of that driver's own contribution $X_{k,d,\cdot}$ across the paths. Then
+$$\text{low\_p50} = \operatorname{median}_i\big(M_{k,i} - X_{k,d,i} + q^{10}_d\big),\quad
+\text{high\_p50} = \operatorname{median}_i\big(M_{k,i} - X_{k,d,i} + q^{90}_d\big),\quad \text{swing} = |\text{high} - \text{low}|$$
+The other drivers stay random on the same paths. All (option, driver) rows are sorted by swing, largest first.
+`[assumed]`: an event driver's P10 and P90 are taken of $\mathbb 1[V<p]\,Y$. An event with $p \le 0.1$ therefore shows a
+swing near 0, even if its impact is large. **Question for Yaseen:** should an event use "does not happen" vs "happens
+at its median" instead?
+
+Worked check (in the tests): a single-driver option with Tri(0, 5, 10) has P10 $= \sqrt{0.1 \cdot 10 \cdot 5} = 2.236$
+and P90 $= 10 - 2.236 = 7.764$. These are its low and high p50.
+
+Provenance: the response is `SIMULATED`. Its inputs are assumptions, cited where a source is given, and the label says so.
+
+### 11.2 Cash-flow Monte Carlo (`POST /api/montecarlo/cash`)
+
+The engine runs §1–§3 on the SYNTHETIC demo business (§10) over $N$ paths. Each path draws its own shock around a
+**central** scenario, which is a named scenario or a posted `ScenarioShock`, as in `/api/simulate`. On every path the
+recurrence is exactly the §3 boxed recurrence, with the same order of operations as `simulate()`, vectorised across
+paths. Test: with every spread and the noise set to 0, every path equals `simulate()` to $10^{-6}$, both with no action
+and with the optimizer's plan.
+
+**Uncertainty `[assumed]`, ILLUSTRATIVE.** Each spread is $s = 0.5$, i.e. ±50% around the central value.
+
+| quantity | central | path draw | unchanged |
+|---|---|---|---|
+| demand drop size $\delta$ | $\delta$ | $\delta' \sim \text{Tri}(\delta(1-s),\ \delta,\ \min(1, \delta(1+s)))$ | start week $t_1$, recovery $\rho$ |
+| demand drop duration $D = t_2 - t_1 + 1$ | $D$ | $D' = \max(1, \text{round}(\text{Tri}(D(1-s), D, D(1+s))))$, $t_2' = t_1 + D' - 1$ | |
+| rate move $\Delta r$ | $\Delta r$ | $\Delta r' \sim \text{Tri}(\Delta r(1-s), \Delta r, \Delta r(1+s))$ (ends ordered if $\Delta r<0$) | start week $t_r$ |
+| outage span $L$ = last − first week with $\kappa_t < 1$, + 1 | $L$ | $L' = \max(1, \text{round}(\text{Tri}(L(1-s), L, L(1+s))))$ | first outage week, $\phi$ |
+| weekly demand noise | 1 | $\varepsilon_{i,t} = \max(0, 1 + 0.05\,Z_{i,t})$, $Z \sim N(0,1)$ iid | |
+
+- **Outage path.** Weeks first to first $+ L' - 1$ keep the central $\kappa_t$. If $L' > L$, the weeks past the central
+  last outage week take that week's $\kappa$. Every later week gets $\kappa = 1$. With $L' = L$ this is exactly the
+  central series.
+- **Noise** multiplies base-store demand only: $S^{core}_{i,t} = m_{i,t}\,\varepsilon_{i,t}\sum_\ell S^{base}_{\ell,t}$.
+  The service level $I^{svc}_t = \sigma I_0 m_t$ follows *planned* demand $m_t$, without the noise.
+- **No central shock, no variation.** A quantity the central scenario does not shock is not varied.
+- **Independence** `[assumed]`: demand, rate and supply draws are uncorrelated.
+- **Physical caps** `[assumed]`: on a path where the §3 recurrence would give $S_t < 0$ (stock-out loss larger than the
+  week's sales) or $P_t < 0$ (a fixed purchase cut larger than the week's purchases), the value is floored at 0, and
+  `notes` reports how many paths hit a cap. The central scenario itself must be physically possible; otherwise the
+  response is 422, as in `/api/simulate`.
+
+**Plan.** With `with_plan`, the §4 MILP is solved **once** on the central scenario, with the same call as
+`/api/optimize`. The plan $(x, v, y, q, z)$ is then held fixed on every path and is not re-optimised. Both runs use the
+same draws, so "no plan" and "with plan" are paired. If the solve returns NO FEASIBLE PLAN, `with_plan` is null and
+`plan` carries the status and the diagnostic.
+
+**Outputs.** Each run reports these, with floor $C_{min}$ (§4.1, 25,000). "Below" means $C_{i,t} < C_{min} - 10^{-6}$,
+the same test as `/api/simulate`.
+- `bands`: per-week P5/P25/P50/P75/P95 of $C_{i,t}$ across paths. They are pointwise, so a band is not a single path.
+- `prob_below_floor_any` $= \frac1N\sum_i \mathbb 1[\exists t: C_{i,t} < C_{min}]$, with its Wilson 95% interval. With
+  the plan, this is the probability that the plan fails to hold the floor.
+- `prob_negative_any` $= \frac1N\sum_i \mathbb 1[\exists t: C_{i,t} < 0]$.
+- `prob_below_floor_by_week[t]` $= \frac1N\sum_i \mathbb 1[C_{i,t} < C_{min}]$.
+- `min_cash`: P5/P50/P95 of $\min_t C_{i,t}$.
+
+**Sign-off:** ☐ Yaseen has reviewed the §11 assumptions (spreads, tie rule, event tornado rule, independence, caps).
