@@ -216,6 +216,53 @@ test.describe("Ask the engine: conversation", () => {
   });
 });
 
+test.describe("Ask the engine: markdown tables (#241)", () => {
+  // TEST FIXTURE reply with a GFM table; the page must show the cells exactly as written, never recomputed.
+  const TABLE_REPLY =
+    "TEST FIXTURE comparison:\n\n| Option | P5 | P50 | P95 |\n|:---|---:|---:|---:|\n| **Keep** | -256 | 102 | 360 |\n| Cut `a|b` | −1,200 | 40% |\n\n1. **Bottom line:** keep.\n2. Second.";
+
+  test("a reply with a table renders a real <table> with the cell text as written, bold and code inline", async ({ page }) => {
+    await mockModels(page);
+    await mockChat(page, () => ({ body: chatReply({ reply: TABLE_REPLY }) }));
+    await page.goto("/explore/");
+    await expect(page.getByTestId("chat-model-current")).toHaveText("TEST FIXTURE claude-fixture");
+    await ask(page, "compare");
+    const reply = page.getByTestId("chat-answer").getByTestId("chat-reply");
+    const table = reply.locator("table");
+    await expect(table).toHaveCount(1);
+    await expect(reply).not.toContainText("|---");
+    expect(await table.locator("thead th").allTextContents()).toEqual(["Option", "P5", "P50", "P95"]);
+    const rows = table.locator("tbody tr");
+    await expect(rows).toHaveCount(2);
+    expect(await rows.nth(0).locator("td").allTextContents()).toEqual(["Keep", "-256", "102", "360"]);
+    expect(await rows.nth(1).locator("td").allTextContents()).toEqual(["Cut a|b", "−1,200", "40%", ""]);
+    await expect(rows.nth(0).locator("td strong")).toHaveText("Keep");
+    await expect(rows.nth(1).locator("td code")).toHaveText("a|b");
+    await expect(rows.nth(0).locator("td").nth(1)).toHaveCSS("text-align", "right");
+    await expect(rows.nth(0).locator("td").nth(0)).toHaveCSS("text-align", "left");
+    const ol = reply.locator("ol");
+    await expect(ol.locator("li")).toHaveCount(2);
+    await expect(ol.locator("li").first().locator("strong")).toHaveText("Bottom line:");
+  });
+
+  test("at 390 px a wide table scrolls inside its own box, not the page", async ({ page }) => {
+    await page.setViewportSize({ width: 390, height: 844 });
+    await mockModels(page);
+    const cols = Array.from({ length: 9 }, (_, i) => `Column${i}`);
+    const wide = `| ${cols.join(" | ")} |\n|${cols.map(() => "---").join("|")}|\n| ${cols.map((_, i) => `-1,234,567.${i}`).join(" | ")} |`;
+    await mockChat(page, () => ({ body: chatReply({ reply: wide }) }));
+    await page.goto("/explore/");
+    await expect(page.getByTestId("chat-model-current")).toHaveText("TEST FIXTURE claude-fixture");
+    await ask(page, "wide");
+    const box = page.getByTestId("chat-reply-table");
+    await expect(box).toBeVisible();
+    const inner = await box.evaluate((el) => el.scrollWidth - el.clientWidth);
+    expect(inner, "the table box itself scrolls").toBeGreaterThan(0);
+    const overflow = await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth);
+    expect(overflow, "horizontal page overflow in px").toBeLessThanOrEqual(0);
+  });
+});
+
 test.describe("Ask the engine: honest failures", () => {
   const cases = [
     { status: 429, code: "RATE_LIMITED", text: "Limit reached, try again in a few minutes." },
