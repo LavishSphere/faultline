@@ -1060,15 +1060,41 @@ class _Usage:
         self.output += step.output_tokens or 0
 
 
+@dataclass(frozen=True)
+class ChatEvent:
+    """One live step of a turn, for POST /api/explore/chat/stream (#222). Only tool steps: never reply text, so a
+    reply the figure check withholds is never seen before the final response.
+
+    - ``round``: a new round of tool execution starts (``round`` = 1..MAX_TOOL_ROUNDS).
+    - ``tool_call``: the model asked for ``name`` with ``arguments`` (None: not a JSON object); about to run.
+    - ``tool_result``: that call finished; ``outcome`` is exactly what the model is shown next.
+    - ``repair``: the reply failed the figure check and the model is asked to rewrite it once (#221).
+    """
+
+    type: Literal["round", "tool_call", "tool_result", "repair"]
+    round: int
+    id: str = ""  # "<round>.<index>", the same for a call and its result
+    name: str = ""
+    arguments: dict[str, Any] | None = None
+    outcome: ToolOutcome | None = None
+    detail: dict[str, Any] | None = None  # repair: {"unsupported": [figures]} (never sent on the stream)
+
+
+EventSink = Callable[[ChatEvent], Awaitable[None]]
+
+
 async def run_chat(adapter: Adapter, toolbox: ToolBox, history: list[dict[str, str]], *, web_search: bool,
                    on_step: Callable[[], Awaitable[None]] | None = None,
-                   on_event: Callable[[str, dict[str, Any]], Awaitable[None]] | None = None) -> ChatOutcome:
+                   on_event: EventSink | None = None) -> ChatOutcome:
     """At most MAX_TOOL_ROUNDS rounds of tool execution, then the model must answer in text.
 
     A reply whose figures fail the figure check gets ONE repair round (#221): the model is told exactly which
     figures no tool result contains and asked to rewrite without them; the rewrite is checked again and withheld if
-    it still fails. ``on_event("repair", {...})`` is called when a repair starts (streaming); both rounds' tokens
-    count.
+    it still fails. Both rounds' tokens count.
+
+    ``on_event`` (optional) is awaited at each round, tool call and tool result, and when a repair starts
+    (ChatEvent, #222). It never sees reply text; a repair event's ``detail`` names the flagged figures for the
+    caller, and the stream sends only their count.
 
     Raises ChatUpstreamError for provider failures; everything else is a ChatOutcome.
     """
@@ -1101,8 +1127,13 @@ async def run_chat(adapter: Adapter, toolbox: ToolBox, history: list[dict[str, s
                 return done("error", "", [f"Stopped after {MAX_TOOL_ROUNDS} rounds of tool calls without a final "
                                           "answer. " + TOOLS_FAILED_NOTE])
             rounds += 1
+            if on_event is not None:
+                await on_event(ChatEvent("round", rounds))
             results: list[tuple[str, str, bool]] = []
             for index, req in enumerate(step.tool_requests):
+                call_id = f"{rounds}.{index + 1}"
+                if on_event is not None:
+                    await on_event(ChatEvent("tool_call", rounds, call_id, req.name[:60], req.arguments))
                 if index >= MAX_CALLS_PER_ROUND:
                     outcome = ToolOutcome("error", CHAT_PROVENANCE, {}, {
                         "error": f"Too many tool calls in one step (limit {MAX_CALLS_PER_ROUND}); not run."})
@@ -1118,6 +1149,8 @@ async def run_chat(adapter: Adapter, toolbox: ToolBox, history: list[dict[str, s
                     outcome = await toolbox.run(req.name, req.arguments)
                 records.append(ToolCallRecord(name=req.name[:60], input=outcome.input, result_status=outcome.status,
                                               result_summary=outcome.summary, provenance=outcome.provenance))
+                if on_event is not None:
+                    await on_event(ChatEvent("tool_result", rounds, call_id, req.name[:60], req.arguments, outcome))
                 results.append((req.id, outcome.for_model(), outcome.status != "ok"))
             adapter.add_tool_results(results)
             continue
@@ -1143,7 +1176,7 @@ async def run_chat(adapter: Adapter, toolbox: ToolBox, history: list[dict[str, s
             repaired = True
             adapter.add_user_note(step.text, repair_message(flagged))
             if on_event is not None:
-                await on_event("repair", {"unsupported": flagged})
+                await on_event(ChatEvent("repair", rounds, detail={"unsupported": flagged}))
             continue
         if flagged:
             return done("error", "", [UNSUPPORTED_FIGURES_NOTE + " Unsupported: " + ", ".join(flagged[:10]) + "."])
@@ -1164,7 +1197,8 @@ async def run_chat(adapter: Adapter, toolbox: ToolBox, history: list[dict[str, s
 
 __all__ = [
     "CHAT_LABEL", "CHAT_PROVENANCE", "CHAT_PROVIDERS", "MAX_OUTPUT_TOKENS", "MAX_TOOL_ROUNDS", "Catalog",
-    "CatalogModel", "ChatOutcome", "ChatUpstreamError", "ClientFactory", "ToolBox", "ToolCallRecord", "ToolOutcome",
+    "CatalogModel", "ChatEvent", "ChatOutcome", "ChatUpstreamError", "ClientFactory", "EventSink", "ToolBox",
+    "ToolCallRecord", "ToolOutcome",
     "ToolSpec", "adapter_for", "affordable", "build_catalog", "default_model_id", "featured_ids", "run_chat",
     "system_prompt",
 ]

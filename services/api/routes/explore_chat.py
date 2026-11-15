@@ -10,6 +10,10 @@ Routes:
   ``MAX_TOOL_ROUNDS`` rounds; each tool runs the existing route function in-process (never HTTP to itself), and
   ``tool_calls[].input`` is the exact validated request body the engine ran, so POSTing it to /api/simulate or
   /api/optimize reproduces ``result_summary``.
+- ``POST /api/explore/chat/stream`` (#222): the same turn (same body, gates, limits and honesty pipeline) as
+  server-sent events: ``start``, then live ``round`` / ``tool_call`` / ``tool_result`` steps with server-built
+  previews, then ``final`` (the exact POST /api/explore/chat body) or ``error``. Reply text is never streamed: it
+  arrives only inside ``final``, after the figure check, so a withheld reply is never shown.
 - ``GET  /api/explore/chat/status`` / ``POST /api/explore/chat/pause`` (admin): the presenter pause switch.
 
 Tools: simulate, optimize, decision, list_scenarios, list_judge_challenges, list_decision_frames, vc_lenses, and
@@ -36,12 +40,13 @@ worker); a restart clears it, including a pause.
 from __future__ import annotations
 
 import asyncio
+import json
 import logging
 import os
 import re
 import time
 from collections import OrderedDict, deque
-from collections.abc import Callable, Coroutine
+from collections.abc import AsyncIterator, Callable, Coroutine
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from typing import Annotated, Any, Literal
@@ -49,11 +54,12 @@ from urllib.parse import urlsplit
 
 import httpx
 from fastapi import APIRouter, Depends, Request, Response
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, StreamingResponse
 from pydantic import BaseModel, ConfigDict, Field, ValidationError, model_validator
 from starlette.requests import Request as StarletteRequest
 
 from agents import explore_chat as chat
+from agents import explore_chat_steps as steps
 from agents import explore_web_search as web_llm
 from agents import tavily
 from config import CHAT_WINDOW_S, Settings, admin_token_matches, get_settings, public_chat_enabled
@@ -191,6 +197,7 @@ class ChatState:
         self.web_day: str | None = None  # UTC date the web_search counters belong to
         self.web_total = 0
         self.web_by_ip: dict[str, int] = {}
+        self.stream_tasks: set[asyncio.Task[None]] = set()  # streamed turns still running (#222)
 
     def spent_today(self) -> float:
         today = self.wall().date().isoformat()
@@ -919,6 +926,30 @@ class ChatResponse(BaseModel):
     notes: list[str]
 
 
+class ChatStreamEvent(BaseModel):
+    """One `data:` line of POST /api/explore/chat/stream (documentation of the SSE contract, #222). Previews are
+    built on the server from the tool arguments and results; reply text only ever arrives inside `final`."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    type: Literal["start", "round", "tool_call", "tool_result", "repair", "final", "error"]
+    model_id: str | None = Field(default=None, description="start")
+    provider: Literal["openrouter", "openai", "anthropic"] | None = Field(default=None, description="start")
+    started_at: datetime | None = Field(default=None, description="start (UTC)")
+    n: int | None = Field(default=None, description="round: 1..MAX_TOOL_ROUNDS; repair: how many figures failed")
+    id: str | None = Field(default=None, description="tool_call / tool_result: '<round>.<index>', shared by both")
+    name: str | None = Field(default=None, description="tool_call / tool_result: the tool")
+    input_preview: str | None = Field(default=None, description="tool_call: what the model asked for, in words")
+    result_status: Literal["ok", "error"] | None = Field(default=None, description="tool_result")
+    provenance: str | None = Field(default=None, description="tool_result: the tool result's provenance label")
+    preview: str | None = Field(default=None,
+                                description="tool_result: one line from the engine summary; repair: a note")
+    response: ChatResponse | None = Field(default=None, description="final: the POST /api/explore/chat body")
+    code: str | None = Field(default=None, description="error: the machine-readable code")
+    message: str | None = Field(default=None, description="error: plain-language, safe to show")
+    status: int | None = Field(default=None, description="error: the HTTP status the JSON route would have sent")
+
+
 class ChatPricing(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
@@ -1059,17 +1090,10 @@ def _upstream(err: chat.ChatUpstreamError, provider: str) -> RouteError:
     return RouteError(ErrorCode.UPSTREAM_ERROR, f"{name} returned an error. No reply was made up.", 502)
 
 
-@router.post("/explore/chat", response_model=ChatResponse, responses=_ERRORS,
-             dependencies=[Depends(require_chat_access)],
-             summary="LIVE EXPLORE chat turn: MODEL-WRITTEN, numbers from engine tools")
-async def chat_turn(
-    body: ChatRequest,
-    request: Request,
-    settings: Annotated[Settings, Depends(get_settings)],
-    state: Annotated[ChatState, Depends(get_chat_state)],
-    clients: Annotated[chat.ClientFactory, Depends(get_chat_clients)],
-    tavily_transport: Annotated[httpx.AsyncBaseTransport | None, Depends(get_chat_tavily_transport)],
-) -> ChatResponse | JSONResponse:
+async def _admit(body: ChatRequest, request: Request, settings: Settings, state: ChatState,
+                 clients: chat.ClientFactory) -> tuple[chat.CatalogModel, bool]:
+    """Every gate before the tool loop, in order (pause, budget, per-IP, catalogue, key, concurrency). Shared by
+    POST /api/explore/chat and its stream twin, so both refuse the same requests with the same codes."""
     admin = is_admin(request)
     if not admin and state.paused() is not None:
         raise RouteError(ErrorCode.PAUSED, PAUSED_MESSAGE, 503)
@@ -1092,10 +1116,22 @@ async def chat_turn(
         raise RouteError(ErrorCode.LIVE_EXPLORE_UNAVAILABLE,
                          f"Live chat with {chat.PROVIDER_NAMES[model.provider]} models is unavailable: its API key "
                          f"{why}.", 503)
+    _check_busy(state, settings)
+    return model, admin
+
+
+def _check_busy(state: ChatState, settings: Settings) -> None:
     if state.active >= settings.chat_concurrency:
         raise RouteError(ErrorCode.BUSY, "The live chat is busy with other conversations. Nothing was sent; try "
                          "again in a moment.", 503, headers={"Retry-After": str(BUSY_RETRY_AFTER_S)})
 
+
+async def _run_turn(body: ChatRequest, request: Request, model: chat.CatalogModel, admin: bool, settings: Settings,
+                    state: ChatState, clients: chat.ClientFactory,
+                    tavily_transport: httpx.AsyncBaseTransport | None,
+                    on_event: chat.EventSink | None = None) -> ChatResponse:
+    """The tool loop and the honesty pipeline (figure check, withholding, notes) for one admitted turn."""
+    _check_busy(state, settings)  # again, with no await before the increment: the stream admits, then runs later
     state.active += 1
     caller = None if admin else rate_limit_key(request.client.host if request.client else "unknown")
     toolbox = EngineToolBox(settings, tavily_transport, web_quota=lambda: state.web_take(
@@ -1104,7 +1140,7 @@ async def chat_turn(
     try:
         adapter = chat.adapter_for(model, clients)
         async with asyncio.timeout(TURN_TIMEOUT_S):
-            outcome = await chat.run_chat(adapter, toolbox, history, web_search=toolbox.web)
+            outcome = await chat.run_chat(adapter, toolbox, history, web_search=toolbox.web, on_event=on_event)
     except chat.ChatUpstreamError as err:
         logger.warning("chat: provider %s failed (%s)", model.provider, err.kind)
         if err.kind in ("auth", "not_found"):
@@ -1136,6 +1172,100 @@ async def chat_turn(
                     for r in outcome.tool_calls],
         usage=usage, notes=[*outcome.notes, STANDARD_NOTE],
     )
+
+
+@router.post("/explore/chat", response_model=ChatResponse, responses=_ERRORS,
+             dependencies=[Depends(require_chat_access)],
+             summary="LIVE EXPLORE chat turn: MODEL-WRITTEN, numbers from engine tools")
+async def chat_turn(
+    body: ChatRequest,
+    request: Request,
+    settings: Annotated[Settings, Depends(get_settings)],
+    state: Annotated[ChatState, Depends(get_chat_state)],
+    clients: Annotated[chat.ClientFactory, Depends(get_chat_clients)],
+    tavily_transport: Annotated[httpx.AsyncBaseTransport | None, Depends(get_chat_tavily_transport)],
+) -> ChatResponse | JSONResponse:
+    model, admin = await _admit(body, request, settings, state, clients)
+    return await _run_turn(body, request, model, admin, settings, state, clients, tavily_transport)
+
+
+# --------------------------------------------------------------------------- the stream twin (#222)
+
+HEARTBEAT_S = 10.0
+SSE_HEADERS = {"Cache-Control": "no-cache", "X-Accel-Buffering": "no"}
+_STREAM_RESPONSES: dict[int | str, dict[str, Any]] = {
+    **_ERRORS,
+    200: {"content": {"text/event-stream": {}},
+          "description": "Server-sent events, one JSON `data:` line each: start, round, tool_call, tool_result, then "
+                         "exactly one of final ({response: the POST /api/explore/chat body}) or error "
+                         "{code, message, status}. `: heartbeat` comment lines every 10 s."},
+}
+
+
+def _sse(payload: dict[str, Any]) -> str:
+    return "data: " + json.dumps(payload, ensure_ascii=False, separators=(",", ":"), default=str) + "\n\n"
+
+
+async def _stream_turn(body: ChatRequest, request: Request, model: chat.CatalogModel, admin: bool,
+                       settings: Settings, state: ChatState, clients: chat.ClientFactory,
+                       tavily_transport: httpx.AsyncBaseTransport | None,
+                       heartbeat_s: float | None = None) -> AsyncIterator[str]:
+    """start, then live tool steps, then the final response (after the figure check) or an error. Reply text only
+    ever travels inside `final`: a withheld reply has an empty `reply` there and is never streamed."""
+    queue: asyncio.Queue[dict[str, Any] | None] = asyncio.Queue()
+
+    async def sink(ev: chat.ChatEvent) -> None:
+        await queue.put(steps.event_payload(ev))
+
+    async def work() -> None:
+        try:
+            resp = await _run_turn(body, request, model, admin, settings, state, clients, tavily_transport, sink)
+            await queue.put({"type": "final", "response": resp.model_dump(mode="json")})
+        except RouteError as err:
+            await queue.put({"type": "error", "code": str(err.code), "message": err.message,
+                             "status": err.status_code})
+        except Exception:  # never a stack trace or a stand-in answer on the wire
+            logger.exception("chat stream: turn failed")
+            await queue.put({"type": "error", "code": str(ErrorCode.UPSTREAM_ERROR),
+                             "message": "The turn failed on the server. No reply was made up.", "status": 500})
+        finally:
+            await queue.put(None)
+
+    yield _sse({"type": "start", "model_id": model.id, "provider": model.provider,
+                "started_at": state.wall().isoformat()})
+    # The turn runs to completion even if the browser goes away (as POST /api/explore/chat does), so its spend is
+    # recorded; the task is held on the state so it is not garbage-collected mid-turn.
+    task = asyncio.create_task(work())
+    state.stream_tasks.add(task)
+    task.add_done_callback(state.stream_tasks.discard)
+    while True:
+        try:
+            item = await asyncio.wait_for(queue.get(), heartbeat_s or HEARTBEAT_S)
+        except TimeoutError:
+            yield ": heartbeat\n\n"
+            continue
+        if item is None:
+            return
+        yield _sse(item)
+
+
+@router.post("/explore/chat/stream", response_model=ChatStreamEvent, response_class=StreamingResponse,
+             responses=_STREAM_RESPONSES, dependencies=[Depends(require_chat_access)],
+             summary="LIVE EXPLORE chat turn, streamed: live tool steps, then the same final body")
+async def chat_stream(
+    body: ChatRequest,
+    request: Request,
+    settings: Annotated[Settings, Depends(get_settings)],
+    state: Annotated[ChatState, Depends(get_chat_state)],
+    clients: Annotated[chat.ClientFactory, Depends(get_chat_clients)],
+    tavily_transport: Annotated[httpx.AsyncBaseTransport | None, Depends(get_chat_tavily_transport)],
+) -> StreamingResponse:
+    """Same body, gates and limits as POST /api/explore/chat; a refused request gets the same JSON error before
+    any event is sent."""
+    model, admin = await _admit(body, request, settings, state, clients)
+    return StreamingResponse(
+        _stream_turn(body, request, model, admin, settings, state, clients, tavily_transport),
+        media_type="text/event-stream", headers=SSE_HEADERS)
 
 
 router.include_router(admin_router)

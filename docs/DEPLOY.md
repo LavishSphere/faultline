@@ -82,6 +82,7 @@ disagree with it, or if this table and the code differ. A new route therefore ca
 | `POST /api/explore/analyze` | admin | Tavily credits and local-model inference |
 | `GET /api/explore/search` | admin | Tavily credits |
 | `POST /api/explore/chat` | public-if-flag | hosted-model credits: admin-only unless `FAULTLINE_PUBLIC_CHAT=1`; own per-IP limit (#187) |
+| `POST /api/explore/chat/stream` | public-if-flag | the same chat turn as server-sent events (live tool steps, then the same final body); same gates and per-IP limit (#222) |
 | `GET /api/explore/chat/models` | public | chat model catalogue; key presence as booleans only |
 | `GET /api/explore/chat/status` | public | presenter pause state |
 | `GET /api/explore/chat/starters` | public | chat starter questions written by Claude from current news (Anthropic web search); cached in process 6 h (`FAULTLINE_STARTERS_TTL_S`), one refresh at a time, at most 4 refreshes a day, spend counted in the chat daily budget; every `source_url` verified against the search results; 503 `STARTERS_UNAVAILABLE` when fewer than 2 pass (#223) |
@@ -103,8 +104,13 @@ disagree with it, or if this table and the code differ. A new route therefore ca
 | `GET /api/internal-data` | public | SYNTHETIC mock data room: table list (fixture read) |
 | `GET /api/internal-data/{table}` | public | SYNTHETIC mock data room: one table's rows (fixture read) |
 
-The web app never sends the admin token (CORS does not allow the `Authorization` header), so on the public site
-the admin-only features show their "admin only" state. On the server, Live Explore could not work anyway: the api
+The web app never sends the admin token to the admin-only routes (CORS does not allow the `Authorization` header
+there), so on the public site the admin-only features show their "admin only" state. One exception, presenter mode
+(#222): on the presenter's laptop, `/explore/#presenter` asks once for the admin token, keeps it in that browser's
+`localStorage` (never in the URL or the page), and the chat sends it as `Authorization: Bearer …` on exactly
+`/api/explore/chat`, `/api/explore/chat/stream`, `/api/explore/chat/models` and `/api/explore/chat/status`, the only
+paths where CORS allows that header. The presenter then bypasses the per-IP chat limit, the web_search caps and the
+presenter pause, which would otherwise hit everyone behind the venue's one address. "exit" removes the token. On the server, Live Explore could not work anyway: the api
 container has no internet route.
 
 ### Optional: live chat egress (`FAULTLINE_CHAT_EGRESS`)
@@ -113,6 +119,11 @@ The LIVE EXPLORE chat (`POST /api/explore/chat`, #187) calls hosted models (Open
 `TAVILY_API_KEY` is set, Tavily. In the default stack the api container sits only on the internal `edge` and `models`
 networks, so it **cannot reach any provider** and every chat turn fails with 502 `UPSTREAM_ERROR` (the catalogue
 says the lists are NOT AVAILABLE). That default does not change.
+
+The streamed twin (`POST /api/explore/chat/stream`, #222) sends `text/event-stream` with `Cache-Control: no-cache`,
+`X-Accel-Buffering: no` and a `: heartbeat` comment every 10 s. `deploy/Caddyfile` sets `flush_interval -1` on the
+reverse proxy and excludes `text/event-stream` from compression, so each step reaches the browser as it happens
+instead of when the turn ends.
 
 To switch the chat on, opt in explicitly with the override file, which attaches the api service to one extra,
 non-internal network:
@@ -315,7 +326,10 @@ in the remote home) and `FAULTLINE_API_HOST` (otherwise read from the server's `
   Caddy: all capabilities dropped except `NET_BIND_SERVICE`, read-only. Ollama: the image has no non-root user,
   so it runs as uid 0 but with all capabilities dropped, `no-new-privileges`, 32 GB memory and 512 pids.
 - **CORS:** allowlist only, methods GET/POST, header `Content-Type`, no credentials. `Authorization` is not an
-  allowed header, so a browser page cannot send the admin token cross-origin; use it from a terminal.
+  allowed header (so a browser page cannot send the admin token cross-origin; use it from a terminal) except on the
+  four presenter-mode chat paths (`main.PRESENTER_CORS_PATHS`, #222). Trade-off: a token in `localStorage` is
+  readable by any script on the site origin, so only enter it on the presenter's own laptop, and rotate
+  `FAULTLINE_ADMIN_TOKEN` after the demo.
 - **Client address:** Caddy overwrites `X-Forwarded-For` with the TCP peer (`header_up X-Forwarded-For
   {remote_host}`), so it carries exactly one, unspoofable entry; uvicorn (`--proxy-headers`) uses it as the client IP.
   uvicorn trusts that header only from the `edge` network: `deploy/docker-compose.yml` pins the `edge` subnet once

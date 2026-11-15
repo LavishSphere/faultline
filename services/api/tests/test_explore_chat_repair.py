@@ -100,16 +100,17 @@ class _OkBox:
 
 
 def test_repair_emits_a_repair_event_when_a_callback_is_given():
-    events: list[tuple[str, dict[str, Any]]] = []
+    events: list[tuple[str, dict[str, Any] | None]] = []
 
-    async def on_event(kind: str, data: dict[str, Any]) -> None:
-        events.append((kind, data))
+    async def on_event(ev: chat.ChatEvent) -> None:
+        events.append((ev.type, ev.detail))
 
     adapter = _ScriptedAdapter(["Runway is $5,000,000.", "No figures this time."])
     # a prior ok tool record is needed for the repair path (no tool at all = withheld outright), so seed one
     out = asyncio.run(_run_with_ok_record(adapter, on_event))
     assert out.status == "ok" and out.reply == "No figures this time."
-    assert events == [("repair", {"unsupported": ["$5,000,000"]})]
+    assert events == [("round", None), ("tool_call", None), ("tool_result", None),
+                      ("repair", {"unsupported": ["$5,000,000"]})]
     assert adapter.notes == [("Runway is $5,000,000.", chat.repair_message(["$5,000,000"]))]
 
 

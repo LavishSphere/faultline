@@ -11,16 +11,21 @@
  *
  * Honesty rules (AGENTS.md §4): the reply is MODEL-WRITTEN text; every number it quotes came from an engine tool the
  * server ran. The browser never recomputes or edits those numbers. A body that does not match the contract is refused
- * as `malformed` (rendered NOT AVAILABLE), never coerced. The API is not streaming: nothing here imitates live tokens.
+ * as `malformed` (rendered NOT AVAILABLE), never coerced.
  *
- * TODO(presenter mode): when `components/PresenterToken.tsx` and the Authorization header in `lib/api.ts`
- * `requestJson` land on main, chat requests inherit that header automatically because they go through `requestJson`.
- * Until then chat requests carry no token, and a 401/403 renders "chat is disabled on the public demo right now".
+ * Streaming (#222): POST /api/explore/chat/stream sends the model's tool steps as server-sent events while the turn
+ * runs, with one-line previews the SERVER built from the tool results. The reply text is never streamed: it arrives
+ * only in the `final` event (the same body POST /api/explore/chat returns), after the server's figure check, so a
+ * withheld reply is never shown. Nothing here imitates live tokens.
+ *
+ * Presenter mode (#222, lib/presenter.ts): every chat call carries the presenter's Authorization header when set.
  */
-import { requestJson, type ApiFailure, type ApiResult } from "./api";
+import { API_BASE, describeErrorBody, requestJson, type ApiFailure, type ApiResult } from "./api";
+import { presenterHeaders } from "./presenter";
 
 export const CHAT_MODELS_PATH = "/api/explore/chat/models";
 export const CHAT_PATH = "/api/explore/chat";
+export const CHAT_STREAM_PATH = "/api/explore/chat/stream";
 
 /** Server limits: at most 20 messages per request, 4,000 characters each. */
 export const CHAT_MAX_MESSAGES = 20;
@@ -262,7 +267,7 @@ export function messageProblem(text: string, history: readonly ChatMessage[]): s
 
 /** GET /api/explore/chat/models. Never throws. */
 export async function getChatModels(signal?: AbortSignal): Promise<ApiResult<ChatModelsResponse>> {
-  const res = await requestJson<ChatModelsResponse>("GET", CHAT_MODELS_PATH, 6000, signal);
+  const res = await requestJson<ChatModelsResponse>("GET", CHAT_MODELS_PATH, 6000, signal, undefined, presenterHeaders());
   if (!res.ok) return res;
   const problem = checkModelsResponse(res.data);
   return problem ? { ok: false, kind: "malformed", error: `malformed chat models payload: ${problem}` } : res;
@@ -270,7 +275,7 @@ export async function getChatModels(signal?: AbortSignal): Promise<ApiResult<Cha
 
 /** POST /api/explore/chat. Never throws. Tool-calling turns can take a while, so the timeout is generous. */
 export async function sendChat(req: ChatRequest, signal?: AbortSignal): Promise<ApiResult<ChatResponse>> {
-  const res = await requestJson<ChatResponse>("POST", CHAT_PATH, 120_000, signal, req);
+  const res = await requestJson<ChatResponse>("POST", CHAT_PATH, CHAT_TIMEOUT_MS, signal, req, presenterHeaders());
   if (!res.ok) return res;
   const problem = checkChatResponse(res.data);
   return problem ? { ok: false, kind: "malformed", error: `malformed chat payload: ${problem}` } : res;
@@ -340,11 +345,215 @@ export interface ChatPauseStatus {
 
 /** GET /api/explore/chat/status. Never throws; a body that does not match is `malformed` (no banner is shown). */
 export async function getChatStatus(signal?: AbortSignal): Promise<ApiResult<ChatPauseStatus>> {
-  const res = await requestJson<ChatPauseStatus>("GET", CHAT_STATUS_PATH, 6000, signal);
+  const res = await requestJson<ChatPauseStatus>("GET", CHAT_STATUS_PATH, 6000, signal, undefined, presenterHeaders());
   if (!res.ok) return res;
   const v: unknown = res.data;
   if (!isObj(v) || typeof v.paused !== "boolean" || !strOrNull(v.until)) {
     return { ok: false, kind: "malformed", error: "malformed chat status payload" };
   }
   return res;
+}
+
+// ---- streaming (#222) ------------------------------------------------------------------------------------------------
+
+/** Tool-calling turns can take a while; the same budget for the JSON route and the stream. */
+export const CHAT_TIMEOUT_MS = 120_000;
+
+/** One SSE `data:` object of POST /api/explore/chat/stream (routes/explore_chat.py `ChatStreamEvent`). */
+export type ChatStreamEvent =
+  | { type: "start"; model_id: string; provider: string; started_at: string }
+  | { type: "round"; n: number }
+  | { type: "tool_call"; id: string; name: string; input_preview: string }
+  | { type: "tool_result"; id: string; name: string; result_status: string; preview: string; provenance: string | null }
+  | { type: "repair"; n: number; preview: string }
+  | { type: "final"; response: ChatResponse }
+  | { type: "error"; code: string | null; message: string; status: number | null };
+
+/**
+ * Incremental SSE parser: feed text chunks as they arrive, get back each complete event's `data:` payload.
+ * Handles CRLF, events split across chunks, multi-line data and `:` comment lines (heartbeats), per the SSE spec.
+ */
+export class SseParser {
+  private buf = "";
+  private data: string[] = [];
+
+  feed(chunk: string): string[] {
+    this.buf += chunk;
+    const out: string[] = [];
+    for (;;) {
+      const nl = this.buf.search(/\r\n|\n|\r/);
+      if (nl === -1) break;
+      // A trailing \r may be the first half of \r\n: wait for the next chunk.
+      if (this.buf[nl] === "\r" && nl === this.buf.length - 1) break;
+      const sep = this.buf.startsWith("\r\n", nl) ? 2 : 1;
+      const line = this.buf.slice(0, nl);
+      this.buf = this.buf.slice(nl + sep);
+      if (line === "") {
+        if (this.data.length) out.push(this.data.join("\n"));
+        this.data = [];
+      } else if (line.startsWith("data:")) {
+        this.data.push(line.slice(5).replace(/^ /, ""));
+      }
+      // `:` comments (heartbeats) and other fields (event:, id:, retry:) are ignored.
+    }
+    return out;
+  }
+}
+
+const strOr = (v: unknown): string | null => (typeof v === "string" ? v : null);
+
+/** Shape check for one stream event. Returns null for anything unknown or malformed (ignored, never guessed). */
+export function readStreamEvent(raw: string): ChatStreamEvent | null {
+  let v: unknown;
+  try {
+    v = JSON.parse(raw);
+  } catch {
+    return null;
+  }
+  if (!isObj(v) || typeof v.type !== "string") return null;
+  switch (v.type) {
+    case "start":
+      return typeof v.model_id === "string" && typeof v.provider === "string"
+        ? { type: "start", model_id: v.model_id, provider: v.provider, started_at: strOr(v.started_at) ?? "" }
+        : null;
+    case "round":
+      return isCount(v.n) ? { type: "round", n: v.n } : null;
+    case "tool_call":
+      return typeof v.id === "string" && typeof v.name === "string" && typeof v.input_preview === "string"
+        ? { type: "tool_call", id: v.id, name: v.name, input_preview: v.input_preview }
+        : null;
+    case "tool_result":
+      return typeof v.id === "string" && typeof v.name === "string" && typeof v.result_status === "string" && typeof v.preview === "string"
+        ? { type: "tool_result", id: v.id, name: v.name, result_status: v.result_status, preview: v.preview, provenance: strOr(v.provenance) }
+        : null;
+    case "repair":
+      return isCount(v.n) && typeof v.preview === "string" ? { type: "repair", n: v.n, preview: v.preview } : null;
+    case "final":
+      return isObj(v.response) && checkChatResponse(v.response) === null
+        ? { type: "final", response: v.response as unknown as ChatResponse }
+        : null;
+    case "error":
+      return typeof v.message === "string"
+        ? { type: "error", code: strOr(v.code), message: v.message, status: typeof v.status === "number" ? v.status : null }
+        : null;
+    default:
+      return null;
+  }
+}
+
+/** One live step in the waiting state: what the model asked for, then the server's one-line result. */
+export interface LiveStep {
+  id: string;
+  name: string;
+  input: string;
+  /** `note`: not a tool call, e.g. the server asking the model to rewrite a reply whose figures failed (#221). */
+  status: "running" | "ok" | "error" | "note";
+  preview: string | null;
+}
+
+/** Fold a stream event into the live step list (pure; previews are shown exactly as the server wrote them). */
+export function applyStreamEvent(steps: readonly LiveStep[], ev: ChatStreamEvent): LiveStep[] {
+  if (ev.type === "tool_call") {
+    if (steps.some((s) => s.id === ev.id)) return [...steps];
+    return [...steps, { id: ev.id, name: ev.name, input: ev.input_preview, status: "running", preview: null }];
+  }
+  if (ev.type === "tool_result") {
+    const status = ev.result_status === "ok" ? "ok" : "error";
+    if (!steps.some((s) => s.id === ev.id)) return [...steps, { id: ev.id, name: ev.name, input: ev.name, status, preview: ev.preview }];
+    return steps.map((s) => (s.id === ev.id ? { ...s, status, preview: ev.preview } : s));
+  }
+  if (ev.type === "repair") {
+    return [...steps, { id: `repair-${steps.length}`, name: "repair", input: ev.preview, status: "note", preview: null }];
+  }
+  return [...steps];
+}
+
+/** What streamChat reports while it runs: server events, or a local `fallback` notice (one-piece reply instead). */
+export type StreamNotice = ChatStreamEvent | { type: "fallback"; reason: string };
+
+/**
+ * POST /api/explore/chat/stream. Never throws. Calls `onEvent` for each step as it arrives and resolves with the
+ * `final` response (checked like sendChat's). Falls back to sendChat (one piece, not streamed) when the API does not
+ * serve the stream (404/405), the browser cannot read it, or it ends or breaks before `final`; `onEvent` then gets a
+ * `fallback` notice. A refusal (429, 503 PAUSED, ...) or an `error` event is a failure, never retried.
+ */
+export async function streamChat(
+  req: ChatRequest,
+  onEvent: (ev: StreamNotice) => void,
+  signal?: AbortSignal,
+): Promise<ApiResult<ChatResponse>> {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(new DOMException("timeout", "TimeoutError")), CHAT_TIMEOUT_MS);
+  const onAbort = () => controller.abort(signal?.reason);
+  if (signal?.aborted) onAbort();
+  signal?.addEventListener("abort", onAbort, { once: true });
+  const fallback = (reason: string) => {
+    onEvent({ type: "fallback", reason });
+    return sendChat(req, signal);
+  };
+  const stopped = (): ApiFailure | null => {
+    if (!controller.signal.aborted) return null;
+    const reason: unknown = controller.signal.reason;
+    return reason instanceof DOMException && reason.name === "TimeoutError"
+      ? { ok: false, kind: "timeout", error: "timed out" }
+      : { ok: false, kind: "aborted", error: "aborted" };
+  };
+  try {
+    let res: Response;
+    try {
+      res = await fetch(`${API_BASE}${CHAT_STREAM_PATH}`, {
+        method: "POST",
+        headers: { Accept: "text/event-stream", "Content-Type": "application/json", ...presenterHeaders() },
+        body: JSON.stringify(req),
+        cache: "no-store",
+        signal: controller.signal,
+      });
+    } catch (err) {
+      return stopped() ?? { ok: false, kind: "network", error: err instanceof Error ? err.message : "request failed" };
+    }
+    if (res.status === 404 || res.status === 405) return await fallback("this API build does not stream chat");
+    if (!res.ok) {
+      let parsed: unknown = null;
+      try {
+        parsed = await res.json();
+      } catch {
+        parsed = null;
+      }
+      const { message, code } = describeErrorBody(parsed);
+      return { ok: false, kind: res.status === 422 ? "validation" : "http", status: res.status, code, error: message ?? `HTTP ${res.status}` };
+    }
+    if (!res.body || !(res.headers.get("content-type") ?? "").includes("text/event-stream")) {
+      return await fallback("the stream could not be read");
+    }
+    const reader = res.body.getReader();
+    const decoder = new TextDecoder();
+    const parser = new SseParser();
+    for (;;) {
+      let chunk: ReadableStreamReadResult<Uint8Array>;
+      try {
+        chunk = await reader.read();
+      } catch {
+        return stopped() ?? (await fallback("the stream broke before the reply"));
+      }
+      if (chunk.done) break;
+      for (const raw of parser.feed(decoder.decode(chunk.value, { stream: true }))) {
+        const ev = readStreamEvent(raw);
+        if (!ev) continue;
+        if (ev.type === "final") {
+          void reader.cancel().catch(() => undefined);
+          return { ok: true, data: ev.response, mode: res.headers.get("x-faultline-mode") };
+        }
+        if (ev.type === "error") {
+          void reader.cancel().catch(() => undefined);
+          const status = ev.status ?? 502;
+          return { ok: false, kind: status === 422 ? "validation" : "http", status, code: ev.code ?? undefined, error: ev.message };
+        }
+        onEvent(ev);
+      }
+    }
+    return stopped() ?? (await fallback("the stream ended before the reply"));
+  } finally {
+    clearTimeout(timer);
+    signal?.removeEventListener("abort", onAbort);
+  }
 }

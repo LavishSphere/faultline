@@ -51,6 +51,7 @@ function reply(calls: unknown[]) {
 
 async function mock(page: Page, calls: unknown[]) {
   await page.route(MODELS_URL, (r) => r.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify(MODELS) }));
+  await page.route(`${CHAT_URL}/stream`, (r) => r.fulfill({ status: 404, contentType: "application/json", body: "{}" })); // one-piece path (#222)
   await page.route(CHAT_URL, (r) => r.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify(reply(calls)) }));
 }
 

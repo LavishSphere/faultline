@@ -11,6 +11,7 @@ import { E2E_API_BASE } from "./ports";
 
 const MODELS_URL = `${E2E_API_BASE}/api/explore/chat/models`;
 const CHAT_URL = `${E2E_API_BASE}/api/explore/chat`;
+const STREAM_URL = `${CHAT_URL}/stream`;
 
 
 // ---- TEST FIXTURES (chat contract shapes; never real model output) -------------------------------------------------
@@ -72,6 +73,8 @@ async function mockModels(page: Page, body: unknown = MODELS, status = 200) {
 /** Fulfil POST /api/explore/chat with `respond(body)`; every request body is recorded. */
 async function mockChat(page: Page, respond: (req: { model_id: string; messages: unknown[] }) => { status?: number; body: unknown; delayMs?: number }) {
   const bodies: { model_id: string; messages: { role: string; content: string }[] }[] = [];
+  // These specs exercise the one-piece reply: the stream route (#222) answers 404, so the page falls back to it.
+  await page.route(STREAM_URL, (route) => route.fulfill({ status: 404, contentType: "application/json", body: "{}" }));
   await page.route(CHAT_URL, async (route: Route) => {
     const req = route.request().postDataJSON() as { model_id: string; messages: { role: string; content: string }[] };
     bodies.push(req);
@@ -145,7 +148,7 @@ test.describe("Ask the engine: conversation", () => {
 
     const enginePosts: string[] = [];
     page.on("request", (r) => {
-      if (r.method() === "POST" && r.url().startsWith(E2E_API_BASE) && r.url() !== CHAT_URL) enginePosts.push(r.url());
+      if (r.method() === "POST" && r.url().startsWith(E2E_API_BASE) && r.url() !== CHAT_URL && r.url() !== STREAM_URL) enginePosts.push(r.url());
     });
     await ask(page, "What if the supplier goes bust and we protect payroll?");
     const waitingCard = page.getByTestId("chat-waiting");

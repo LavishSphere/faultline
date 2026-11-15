@@ -172,6 +172,37 @@ def test_admin_header_is_not_allowed_cross_origin(monkeypatch):
     assert resp.status_code == 400
 
 
+def _auth_preflight(client: TestClient, path: str, method: str = "POST"):
+    return client.options(path, headers={"Origin": PUBLIC_ORIGIN, "Access-Control-Request-Method": method,
+                                         "Access-Control-Request-Headers": "authorization,content-type"})
+
+
+@pytest.mark.parametrize("path", ["/api/explore/chat", "/api/explore/chat/stream", "/api/explore/chat/models",
+                                  "/api/explore/chat/status"])
+def test_presenter_mode_allows_authorization_on_the_chat_paths_only(monkeypatch, path):
+    """#222 presenter mode: the chat UI may send the admin token on the four chat paths; nowhere else."""
+    monkeypatch.setenv("FAULTLINE_MODE", "public")
+    monkeypatch.setenv("FAULTLINE_CORS_ORIGINS", PUBLIC_ORIGIN)
+    client = TestClient(create_app())
+    ok = _auth_preflight(client, path)
+    assert ok.status_code == 200 and "authorization" in ok.headers["access-control-allow-headers"].lower()
+    assert ok.headers["access-control-allow-origin"] == PUBLIC_ORIGIN
+    assert _auth_preflight(client, path).headers.get("access-control-allow-credentials") is None
+    # Another origin still gets nothing.
+    other = client.options(path, headers={"Origin": OTHER_ORIGIN, "Access-Control-Request-Method": "POST",
+                                          "Access-Control-Request-Headers": "authorization"})
+    assert other.status_code == 400
+
+
+@pytest.mark.parametrize("path", ["/api/replay/run", "/api/replay/x/reveal", "/api/benchmark/compute",
+                                  "/api/explore/search", "/api/explore/analyze", "/api/explore/chat/pause",
+                                  "/api/explore/chat/stream/x", "/api/explore/chatx"])
+def test_presenter_mode_keeps_authorization_refused_elsewhere(monkeypatch, path):
+    monkeypatch.setenv("FAULTLINE_MODE", "public")
+    monkeypatch.setenv("FAULTLINE_CORS_ORIGINS", PUBLIC_ORIGIN)
+    assert _auth_preflight(TestClient(create_app()), path).status_code == 400
+
+
 @pytest.mark.parametrize(
     "bad",
     [
@@ -625,3 +656,12 @@ def test_no_server_addresses_or_credentials_committed(rel):
     assert not re.search(r"-----BEGIN [A-Z ]*PRIVATE KEY-----", text)
     assert not re.search(r"\b[\w.-]+@(?:\d{1,3}\.){3}\d{1,3}\b", text), "user@ip SSH target"
     assert not re.search(r"^FAULTLINE_ADMIN_TOKEN=\S+", text, re.M), "admin token value committed"
+
+
+def test_caddy_streams_the_chat_events_unbuffered():
+    """#222: the SSE chat stream is flushed per chunk and never compressed (an encoder would buffer the steps)."""
+    caddy = _read("deploy/Caddyfile")
+    proxy_block = caddy.split("reverse_proxy api:8000", 1)[1].split("\n\t}", 1)[0]
+    assert re.search(r"^\s*flush_interval -1\s*$", proxy_block, re.M)
+    assert "@compressible not path /api/explore/chat/stream" in caddy
+    assert re.search(r"^\s*encode @compressible zstd gzip\s*$", caddy, re.M)

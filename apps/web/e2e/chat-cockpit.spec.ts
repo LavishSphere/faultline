@@ -73,6 +73,8 @@ type ChatBody = { model_id: string; messages: { role: string; content: string }[
 
 async function mockChat(page: Page, respond: (req: ChatBody, n: number) => { status?: number; body: unknown; delayMs?: number }) {
   const bodies: ChatBody[] = [];
+  // These specs exercise the one-piece reply: the stream route (#222) answers 404, so the page falls back to it.
+  await page.route(`${CHAT_URL}/stream`, (route) => route.fulfill({ status: 404, contentType: "application/json", body: "{}" }));
   await page.route(CHAT_URL, async (route: Route) => {
     const req = route.request().postDataJSON() as ChatBody;
     bodies.push(req);

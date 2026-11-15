@@ -16,7 +16,9 @@
 		max_size 64KiB
 	}
 
-	encode zstd gzip
+	# The chat stream (#222) is server-sent events: never compressed, so no encoder holds a step back.
+	@compressible not path /api/explore/chat/stream
+	encode @compressible zstd gzip
 
 	header {
 		-Server
@@ -28,8 +30,10 @@
 
 	# X-Forwarded-For is overwritten with the TCP peer address, so it holds exactly one entry and a client cannot
 	# prepend a spoofed one. The API's per-IP rate limiter reads it via uvicorn --proxy-headers.
+	# flush_interval -1: write each response chunk at once, so the chat stream's steps arrive live (#222).
 	reverse_proxy api:8000 {
 		header_up X-Forwarded-For {remote_host}
+		flush_interval -1
 	}
 
 	log {

@@ -86,6 +86,7 @@ NOT_REPLAY = {
     # routes/explore_chat.py (#187): LIVE EXPLORE chat over the SYNTHETIC business; no case, outcome or store access
     # (tests/test_explore_separation.py proves the import walls both ways).
     "/api/explore/chat",
+    "/api/explore/chat/stream",  # #222: the same chat turn as SSE tool steps, same walls
     "/api/explore/chat/models",
     "/api/explore/chat/status",
     "/api/explore/chat/pause",
