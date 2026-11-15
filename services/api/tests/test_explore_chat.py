@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import json
 import logging
+import re
 from collections.abc import Callable
 from datetime import UTC, datetime, timedelta
 from typing import Any
@@ -29,6 +30,7 @@ ANTHROPIC_KEY = "test-anthropic-" + "a" * 24
 OPENAI_KEY = "test-openai-" + "i" * 24
 ADMIN = "c3" * 32  # 64 lower-case hex: the public-mode admin token shape
 LLAMA = "openrouter:meta-llama/llama-4-maverick"
+QWEN = "openrouter:qwen/qwen3-235b-a22b-2507"  # first featured model the fixture catalogue serves (#195 order)
 OPUS = "anthropic:claude-opus-5-5"
 SONNET = "anthropic:claude-sonnet-5-5"
 
@@ -358,7 +360,7 @@ def test_catalogue_never_offers_openrouter_copies_of_native_models(env):
     assert "openai:gpt-5.1" in ids and OPUS in ids
     providers = [m["provider"] for m in body["models"]]
     assert providers == sorted(providers, key=["openrouter", "openai", "anthropic"].index)
-    assert body["featured"][0] == LLAMA  # picker order: OpenRouter first
+    assert body["featured"][0] == QWEN and LLAMA not in body["featured"]  # #195: OpenRouter first, re-ranked
     assert body["default"] == SONNET  # preselected: the model that handled the live bad-quarter test (#198)
     llama = next(m for m in body["models"] if m["id"] == LLAMA)
     assert llama["note"] == "open-weight model, hosted via OpenRouter" and llama["context_length"] == 131072
@@ -756,7 +758,11 @@ def test_scenario_ids_and_names_are_in_the_simulate_and_optimize_schemas(env):
         assert "judge-supplier-insolvency (Primary supplier goes bust)" in sid["description"]
         assert "scenario_id" in tools[name]["description"]
         assert tools[name]["parameters"]["required"] == list(tools[name]["parameters"]["properties"])
-    assert "enum" not in json.dumps(tools["decision"]["parameters"])  # other tools unchanged
+    # decision lists its frame ids (#195): a plain string enum, no null (Anthropic strict tools accept it)
+    frame_id = tools["decision"]["parameters"]["properties"]["frame_id"]
+    assert frame_id["type"] == "string" and "fomc-rate-decision" in frame_id["enum"] and None not in frame_id["enum"]
+    assert "fomc-rate-decision (Will the FOMC" in frame_id["description"]
+    assert "enum" not in json.dumps(tools["list_scenarios"]["parameters"])  # other tools unchanged
 
 
 @pytest.mark.parametrize(("typed", "canonical"), [
@@ -794,7 +800,92 @@ def test_unknown_scenario_id_is_a_tool_error_listing_the_valid_ids(env):
 
 def test_default_model_is_sonnet_when_available_else_the_first_featured(env):
     body = Harness().client.get("/api/explore/chat/models").json()
-    assert body["default"] == SONNET and body["featured"][0] == LLAMA
+    assert body["default"] == SONNET and body["featured"][0] == QWEN
     env.delenv("ANTHROPIC_API_KEY")
     body = Harness().client.get("/api/explore/chat/models").json()
-    assert body["default"] == LLAMA == body["featured"][0]
+    assert body["default"] == QWEN == body["featured"][0]
+
+
+# --------------------------------------------------------------------------- chat QA tuning (#195)
+
+
+def test_a_fall_framed_by_the_word_after_the_figure_matches_the_negative_change():
+    results = [{"result": {"min_cash_change_vs_baseline": -49050.0, "ending_cash": -12000.0}}]
+    # the commonest withheld-but-correct phrasing in the #195 baseline
+    assert chat.unverified_numbers("Minimum cash is $49,050 below baseline.", results) == []
+    assert chat.unverified_numbers("That is $49,050 lower than without the shock.", results) == []
+    assert chat.unverified_numbers("The low point is $49,050 worse.", results) == []
+    # the sign rule still holds: no framing word, or one separated by punctuation, is flagged
+    assert chat.unverified_numbers("Ending cash is $12,000.", results) == ["$12,000"]
+    assert chat.unverified_numbers("Ending cash is $12,000, lower than you'd like.", results) == ["$12,000"]
+    assert chat.unverified_numbers("Minimum cash is $49,050 higher.", results) == ["$49,050"]
+
+
+@pytest.mark.parametrize("typed", ["null", "None", "none", " NULL ", ""])
+def test_scenario_id_written_as_null_text_runs_the_custom_shock(typed):
+    import asyncio
+
+    box = chat_routes.EngineToolBox(get_settings(), None)
+    shock = {"name": "Rates +150bp", "demand": None, "rate": {"delta_rate": 0.015, "start_week": 1}, "supplier": None}
+    out = asyncio.run(box.run("simulate", {"scenario_id": typed, "shock": shock}))
+    assert out.status == "ok", out.summary
+    assert "scenario_id" not in out.input and out.input["shock"]["rate"]["delta_rate"] == 0.015
+    assert out.summary["min_cash"] == round(_direct_simulate(out.input).result.min_cash, 2)
+
+
+def test_simulate_reports_the_low_point_against_the_floor_so_the_model_need_not_subtract():
+    import asyncio
+
+    box = chat_routes.EngineToolBox(get_settings(), None)
+    for sid in ("bad-quarter", "judge-plant-closure"):
+        s = asyncio.run(box.run("simulate", {"scenario_id": sid, "shock": None})).summary
+        assert s["min_cash_vs_floor"] == round(s["min_cash"] - s["min_cash_floor"], 2)
+
+
+def test_prompt_rules_for_answer_first_next_step_and_no_echoed_figures():
+    system = chat.system_prompt(web_search=False)
+    for rule in ("lead with the answer in the first sentence", "\"Next step:\"", "write no digits at all",
+                 "do not repeat its numbers; call the real tool", "there is no week 0", "p_yes=0.5",
+                 "neutral placeholder and not a forecast", "never with cents"):
+        assert rule in system, rule
+    assert not re.search(r"\$\d", system)  # no example dollar figure a model could copy into a reply
+
+
+def test_engine_gives_the_falls_and_plan_totals_a_model_would_otherwise_compute():
+    import asyncio
+
+    box = chat_routes.EngineToolBox(get_settings(), None)
+    s = asyncio.run(box.run("simulate", {"scenario_id": "bad-quarter", "shock": None})).summary
+    assert s["min_cash_drop_vs_baseline"] == round(s["baseline_min_cash"] - s["min_cash"], 2) > 0
+    assert s["min_cash_drop_vs_baseline"] == -s["min_cash_change_vs_baseline"]
+    assert s["ending_cash_drop_vs_baseline"] == -s["ending_cash_change_vs_baseline"]
+    assert s["min_cash_drop_from_start"] == round(s["starting_cash"] - s["min_cash"], 2)
+    # "cuts the low point by $X" now matches an engine figure, so the reply is not withheld
+    text = f"The bad quarter cuts the low point by ${s['min_cash_drop_vs_baseline']:,.0f}."
+    assert chat.unverified_numbers(text, [{"result": s}]) == []
+
+    plan = asyncio.run(box.run("optimize", {"scenario_id": "bad-quarter", "shock": None,
+                                            "protect_payroll": True})).summary
+    totals = plan["action_totals"]
+    assert totals, "the bad-quarter plan has recovery actions"
+    for kind, t in totals.items():
+        rows = [a for a in plan["actions"] if a["action"] == kind]
+        # summed from the engine's unrounded amounts: within a cent per row of the rounded ones shown
+        assert abs(t["total_amount"] - sum(a["amount"] for a in rows)) <= 0.01 * len(rows)
+        assert t["weeks"] == [a["week"] for a in rows]
+    cut = totals["purchase_cut"]["total_amount"]
+    assert chat.unverified_numbers(f"Purchase cuts total ${cut:,.0f}.", [{"result": plan}]) == []
+
+
+def test_prompt_covers_real_world_decision_types_and_scopes_payroll_to_the_demo_business():
+    system = chat.system_prompt(web_search=True)
+    for kind in ("leadership", "M&A", "pricing", "layoffs", "market entry"):
+        assert kind in system, kind
+    assert "For the demo business, payroll protection is a hard rule" in system
+    for field in ("min_cash_drop_vs_baseline", "min_cash_vs_floor", "action_totals"):
+        assert field in system  # the prompt points at the engine's derived figures instead of arithmetic
+
+
+def test_one_round_can_run_every_judge_challenge():
+    from routes.judge_challenges import load_challenges
+    assert chat.MAX_CALLS_PER_ROUND >= len(load_challenges(get_settings()).challenges)
