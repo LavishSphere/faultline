@@ -53,6 +53,9 @@ async function directSim(page: Page, body: unknown): Promise<Sim> {
 /** Every node's final value equals the API's peak Δ, and the floor callouts equal first_week_below_floor. */
 async function expectGraphEqualsApi(page: Page, api: Sim) {
   await expect(page.locator('[data-testid^="graph-node-"][data-wave="running"]')).toHaveCount(0);
+  // React Flow must not leave nodes hidden after a response replaces them (visibility: hidden until measured).
+  await expect(page.getByTestId("graph-node-Cash")).toBeVisible();
+  await expect(page.getByTestId("graph-node-Payroll")).toBeVisible();
   for (const [name, node] of Object.entries(api.deltas.nodes)) {
     const value = page.getByTestId(`graph-value-${name}`);
     if (node.max_abs === 0) await expect(value).toHaveCount(0);

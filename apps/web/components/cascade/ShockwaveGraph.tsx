@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState, type ReactNode } from "react";
+import { useCallback, useEffect, useMemo, useState, type ReactNode } from "react";
 import {
   Background,
   BackgroundVariant,
@@ -13,6 +13,7 @@ import {
   type Edge,
   type EdgeProps,
   type Node,
+  type NodeChange,
   type NodeProps,
 } from "@xyflow/react";
 import "@xyflow/react/dist/base.css";
@@ -539,6 +540,28 @@ export function ShockwaveGraph({
 
   const planByNode = useMemo(() => (plan ? actionsByNode(plan.actions) : new Map<string, PlanAction[]>()), [plan]);
 
+  // Measured node sizes, fed back into every `nodes` array. React Flow hides a node (visibility: hidden) whose
+  // user object carries no `measured` size until it re-measures it; passing the last size back keeps nodes visible
+  // when a response replaces the node objects (seen as a hidden Payroll shield in CI).
+  const [dims, setDims] = useState<ReadonlyMap<string, { width: number; height: number }>>(new Map());
+  const onNodesChange = useCallback((changes: NodeChange<CascadeNode>[]) => {
+    const sized = changes.filter(
+      (c): c is NodeChange<CascadeNode> & { type: "dimensions"; id: string; dimensions: { width: number; height: number } } =>
+        c.type === "dimensions" && !!c.dimensions,
+    );
+    if (sized.length === 0) return;
+    setDims((prev) => {
+      let next: Map<string, { width: number; height: number }> | null = null;
+      for (const c of sized) {
+        const old = prev.get(c.id);
+        if (old && old.width === c.dimensions.width && old.height === c.dimensions.height) continue;
+        next ??= new Map(prev);
+        next.set(c.id, { width: c.dimensions.width, height: c.dimensions.height });
+      }
+      return next ?? prev;
+    });
+  }, []);
+
   const nodes = useMemo<CascadeNode[]>(
     () =>
       NODE_SPECS.map((n) => {
@@ -547,6 +570,7 @@ export function ShockwaveGraph({
           id: n.id,
           type: "cascade",
           position: { x: n.x, y: n.y },
+          measured: dims.get(n.id),
           data: {
             label: n.id,
             symbol: n.symbol,
@@ -566,7 +590,7 @@ export function ShockwaveGraph({
           focusable: false,
         };
       }),
-    [snapshot, prev, hits, reduce, protect, planByNode, plan],
+    [snapshot, prev, hits, reduce, protect, planByNode, plan, dims],
   );
 
   const edges = useMemo<PulseEdge[]>(
@@ -605,6 +629,7 @@ export function ShockwaveGraph({
           <ReactFlow
             nodes={nodes}
             edges={edges}
+            onNodesChange={onNodesChange}
             nodeTypes={nodeTypes}
             edgeTypes={edgeTypes}
             fitView
