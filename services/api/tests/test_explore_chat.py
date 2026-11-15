@@ -905,5 +905,6 @@ def test_anthropic_strict_tools_stay_within_the_union_limit():
     assert strict_unions <= chat.ANTHROPIC_STRICT_UNION_LIMIT
     assert [t["name"] for t in tools] == [t.name for t in specs]  # every tool is still offered
     assert any(t.get("strict") for t in tools) and not all(t.get("strict") for t in tools)
-    assert chat.union_param_count({"type": "object", "properties": {"a": {"type": ["string", "null"]},
-                                   "b": {"anyOf": [{"type": "string"}, {"type": "null"}]}, "c": {"type": "string"}}}) == 2
+    props = {"a": {"type": ["string", "null"]}, "b": {"anyOf": [{"type": "string"}, {"type": "null"}]},
+             "c": {"type": "string"}}
+    assert chat.union_param_count({"type": "object", "properties": props}) == 2
