@@ -2,13 +2,12 @@
 
 import { useEffect, useMemo, useRef, useState, type RefObject } from "react";
 import {
-  PER_EVENT_P_YES,
   SCORABLE_VARIANTS,
   type EventScore,
   type ScorableVariant,
   type VariantCard,
 } from "@/lib/benchmark";
-import { getCases, getRecorded } from "@/lib/replay";
+import { getCases } from "@/lib/replay";
 import { Panel } from "../Panel";
 import { ProvenanceBadge } from "../ProvenanceBadge";
 import { progress, useClock, useInView } from "../reveal/motion";
@@ -19,15 +18,15 @@ import { cardBadges } from "./badges";
 /**
  * D.2 Results by event (#164): every event a COMMITTED recorded scorecard scored (GET /api/benchmark `per_event`),
  * on one timeline, in two plots that share the event axis (one measure each):
- *   1. the agent's forecast p_yes per event and, only after an explicit click, the outcome y (#117: the y of every
- *      scored event never shows by accident of layout);
+ *   1. the agent's forecast p_yes and the market baseline p per event and, only after an explicit click, the outcome
+ *      y (#117: the y of every scored event never shows by accident of layout);
  *   2. each event's Brier for the agent and the market-only baseline, with the naive p = 0.5 line as reference.
  * Hover or focus an event for its id, cutoff date, p's and Brier.
  *
- * - p (model) is the committed RECORDED RUN forecast GET /api/replay/recorded serves for that case and variant, matched
- *   to the scored row by prediction_id. No match (or the request fails) → NOT AVAILABLE for that event.
- * - p (market) is NOT AVAILABLE: no route serves the per-event market baseline price (stub `PER_EVENT_P_YES` in
- *   lib/benchmark.ts). Nothing is back-solved from a Brier score.
+ * - p (model) and p (market) are the row's own `agent_p_yes` / `market_p_yes` (#180): the persisted forecast and the
+ *   market baseline the gate froze, i.e. the inputs of that row's Brier. The API refuses a card whose p disagrees with
+ *   its Brier and checks a committed card's p against the run's rows. A row without them (a multi-snapshot row) shows
+ *   NOT AVAILABLE. Nothing is back-solved from a Brier score.
  * - Dates are the case cutoffs (`as_of`) that GET /api/cases serves for the same event_id; an event it does not
  *   list has date NOT AVAILABLE, and then events keep the API's order.
  * - Only `origin: "committed"` cards (data/recorded_runs, the official run script) are plotted. With none, the
@@ -36,8 +35,10 @@ import { cardBadges } from "./badges";
  */
 
 type CaseDates = { kind: "loading" } | { kind: "done"; byId: Map<string, string> | null };
-/** Per event: the matched forecasts' p_yes (empty = none matched or the request failed). */
-type Forecasts = { kind: "loading" } | { kind: "done"; byEvent: Map<string, number[]> };
+
+/** The row's served p (#180), or null = NOT AVAILABLE. Read as served; never derived from a score. */
+const agentP = (e: EventScore): number | null => (typeof e.agent_p_yes === "number" ? e.agent_p_yes : null);
+const marketP = (e: EventScore): number | null => (typeof e.market_p_yes === "number" ? e.market_p_yes : null);
 
 // Geometry in CSS pixels: the SVG's width follows its container (ResizeObserver), so text keeps its size.
 const MIN_W = 620;
@@ -150,7 +151,6 @@ function ChartBody({
   const { card, record } = entry;
   const agentKey = card.agent_variant;
   const [dates, setDates] = useState<CaseDates>({ kind: "loading" });
-  const [forecasts, setForecasts] = useState<Forecasts>({ kind: "loading" });
   const [showY, setShowY] = useState(false);
   const [active, setActive] = useState<number | null>(null);
   const wrapRef = useRef<HTMLDivElement>(null);
@@ -169,25 +169,6 @@ function ChartBody({
     });
     return () => controller.abort();
   }, []);
-
-  // The committed forecast behind each scored row (read-only, pre-reveal safe route). Selection by prediction_id only.
-  useEffect(() => {
-    const controller = new AbortController();
-    void Promise.all(
-      card.per_event.map(async (e) => {
-        const res = await getRecorded(e.event_id, entry.variant, controller.signal);
-        const ps = res.ok
-          ? res.data.items.filter((f) => e.prediction_ids.includes(f.prediction_id)).map((f) => f.p_yes)
-          : [];
-        return [e.event_id, ps] as const;
-      }),
-    ).then((pairs) => {
-      if (!controller.signal.aborted) setForecasts({ kind: "done", byEvent: new Map(pairs) });
-    });
-    return () => controller.abort();
-  }, [card.per_event, entry.variant]);
-  const psFor = (e: EventScore): number[] | null =>
-    forecasts.kind === "done" ? (forecasts.byEvent.get(e.event_id) ?? []) : null;
 
   const byId = dates.kind === "done" ? dates.byId : null;
   // Order only: by the served case cutoff when every event has one, else the API's own order.
@@ -287,7 +268,7 @@ function ChartBody({
           <SeriesMark series="agent" /> Agent <span className="font-mono text-[10.5px] text-muted">{agentKey}</span>
         </li>
         <li className="flex items-center gap-1.5">
-          <SeriesMark series="market" /> Market-only <span className="font-mono text-[10.5px] text-muted">Brier only; p not available</span>
+          <SeriesMark series="market" /> Market-only <span className="font-mono text-[10.5px] text-muted">p (market-implied, price-derived) and Brier</span>
         </li>
         <li className="flex items-center gap-1.5">
           <SeriesMark series="naive" /> Naive <span className="font-mono text-[10.5px] text-muted">p = 0.5</span>
@@ -302,7 +283,7 @@ function ChartBody({
         Market-only uses the {card.market_label}.
       </p>
 
-      <EventList rows={rows} agentKey={agentKey} showY={showY} mine={mine} psFor={psFor} />
+      <EventList rows={rows} agentKey={agentKey} showY={showY} mine={mine} />
 
       <div ref={wrapRef} className="relative hidden overflow-x-auto sm:block" onMouseLeave={() => setActive(null)}>
         <div ref={sizeRef} className="relative min-w-[620px]">
@@ -312,11 +293,11 @@ function ChartBody({
             height={H}
             className="block"
             role="img"
-            aria-label={`${n} scored events: the agent's forecast p_yes per event, then Brier per event for ${agentKey} and the market-only baseline. Hover or focus an event for its values.`}
+            aria-label={`${n} scored events: the agent's forecast p_yes and the market baseline p per event, then Brier per event for ${agentKey} and the market-only baseline. Hover or focus an event for its values.`}
           >
-            {/* plot 1: forecast p_yes (model) and, when shown, outcome y */}
+            {/* plot 1: forecast p_yes (model), market baseline p and, when shown, outcome y */}
             <text x={LEFT} y={TOP - 12} fontSize="12" fill="var(--muted)" className="font-mono" letterSpacing="1.2">
-              {showY ? "FORECAST P_YES (MODEL) · OUTCOME Y" : "FORECAST P_YES (MODEL)"}
+              {showY ? "P_YES · MODEL AND MARKET · OUTCOME Y" : "P_YES · MODEL AND MARKET"}
             </text>
             {[0, 0.5, 1].map((t) => (
               <g key={`pt-${t}`}>
@@ -363,9 +344,11 @@ function ChartBody({
               ) : null,
             )}
 
-            {/* p markers; with y shown, a stick from p to the outcome (0 or 1) and a ring at y */}
+            {/* p markers (agent circle, market diamond); with y shown, a stick from the agent's p to y and a ring at y */}
             {rows.map((r, i) => {
-              const ps = psFor(r.e) ?? [];
+              const a = agentP(r.e);
+              const ps = a === null ? [] : [a];
+              const mp = marketP(r.e);
               const k = markerIn(i);
               const yes = r.e.y === 1;
               return (
@@ -405,7 +388,20 @@ function ChartBody({
                       strokeWidth="2"
                     />
                   ))}
-                  {forecasts.kind === "done" && ps.length === 0 ? (
+                  {mp !== null ? (
+                    <rect
+                      x={cx(i) - 4.5}
+                      y={py(mp) - 4.5}
+                      width="9"
+                      height="9"
+                      transform={`rotate(45 ${cx(i)} ${py(mp)})`}
+                      fill={SERIES_VAR.market}
+                      stroke="var(--bg-elevated)"
+                      strokeWidth="2"
+                      data-testid="results-chart-p-market"
+                    />
+                  ) : null}
+                  {ps.length === 0 ? (
                     <text x={cx(i)} y={py(0.5) + 4} textAnchor="middle" fontSize="10" fill="var(--muted)" className="font-mono">
                       n/a
                     </text>
@@ -535,7 +531,8 @@ function ChartBody({
               e={act.e}
               asOf={act.asOf}
               datesLoading={dates.kind === "loading"}
-              ps={psFor(act.e)}
+              p={agentP(act.e)}
+              mp={marketP(act.e)}
               agentKey={agentKey}
               showY={showY}
               mine={mine(act.e)}
@@ -546,10 +543,9 @@ function ChartBody({
 
       <div className="flex flex-col gap-1 text-xs leading-relaxed text-muted">
         <p>
-          p (model) is each event&apos;s committed forecast from GET /api/replay/recorded, matched to the scored row by
-          prediction_id (&ldquo;n/a&rdquo; where none matched).{" "}
-          <span className="font-mono uppercase tracking-[0.08em] text-text-2">p (market): not available.</span> No route
-          serves the per-event baseline price and nothing is back-solved from a Brier score; needs {PER_EVENT_P_YES.needs}.
+          p (model) and p (market) are each row&apos;s agent_p_yes and market_p_yes as GET /api/benchmark serves them: the
+          persisted forecast and the market-implied (price-derived) baseline frozen before reveal, the exact inputs of
+          that row&apos;s Brier (&ldquo;n/a&rdquo; where the row carries none). Nothing is back-solved from a Brier score.
         </p>
         <p>
           Dates are each case&apos;s forecast cutoff (as_of) from GET /api/cases
@@ -570,13 +566,11 @@ function EventList({
   agentKey,
   showY,
   mine,
-  psFor,
 }: {
   rows: { e: EventScore; asOf: string | null }[];
   agentKey: string;
   showY: boolean;
   mine: (e: EventScore) => boolean;
-  psFor: (e: EventScore) => number[] | null;
 }) {
   const bar = (v: number | undefined, s: "agent" | "market") =>
     typeof v === "number" ? (
@@ -609,7 +603,7 @@ function EventList({
               {mine(r.e) ? <span className="shrink-0 text-accent">← this forecast</span> : null}
             </p>
             <p className="font-mono text-[11px] text-muted">
-              p (model) <PList ps={psFor(r.e)} />
+              p (model) <PVal p={agentP(r.e)} /> · p (market) <PVal p={marketP(r.e)} />
             </p>
             <div className="grid grid-cols-[auto_minmax(0,1fr)] items-center gap-x-2 gap-y-1">
               <SeriesMark series="agent" size={8} />
@@ -636,11 +630,9 @@ function EventList({
   );
 }
 
-/** The matched forecasts' p_yes as served (4 decimals), "requesting" while in flight, else NOT AVAILABLE. */
-function PList({ ps }: { ps: number[] | null }) {
-  if (ps === null) return <span>requesting</span>;
-  if (!ps.length) return <Missing />;
-  return <span className="num text-text">{ps.map(fmt4).join(" · ")}</span>;
+/** A served p (4 decimals), else NOT AVAILABLE. */
+function PVal({ p }: { p: number | null }) {
+  return p === null ? <Missing /> : <span className="num text-text">{fmt4(p)}</span>;
 }
 
 function fmtOr(v: number | null): string {
@@ -652,7 +644,8 @@ function Tooltip({
   e,
   asOf,
   datesLoading,
-  ps,
+  p,
+  mp,
   agentKey,
   showY,
   mine,
@@ -661,7 +654,8 @@ function Tooltip({
   e: EventScore;
   asOf: string | null;
   datesLoading: boolean;
-  ps: number[] | null;
+  p: number | null;
+  mp: number | null;
   agentKey: string;
   showY: boolean;
   mine: boolean;
@@ -686,11 +680,13 @@ function Tooltip({
           <SeriesMark series="agent" size={8} /> p (model)
         </dt>
         <dd className="text-right" data-testid="results-chart-tooltip-p">
-          <PList ps={ps} />
+          <PVal p={p} />
         </dd>
-        <dt>p (market)</dt>
-        <dd className="text-right">
-          <Missing />
+        <dt className="flex items-center gap-1.5">
+          <SeriesMark series="market" size={8} /> p (market)
+        </dt>
+        <dd className="text-right" data-testid="results-chart-tooltip-p-market">
+          <PVal p={mp} />
         </dd>
         <dt className="flex items-center gap-1.5">
           <SeriesMark series="agent" size={8} /> Brier agent

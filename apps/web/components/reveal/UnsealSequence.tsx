@@ -62,13 +62,8 @@ function linesFor(d: RevealResponse): Line[] {
     },
     hashLine("prompt_sha256", p.prompt_sha256, "unseal-line-prompt"),
     hashLine("snapshot_sha256", p.snapshot_sha256, "unseal-line-snapshot"),
-    // The reveal response carries no case hash; the slot stays, saying so.
-    {
-      key: "case snapshot_hash",
-      value: "Not available · not in the reveal response",
-      state: "missing",
-      testId: "unseal-line-case",
-    },
+    // The case hash frozen with the prediction (#180); an older API without it shows NOT AVAILABLE in this slot.
+    hashLine("case_sha256", d.case_sha256, "unseal-line-case"),
     {
       key: "persisted before outcome revealed",
       value: (

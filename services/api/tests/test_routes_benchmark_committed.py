@@ -20,7 +20,15 @@ from test_record_runs import Clock, FakeModel, rr
 from test_scoring import AS_OF, rows_for, scored_world
 
 from core import store as store_module
-from core.evaluator import AGENT_BETTER, LABEL_ILLUSTRATIVE, NO_IMPROVEMENT, paired_bootstrap
+from core.evaluator import (
+    AGENT_BETTER,
+    LABEL_ILLUSTRATIVE,
+    NO_IMPROVEMENT,
+    brier,
+    correct_at_half,
+    log_loss,
+    paired_bootstrap,
+)
 from core.store import PredictionStore
 from main import create_app
 from routes.benchmark import canon_sha, verify_snapshot
@@ -202,8 +210,10 @@ FORGERIES = {
         "a real case-set card cannot have provenance SYNTHETIC",
     ),
     "synthetic_market_label_on_real_refs": (
-        _set(("scorecard", "market_label"), "SYNTHETIC market price (invented for this fallback case; not a real "
-             "venue), not a true probability"),
+        _set(
+            ("scorecard", "market_label"),
+            "SYNTHETIC market price (invented for this fallback case; not a real venue), not a true probability",
+        ),
         "market_label does not match",
     ),
     "small_n_not_insufficient": (
@@ -245,6 +255,77 @@ FORGERIES = {
 }
 
 
+# ---------------------------------------------------------------- per-event p_yes (#180)
+
+
+def _forge_p(field, value):
+    def mutate(raw):
+        raw["scorecard"]["per_event"][0][field] = value
+
+    return mutate
+
+
+def _forge_p_with_matching_scores(raw):
+    """A forger who changes the agent's p AND its scores consistently, then fixes summary/CI: only the run's rows
+    can catch it."""
+    card = raw["scorecard"]
+    e, v = card["per_event"][0], card["agent_variant"]
+    q = 1.0 - e["agent_p_yes"]
+    e["agent_p_yes"] = q
+    e["brier"][v], e["log_loss"][v], e["accuracy_at_0_5"][v] = (
+        brier(q, e["y"]),
+        log_loss(q, e["y"]),
+        correct_at_half(q, e["y"]),
+    )
+    recompute_numbers(card)
+
+
+P_FORGERIES = {
+    "agent_p_beside_real_brier": (_forge_p("agent_p_yes", 0.5), "agent_p_yes is not the input of the row's agent_only"),
+    "market_p_beside_real_brier": (_forge_p("market_p_yes", 0.99), "market_p_yes is not the input of the row's market"),
+    "p_and_scores_forged_together": (_forge_p_with_matching_scores, "do not recompute from the run's rows"),
+    "committed_row_without_p": (_forge_p("agent_p_yes", None), "agent_p_yes / market_p_yes differ from the run's rows"),
+}
+
+
+def test_committed_card_carries_the_run_rows_p_yes(committed):
+    rows = {
+        r["prediction"]["prediction_id"]: r
+        for r in (json.loads(f.read_text()) for f in (committed.run_dir / "rows").glob("*.json"))
+    }
+    for variant in committed.paths:
+        for e in real(committed, variant)["scorecard"]["per_event"]:
+            (pid,) = e["prediction_ids"]
+            assert e["agent_p_yes"] == rows[pid]["prediction"]["p_yes"]
+            assert e["market_p_yes"] == rows[pid]["context"]["market_baseline_p_yes"]
+            assert e["brier"][variant] == brier(e["agent_p_yes"], e["y"])
+            assert e["brier"]["market"] == brier(e["market_p_yes"], e["y"])
+
+
+@pytest.mark.parametrize("rule", sorted(P_FORGERIES))
+def test_forged_p_yes_is_not_served(committed, rule):
+    mutate, why = P_FORGERIES[rule]
+    raw = real(committed)
+    mutate(raw)
+    name = plant(committed, raw)
+    assert_not_served(committed, name, why)
+    record, problems = verify_snapshot(
+        reseal(raw), origin="committed", file_name=name, runs_root=committed.out / "runs"
+    )
+    assert record is None and any(why in x for x in problems), problems
+
+
+@pytest.mark.parametrize("rule", ["agent_p_beside_real_brier", "market_p_beside_real_brier"])
+def test_forged_p_yes_is_refused_without_a_run(committed, rule):
+    """verify_snapshot's own consistency check (scorecard_problems), with no run rows to compare against."""
+    mutate, why = P_FORGERIES[rule]
+    raw = real(committed)
+    mutate(raw)
+    record, problems = verify_snapshot(reseal(raw), origin="computed")
+    assert record is None and any(why in x for x in problems), problems
+    assert verify_snapshot(reseal(real(committed)), origin="computed")[1] == []
+
+
 @pytest.mark.parametrize("rule", sorted(FORGERIES))
 def test_forged_snapshot_is_not_served(committed, rule):
     mutate, why = FORGERIES[rule]
@@ -259,8 +340,10 @@ def test_edited_per_event_score_with_consistent_summary_is_caught_by_the_run_row
     raw = real(committed)
     card = raw["scorecard"]
     for e in card["per_event"]:
+        # p set to the outcome and its scores to match it (#180), so the row is self-consistent.
+        e["agent_p_yes"] = float(e["y"])
         e["brier"]["agent_only"] = 0.0
-        e["log_loss"]["agent_only"] = 0.0
+        e["log_loss"]["agent_only"] = log_loss(float(e["y"]), e["y"])
         e["accuracy_at_0_5"]["agent_only"] = 1.0
     recompute_numbers(card)
     assert card["verdict"] == AGENT_BETTER  # the forgery would claim a win

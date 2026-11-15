@@ -62,6 +62,7 @@ from core.evaluator import (
     NO_IMPROVEMENT,
     SMALL_SAMPLE_EVENTS,
     CaseSet,
+    EventScore,
     OutcomeVault,
     Scorecard,
     brier,
@@ -362,6 +363,29 @@ def _mean(values: list[float]) -> float:
     return float(np.mean(values))
 
 
+# Tolerance for "this row's scores are those of its own p_yes" (#180). The evaluator computes them with the same
+# functions, so they agree exactly; the tolerance only absorbs JSON float round-trips.
+P_YES_TOL = 1e-12
+
+
+def p_yes_problems(e: EventScore, agent_key: str) -> list[str]:
+    """A per-event row's ``agent_p_yes`` / ``market_p_yes`` must be the inputs of its own agent / market scores:
+    ``brier == (p - y)^2``, ``log_loss`` and ``accuracy_at_0_5`` likewise (to ``P_YES_TOL``). So a forged p cannot
+    sit beside a real Brier. Both are carried only on a single-snapshot row (null otherwise; null = NOT AVAILABLE)."""
+    out: list[str] = []
+    for f, q, name in ((agent_key, e.agent_p_yes, "agent_p_yes"), ("market", e.market_p_yes, "market_p_yes")):
+        if q is None:
+            continue
+        if e.n_snapshots != 1:
+            out.append(f"{e.event_id}: {name} is carried only on a single-snapshot row")
+            continue
+        want = (brier(q, e.y), log_loss(q, e.y), correct_at_half(q, e.y))
+        got = (e.brier.get(f), e.log_loss.get(f), e.accuracy_at_0_5.get(f))
+        if any(g is None or not abs(g - w) <= P_YES_TOL for g, w in zip(got, want, strict=True)):
+            out.append(f"{e.event_id}: {name} is not the input of the row's {f} scores")
+    return out
+
+
 def scorecard_problems(card: Scorecard) -> list[str]:
     """The evaluator's display rules (MATH_MODEL §6), re-applied to a recorded card's own per-event rows.
 
@@ -412,6 +436,7 @@ def scorecard_problems(card: Scorecard) -> list[str]:
             p.append(f"{e.event_id}: naive scores are not those of p = 0.5")
         if e.n_snapshots != len(e.prediction_ids) or e.n_snapshots < 1:
             p.append(f"{e.event_id}: n_snapshots differs from prediction_ids")
+        p.extend(p_yes_problems(e, v))
 
     if n < MIN_EVENTS:
         expected = (LABEL_INSUFFICIENT, INSUFFICIENT_DATA, None)
@@ -524,6 +549,11 @@ def _committed_problems(record: RecordedScorecard, file_name: str, runs_root: Pa
             )
             if (e.brier[f], e.log_loss[f], e.accuracy_at_0_5[f]) != want:
                 problems.append(f"{e.event_id}: {f} scores do not recompute from the run's rows")
+        # The row's p's (#180) must be the run rows' own values: a committed card always carries them on a
+        # single-snapshot row, and never on a multi-snapshot one.
+        want_p = (agent[0], float(market[0])) if len(mine) == 1 else (None, None)
+        if (e.agent_p_yes, e.market_p_yes) != want_p:
+            problems.append(f"{e.event_id}: agent_p_yes / market_p_yes differ from the run's rows")
         if e.market_refs != sorted({r["context"]["market_baseline_ref"] for r in mine} - {None}):
             problems.append(f"{e.event_id}: market_refs differ from the run's rows")
     scored = [rows[pid] for e in card.per_event for pid in e.prediction_ids if pid in rows]

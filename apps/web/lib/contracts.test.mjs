@@ -210,6 +210,27 @@ test("the reveal's market baseline must carry the API's label and ref (#117 item
   assert.match(checkRevealResponse({ ...p, prediction: { ...p.prediction, decision: "buy" } }, "pid") ?? "", /decision/);
 });
 
+test("the reveal's case_sha256 (#180) is optional, and a 64-hex hash when present", () => {
+  const r = reveal(null);
+  assert.equal(checkRevealResponse(r, "pid"), null);
+  assert.equal(checkRevealResponse({ ...r, case_sha256: SHA }, "pid"), null);
+  assert.match(checkRevealResponse({ ...r, case_sha256: "abc" }, "pid") ?? "", /case_sha256/);
+  assert.match(checkRevealResponse({ ...r, case_sha256: null }, "pid") ?? "", /case_sha256/);
+});
+
+test("per_event agent_p_yes / market_p_yes (#180): absent, null or a probability in [0, 1]", () => {
+  const withP = (agent, market) => {
+    const c = card(5);
+    c.per_event = c.per_event.map((e) => ({ ...e, agent_p_yes: agent, market_p_yes: market }));
+    return body([c]);
+  };
+  accepted(withP(0.9, 0.4));
+  accepted(withP(null, null));
+  accepted(body([card(5)]));
+  refused(withP(1.5, 0.4), /agent_p_yes/);
+  refused(withP(0.9, "0.4"), /market_p_yes/);
+});
+
 test("isSyntheticRef reads only the served ref", () => {
   assert.equal(isSyntheticRef("synthetic:FIXTURE"), true);
   assert.equal(isSyntheticRef("kalshi:FIXTURE"), false);
