@@ -71,6 +71,7 @@ TURN_TIMEOUT_S = 150.0
 DEFAULT_PAUSE_MINUTES = 30
 MAX_PAUSE_MINUTES = 120
 WEB_RESULTS = 5
+MAX_WEB_SEARCHES_PER_TURN = 3  # Tavily credits
 TAVILY_TIMEOUT_S = 10.0
 BUSY_RETRY_AFTER_S = 5
 
@@ -78,6 +79,8 @@ STANDARD_NOTE = ("MODEL-WRITTEN text. Numbers should come only from the engine t
                  "business is SYNTHETIC. Nothing here is saved, scored, or given to the Blind Replay.")
 ADMIN_MESSAGE = ("Admin only on the public demo: the live chat spends paid model credits and needs the admin token "
                  "(Authorization: Bearer <FAULTLINE_ADMIN_TOKEN>), unless the server sets FAULTLINE_PUBLIC_CHAT=1.")
+BUDGET_MESSAGE = ("The live chat has used today's model budget on this server, so it is resting until tomorrow "
+                  "(UTC). Everything else in FAULTLINE still works.")
 PAUSED_MESSAGE = ("The live chat is paused by the presenter for a moment. Everything else in FAULTLINE still works; "
                   "please try the chat again shortly.")
 
@@ -172,6 +175,23 @@ class ChatState:
         self.active = 0  # turns running now (single event loop: no lock needed)
         self.paused_until: datetime | None = None
         self.catalog: chat.Catalog | None = None
+        self.spend_day: str | None = None  # UTC date the running total belongs to
+        self.spent_usd = 0.0  # estimated provider spend today (usage x catalogue price), in process memory
+
+    def spent_today(self) -> float:
+        today = self.wall().date().isoformat()
+        if self.spend_day != today:
+            self.spend_day, self.spent_usd = today, 0.0
+        return self.spent_usd
+
+    def record_spend(self, m: chat.CatalogModel, input_tokens: int, output_tokens: int,
+                     fallback_per_mtok: float) -> None:
+        """Usage x published price; a model with no published price is charged at the public price cap (a
+        deliberately high estimate)."""
+        self.spent_today()
+        pin = m.input_per_mtok if m.input_per_mtok is not None else fallback_per_mtok
+        pout = m.output_per_mtok if m.output_per_mtok is not None else fallback_per_mtok
+        self.spent_usd += (input_tokens * pin + output_tokens * pout) / 1_000_000
 
     def paused(self) -> datetime | None:
         if self.paused_until is not None and self.wall() >= self.paused_until:
@@ -316,6 +336,7 @@ class EngineToolBox:
         self.settings = settings
         self.tavily_transport = tavily_transport
         self.web = tavily.key_configured()
+        self.web_calls = 0  # one toolbox per turn
 
     def specs(self) -> list[chat.ToolSpec]:
         return [*ENGINE_TOOLS, *([WEB_SEARCH_TOOL] if self.web else [])]
@@ -492,6 +513,10 @@ class EngineToolBox:
     async def _tool_web_search(self, args: dict[str, Any]) -> chat.ToolOutcome:
         if not self.web:
             raise _ToolInputError("web_search is not available on this server")
+        if self.web_calls >= MAX_WEB_SEARCHES_PER_TURN:
+            raise _ToolInputError(f"web_search limit reached ({MAX_WEB_SEARCHES_PER_TURN} per turn); answer from "
+                                  "the results you have")
+        self.web_calls += 1
         query = tavily.normalize_query(str(args.get("query") or ""))
         if not query or len(query) > 200:
             raise _ToolInputError("query must be 1-200 characters")
@@ -633,7 +658,7 @@ _ERRORS: dict[int | str, dict[str, Any]] = {
         422: "VALIDATION_ERROR",
         429: "RATE_LIMITED (Retry-After): per-IP chat limit, or the provider is rate-limiting this server",
         502: "UPSTREAM_ERROR: the model provider failed",
-        503: "PAUSED (presenter pause), LIVE_EXPLORE_UNAVAILABLE (no key for this provider), or BUSY",
+        503: "PAUSED (presenter pause), BUDGET (daily spend ceiling), LIVE_EXPLORE_UNAVAILABLE (no key), or BUSY",
     }.items()
 }
 
@@ -649,7 +674,7 @@ def _model_out(m: chat.CatalogModel, catalog: chat.Catalog, settings: Settings) 
 
 
 def _visible(catalog: chat.Catalog, settings: Settings, admin: bool) -> list[chat.CatalogModel]:
-    if admin or catalog.pinned:
+    if admin:
         return list(catalog.models)
     return [m for m in catalog.models if chat.affordable(m, settings.chat_max_price_per_mtok)]
 
@@ -666,7 +691,7 @@ async def chat_models(
     visible = _visible(catalog, settings, admin)
     featured = chat.featured_ids(visible, catalog, settings)
     notes = list(catalog.notes)
-    if not admin and not catalog.pinned:
+    if not admin:
         hidden = len(catalog.models) - len(visible)
         if hidden:
             notes.append(f"{hidden} model(s) hidden: published output price above "
@@ -724,6 +749,8 @@ async def chat_turn(
     admin = is_admin(request)
     if not admin and state.paused() is not None:
         raise RouteError(ErrorCode.PAUSED, PAUSED_MESSAGE, 503)
+    if not admin and state.spent_today() >= settings.chat_daily_budget_usd:
+        raise RouteError(ErrorCode.BUDGET, BUDGET_MESSAGE, 503)
     if not admin and settings.chat_per_ip > 0:
         host = request.client.host if request.client else "unknown"
         wait = state.limiter.take(rate_limit_key(host), settings.chat_per_ip)
@@ -770,6 +797,8 @@ async def chat_turn(
                          502) from None
     finally:
         state.active -= 1
+    state.record_spend(model, outcome.counted_input_tokens, outcome.counted_output_tokens,
+                       settings.chat_max_price_per_mtok)
 
     usage = (ChatUsage(input_tokens=outcome.input_tokens, output_tokens=outcome.output_tokens)
              if outcome.input_tokens is not None and outcome.output_tokens is not None else None)

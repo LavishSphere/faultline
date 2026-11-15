@@ -160,7 +160,10 @@ def _per_mtok(raw: Any) -> float | None:
 def openrouter_entry(raw: dict[str, Any]) -> CatalogModel | None:
     """One OpenRouter /models row -> CatalogModel, or None when it does not qualify for the chat."""
     model_id = str(raw.get("id") or "")
-    if not model_id or model_id.startswith(NATIVE_ONLY_PREFIXES) or model_id.startswith("openrouter/"):
+    # "~vendor/..." ids are moving "latest" aliases: never offered (and "~openai/..." would dodge the native rule).
+    if not model_id or model_id.startswith("~") or is_native_only(model_id):
+        return None
+    if model_id.lower().startswith("openrouter/"):  # router meta-models with variable pricing
         return None
     if model_id.endswith(":batch"):  # batch-only endpoints cannot answer a live chat turn
         return None
@@ -178,6 +181,11 @@ def openrouter_entry(raw: dict[str, Any]) -> CatalogModel | None:
         input_per_mtok=_per_mtok(pricing.get("prompt")),
         output_per_mtok=_per_mtok(pricing.get("completion")),
     )
+
+
+def is_native_only(model_id: str) -> bool:
+    """An OpenAI or Anthropic model id in OpenRouter's namespace (case and "~" alias marker ignored)."""
+    return model_id.lstrip("~").lower().startswith(NATIVE_ONLY_PREFIXES)
 
 
 class ClientFactory:
@@ -593,8 +601,8 @@ def adapter_for(m: CatalogModel, factory: ClientFactory) -> Adapter:
         return AnthropicAdapter(m.model, factory)
     if m.provider == "openai":
         return OpenAICompatibleAdapter("openai", m.model, factory)
-    if m.model.startswith(NATIVE_ONLY_PREFIXES):
-        raise ValueError("OpenAI and Anthropic models are never routed through OpenRouter")
+    if m.model.startswith("~") or is_native_only(m.model):  # fail closed
+        raise ValueError("OpenAI and Anthropic models (and moving ~aliases) are never routed through OpenRouter")
     return OpenAICompatibleAdapter("openrouter", m.model, factory)
 
 
@@ -625,12 +633,19 @@ def _numbers_in(value: Any, out: list[float]) -> None:
             _numbers_in(v, out)
 
 
-def _matches(x: float, known: list[float]) -> bool:
+# Words (or a minus sign) that, shortly before a figure, say it is a deficit or a fall: only then may a positive
+# figure in the reply stand for a negative engine value ("a shortfall of $50,000" for min_cash = -50,000).
+_DEFICIT = re.compile(r"shortfall|deficit|negative|below|minus|overdrawn|drop|fall|fell|declin|decreas|down|lower|"
+                      r"less|loss|lose|reduc|-|\u2212", re.I)
+DEFICIT_WINDOW = 30  # characters before the figure
+
+
+def _matches(x: float, known: list[float], allow_abs: bool) -> bool:
+    """Signed match within rounding; |x| == |k| counts only when the reply frames the figure as a deficit."""
     for k in known:
-        for candidate in (k, abs(k)):
-            tol = max(1.0, 0.006 * abs(candidate))  # rounding to the dollar or to 3 significant figures
-            if abs(abs(x) - candidate) <= tol:
-                return True
+        tol = max(1.0, 0.006 * abs(k))  # rounding to the dollar or to 3 significant figures
+        if abs(x - k) <= tol or (allow_abs and abs(abs(x) - abs(k)) <= tol):
+            return True
     return False
 
 
@@ -643,7 +658,8 @@ def unverified_numbers(reply: str, tool_results: list[dict[str, Any]]) -> list[s
     known: list[float] = []
     _numbers_in(tool_results, known)
     flagged: list[str] = []
-    for match in _NUMBER.finditer(_URL.sub(" ", reply)):
+    text = _URL.sub(" ", reply)
+    for match in _NUMBER.finditer(text):
         dollar, digits, suffix = match.group(1), match.group(2), match.group(3)
         try:
             value = float(digits.replace(",", "")) * _SCALE.get(suffix or "", 1.0)
@@ -652,7 +668,11 @@ def unverified_numbers(reply: str, tool_results: list[dict[str, Any]]) -> list[s
         year_like = not dollar and not suffix and "," not in digits and "." not in digits and 1900 <= value <= 2100
         if year_like or (not dollar and abs(value) < 1000):
             continue
-        if not _matches(value, known):
+        before = text[max(0, match.start() - DEFICIT_WINDOW):match.start()]
+        if dollar and before.rstrip()[-1:] in ("-", "\u2212"):  # "-$50,000": the minus is the figure's sign
+            value = -abs(value)
+            before = before.rstrip()[:-1]
+        if not _matches(value, known, allow_abs=bool(_DEFICIT.search(before))):
             flagged.append(match.group(0).strip())
     return list(dict.fromkeys(flagged))
 
@@ -676,6 +696,8 @@ def _urls_in(value: Any, out: set[str]) -> None:
 # --------------------------------------------------------------------------- the loop
 
 TOOLS_FAILED_NOTE = "This model didn't call the engine tools correctly; try another model. No numbers were made up."
+UNSUPPORTED_FIGURES_NOTE = ("The model stated figures the engine didn't produce, so its reply is withheld; try again "
+                            "or another model.")
 NO_TOOL_NUMBERS_NOTE = ("This model answered with figures without calling the engine tools, so its reply is withheld; "
                         "try another model.")
 
@@ -688,9 +710,14 @@ class ChatOutcome:
     input_tokens: int | None
     output_tokens: int | None
     notes: list[str] = field(default_factory=list)
+    counted_input_tokens: int = 0  # what the provider reported, even when incomplete (spend ceiling)
+    counted_output_tokens: int = 0
 
 
 class _Usage:
+    """Token totals for the turn. `complete` is False when any step had no usage; the partial sums still count
+    toward the spend ceiling."""
+
     def __init__(self) -> None:
         self.input = 0
         self.output = 0
@@ -699,9 +726,8 @@ class _Usage:
     def add(self, step: Step) -> None:
         if step.input_tokens is None or step.output_tokens is None:
             self.complete = False
-            return
-        self.input += step.input_tokens
-        self.output += step.output_tokens
+        self.input += step.input_tokens or 0
+        self.output += step.output_tokens or 0
 
 
 async def run_chat(adapter: Adapter, toolbox: ToolBox, history: list[dict[str, str]], *, web_search: bool,
@@ -721,7 +747,8 @@ async def run_chat(adapter: Adapter, toolbox: ToolBox, history: list[dict[str, s
     def done(status: Literal["ok", "unavailable", "error"], reply: str, notes: list[str]) -> ChatOutcome:
         return ChatOutcome(status=status, reply=reply, tool_calls=records,
                            input_tokens=usage.input if usage.complete else None,
-                           output_tokens=usage.output if usage.complete else None, notes=notes)
+                           output_tokens=usage.output if usage.complete else None, notes=notes,
+                           counted_input_tokens=usage.input, counted_output_tokens=usage.output)
 
     while True:
         if on_step is not None:
@@ -770,11 +797,13 @@ async def run_chat(adapter: Adapter, toolbox: ToolBox, history: list[dict[str, s
             notes.append(f"Reply cut at the {MAX_OUTPUT_TOKENS}-token cap.")
         payloads = [{"input": r.input, "result": r.result_summary} for r in records if r.result_status == "ok"]
         flagged = unverified_numbers(reply, payloads)
-        if flagged and not any(r.result_status == "ok" for r in records):
+        no_ok_tool = not any(r.result_status == "ok" for r in records)
+        # No engine result this turn: any digit outside a url could be a made-up figure, so the reply is withheld.
+        if no_ok_tool and (flagged or re.search(r"\d", _URL.sub(" ", reply))):
             return done("error", "", [NO_TOOL_NUMBERS_NOTE])
+        # A figure the engine did not produce is never shown under the "numbers from engine tools" label.
         if flagged:
-            notes.append("Numbers in this reply not found in this turn's tool results (check them): "
-                         + ", ".join(flagged[:10]) + ".")
+            return done("error", "", [UNSUPPORTED_FIGURES_NOTE + " Unsupported: " + ", ".join(flagged[:10]) + "."])
         allowed: set[str] = set()
         _urls_in(payloads, allowed)
         stray = uncited_urls(reply, allowed)

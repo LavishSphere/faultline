@@ -56,6 +56,7 @@ CHAT_KEY_ENV = {"openrouter": "OPENROUTER_API_KEY", "openai": "OPENAI_API_KEY", 
 DEFAULT_CHAT_PER_IP = 10  # chat turns per client IP per CHAT_WINDOW_S
 CHAT_WINDOW_S = 600
 DEFAULT_CHAT_CONCURRENCY = 4
+DEFAULT_CHAT_DAILY_BUDGET_USD = 25.0  # in-process spend ceiling per UTC day; non-admin turns stop with 503 BUDGET
 DEFAULT_CHAT_MAX_PRICE_PER_MTOK = 20.0  # USD per million OUTPUT tokens; dearer models leave the public catalogue
 # OpenAI and Claude models are called only through their native APIs (lead rule): OpenRouter copies are never offered.
 NATIVE_ONLY_PREFIXES = ("openai/", "anthropic/")
@@ -96,6 +97,7 @@ class Settings:
     chat_concurrency: int = DEFAULT_CHAT_CONCURRENCY
     public_chat: bool = False  # FAULTLINE_PUBLIC_CHAT=1: POST /api/explore/chat open to visitors in public mode
     chat_max_price_per_mtok: float = DEFAULT_CHAT_MAX_PRICE_PER_MTOK
+    chat_daily_budget_usd: float = DEFAULT_CHAT_DAILY_BUDGET_USD
 
     def chat_key_set(self, provider: str) -> bool:
         return {"openrouter": self.openrouter_api_key_set, "openai": self.openai_api_key_set,
@@ -245,7 +247,8 @@ def _chat_models_pinned() -> tuple[tuple[str, str], ...] | None:
             raise ConfigError(
                 f"FAULTLINE_CHAT_MODELS entry {entry!r} is not provider:model_id with provider one of {CHAT_PROVIDERS}."
             )
-        if match.group(1) == "openrouter" and match.group(2).startswith(NATIVE_ONLY_PREFIXES):
+        if match.group(1) == "openrouter" and (match.group(2).startswith("~") or
+                                               match.group(2).lstrip("~").lower().startswith(NATIVE_ONLY_PREFIXES)):
             raise ConfigError(
                 f"FAULTLINE_CHAT_MODELS entry {entry!r}: OpenAI and Anthropic models go through their native APIs "
                 "(openai:<model> / anthropic:<model>), never through OpenRouter."
@@ -266,17 +269,21 @@ def _chat_per_ip(mode: Mode) -> int:
     return value
 
 
-def _chat_max_price() -> float:
-    raw = os.environ.get("FAULTLINE_CHAT_MAX_PRICE_PER_MTOK", "").strip()
+def _positive_usd(name: str, default: float) -> float:
+    raw = os.environ.get(name, "").strip()
     if not raw:
-        return DEFAULT_CHAT_MAX_PRICE_PER_MTOK
+        return default
     try:
         value = float(raw)
     except ValueError:
         value = -1.0
     if not (value > 0 and value < 1e6):
-        raise ConfigError(f"FAULTLINE_CHAT_MAX_PRICE_PER_MTOK must be a positive number of USD, got {raw!r}.")
+        raise ConfigError(f"{name} must be a positive number of USD, got {raw!r}.")
     return value
+
+
+def _chat_max_price() -> float:
+    return _positive_usd("FAULTLINE_CHAT_MAX_PRICE_PER_MTOK", DEFAULT_CHAT_MAX_PRICE_PER_MTOK)
 
 
 def admin_token_matches(presented: str | None) -> bool:
@@ -314,4 +321,5 @@ def get_settings() -> Settings:
         chat_concurrency=max(1, _non_negative_int("FAULTLINE_CHAT_CONCURRENCY", DEFAULT_CHAT_CONCURRENCY)),
         public_chat=public_chat_enabled(),
         chat_max_price_per_mtok=_chat_max_price(),
+        chat_daily_budget_usd=_positive_usd("FAULTLINE_CHAT_DAILY_BUDGET_USD", DEFAULT_CHAT_DAILY_BUDGET_USD),
     )

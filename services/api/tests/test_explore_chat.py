@@ -83,6 +83,10 @@ OPENROUTER_MODELS = [
     or_model("pricey/frontier-max", out_per_token="0.0001"),  # $100 per million output tokens
     or_model("plain/no-tools", tools=False),
     or_model("deepseek/deepseek-v4-flash:batch"),
+    or_model("~openai/gpt-latest"),  # moving aliases: never offered
+    or_model("~anthropic/claude-sonnet-latest"),
+    or_model("~meta-llama/llama-latest"),
+    or_model("OpenAI/GPT-5.1-Upper"),  # case must not dodge the native rule
 ]
 ANTHROPIC_LIST = [{"type": "model", "id": m[0], "display_name": m[1], "created_at": "2026-01-01T00:00:00Z"}
                   for m in chat.ANTHROPIC_MODELS]
@@ -259,14 +263,33 @@ def test_figures_without_any_tool_call_are_withheld(env):
     assert any("without calling the engine tools" in n for n in out["notes"])
 
 
-def test_number_not_in_any_tool_result_is_flagged(env):
+def test_number_not_in_any_tool_result_withholds_the_reply(env):
     h = Harness(openrouter=FakeProvider(models=OPENROUTER_MODELS, replies=[
         oa_tool_calls(("simulate", {"scenario_id": "bad-quarter", "shock": None})),
         oa_text("Lowest cash is $987,654 (SIMULATED)."),
     ]))
     out = h.turn().json()
-    assert out["status"] == "ok"
-    assert any("$987,654" in n for n in out["notes"])
+    assert out["status"] == "error" and out["reply"] == ""
+    assert any("figures the engine didn't produce" in n and "$987,654" in n for n in out["notes"])
+    assert out["tool_calls"][0]["result_status"] == "ok"  # the engine result itself is still shown
+
+
+def test_any_digit_without_a_tool_result_is_withheld(env):
+    h = Harness(openrouter=FakeProvider(models=OPENROUTER_MODELS, replies=[oa_text("Runway is 7 weeks, a 40% drop.")]))
+    out = h.turn().json()
+    assert out["status"] == "error" and out["reply"] == ""
+    assert any("without calling the engine tools" in n for n in out["notes"])
+
+
+def test_numbers_check_compares_signed_values():
+    results = [{"result": {"min_cash": -50000.0, "ending_cash": 12000.0}}]
+    assert chat.unverified_numbers("Minimum cash is $50,000.", results) == ["$50,000"]
+    assert chat.unverified_numbers("Minimum cash is -$50,000.", results) == []
+    assert chat.unverified_numbers("Minimum cash is $-50,000.", results) == []
+    assert chat.unverified_numbers("That is a shortfall of $50,000 at the low point.", results) == []
+    assert chat.unverified_numbers("Ending cash is $12,000.", results) == []
+    assert chat.unverified_numbers("Ending cash is -$12,000.", results) == ["$12,000"]  # sign flipped
+    assert chat.unverified_numbers("Ending cash is $-12,000.", results) == ["$-12,000"]
 
 
 def test_malformed_tool_calls_end_honestly(env):
@@ -623,3 +646,86 @@ def test_no_outcome_keys_in_any_tool_result(env):
 
 def test_optimize_tool_uses_the_route_concurrency_slots(env):
     assert optimize_routes.SOLVE_SLOTS.in_use == 0
+
+
+# --------------------------------------------------------------------------- review fixes (#193)
+
+
+def test_aliases_and_case_variants_of_native_models_are_excluded_and_refused(env):
+    h = Harness()
+    ids = [m["id"] for m in h.client.get("/api/explore/chat/models").json()["models"]]
+    for bad in ("openrouter:~openai/gpt-latest", "openrouter:~anthropic/claude-sonnet-latest",
+                "openrouter:~meta-llama/llama-latest", "openrouter:OpenAI/GPT-5.1-Upper"):
+        assert bad not in ids
+        assert h.turn(model_id=bad).status_code == 422
+    for model in ("~openai/x", "~anthropic/x", "OpenAI/x", "~meta-llama/x"):
+        with pytest.raises(ValueError):
+            chat.adapter_for(chat.CatalogModel("openrouter", model, "x", "x"), chat.ClientFactory())
+
+
+@pytest.mark.parametrize("entry", ["openrouter:~openai/gpt-latest", "openrouter:OpenAI/gpt-5.1",
+                                   "openrouter:~anthropic/claude-x", "openrouter:~qwen/latest"])
+def test_pinned_aliases_and_case_variants_are_config_errors(env, entry):
+    from config import ConfigError
+
+    env.setenv("FAULTLINE_CHAT_MODELS", entry)
+    with pytest.raises(ConfigError):
+        get_settings()
+
+
+def test_pinned_list_is_still_price_filtered_for_the_public(env):
+    env.setenv("FAULTLINE_CHAT_MODELS", "anthropic:claude-opus-5-5,anthropic:claude-haiku-5-5")
+    env.setenv("FAULTLINE_CHAT_MAX_PRICE_PER_MTOK", "5")
+    env.setenv("FAULTLINE_ADMIN_TOKEN", ADMIN)
+    h = Harness()
+    public = [m["id"] for m in h.client.get("/api/explore/chat/models").json()["models"]]
+    assert public == ["anthropic:claude-haiku-5-5"]
+    admin = h.client.get("/api/explore/chat/models", headers={"Authorization": f"Bearer {ADMIN}"}).json()
+    assert [m["id"] for m in admin["models"]] == ["anthropic:claude-opus-5-5", "anthropic:claude-haiku-5-5"]
+
+
+def test_claude_opus_stays_public_at_the_default_cap(env):
+    h = Harness()
+    ids = [m["id"] for m in h.client.get("/api/explore/chat/models").json()["models"]]
+    assert OPUS in ids
+
+
+def test_daily_budget_stops_public_turns_but_not_admin(env):
+    env.setenv("FAULTLINE_CHAT_DAILY_BUDGET_USD", "0.001")
+    env.setenv("FAULTLINE_CHAT_PER_IP", "0")  # local mode: per-IP limit off, so only the budget stops turns
+    env.setenv("FAULTLINE_ADMIN_TOKEN", ADMIN)
+    # Each reply reports 150 input + 30 output tokens at $0.2 / $1.0 per million: $0.00006 per turn.
+    h = Harness(openrouter=FakeProvider(models=OPENROUTER_MODELS, replies=[oa_text("Hi.") for _ in range(30)]))
+    codes = [h.turn("hi").status_code for _ in range(25)]
+    assert codes[0] == 200 and codes[-1] == 503
+    stopped = h.turn("hi")
+    assert stopped.status_code == 503 and stopped.json()["code"] == "BUDGET"
+    assert "budget" in stopped.json()["message"]
+    assert h.turn("hi", headers={"Authorization": f"Bearer {ADMIN}"}).status_code == 200
+    state = h.app.state.faultline_chat
+    tomorrow = datetime.now(UTC) + timedelta(days=1)
+    state.wall = lambda: tomorrow  # a new UTC day resets the running total
+    assert h.turn("hi").status_code == 200
+
+
+def test_unpriced_models_are_charged_at_the_cap():
+    state = chat_routes.ChatState()
+    m = chat.CatalogModel("openai", "gpt-5.1", "GPT-5.1", "x", vetted=True)
+    state.record_spend(m, 1_000_000, 1_000_000, fallback_per_mtok=20.0)
+    assert state.spent_today() == pytest.approx(40.0)
+
+
+def test_web_search_is_capped_per_turn(env):
+    env.setenv("TAVILY_API_KEY", "test-tavily-" + "t" * 24)
+    import asyncio
+
+    import httpx
+
+    payload = {"query": "q", "results": [{"title": "T", "url": "https://news.example.com/a", "content": "c",
+                                          "score": 0.5}], "response_time": 0.1}
+    transport = httpx.MockTransport(lambda req: httpx.Response(200, json=payload))
+    box = chat_routes.EngineToolBox(get_settings(), transport)
+    results = [asyncio.run(box.run("web_search", {"query": f"q{i}"})) for i in range(4)]
+    assert [r.status for r in results] == ["ok", "ok", "ok", "error"]
+    assert "limit reached" in results[3].summary["error"]
+    assert results[0].provenance == "LIVE EXPLORE" and results[0].summary["items"][0]["url"].startswith("https://")

@@ -66,8 +66,11 @@ disagree with it, or if this table and the code differ. A new route therefore ca
 - **public-if-flag**: the LIVE EXPLORE chat. Admin-only (as above) unless the server sets `FAULTLINE_PUBLIC_CHAT=1`
   exactly; then public, behind its own per-IP limit (`FAULTLINE_CHAT_PER_IP` turns per 10 minutes, default 10; a valid
   admin token bypasses it), a global concurrency cap (`FAULTLINE_CHAT_CONCURRENCY`, default 4, then 503 `BUSY`), the
-  presenter pause switch (503 `PAUSED`), and a public price cap (`FAULTLINE_CHAT_MAX_PRICE_PER_MTOK`, default 20 USD
-  per million output tokens). Checked at the edge (exact path, read per request) and in the route
+  presenter pause switch (503 `PAUSED`), a public price cap (`FAULTLINE_CHAT_MAX_PRICE_PER_MTOK`, default 20 USD
+  per million output tokens, also applied to a pinned `FAULTLINE_CHAT_MODELS` list), a daily spend ceiling
+  (`FAULTLINE_CHAT_DAILY_BUDGET_USD`, default 25: provider-reported tokens x catalogue price, unpriced models charged
+  at the price cap; once reached, non-admin turns get 503 `BUDGET` until the next UTC day), and at most 3 web searches
+  per turn. The pause, the per-IP counters and the spend total are in process memory: a restart resets them. Checked at the edge (exact path, read per request) and in the route
   (`routes.explore_chat.require_chat_access`).
 
 | Route | Public mode | Why |
