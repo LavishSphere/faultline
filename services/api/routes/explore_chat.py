@@ -823,8 +823,21 @@ class EngineToolBox:
             result = await client.search(query, max_results=WEB_RESULTS)
         except tavily.TavilyError as err:
             logger.warning("chat web_search failed: %s", err.kind.value)
+            # A failed Tavily search gets ONE try on the server-side LLM search (Anthropic, else OpenAI) when its key
+            # is set, so a Tavily outage or quota error doesn't stall the turn. The result carries the attribution
+            # of the provider that actually answered.
+            for backup in ("anthropic", "openai"):
+                if not self.web_clients.key(backup):
+                    continue
+                try:
+                    found = await web_llm.search(backup, query, self.web_clients)
+                except web_llm.WebSearchError as again:
+                    logger.warning("chat web_search fallback (%s) failed: %s", backup, again.kind)
+                    continue
+                return chat.ToolOutcome("ok", "LIVE EXPLORE", {"query": query},
+                                        found.as_summary(web_label(found.retrieved_at)))
             return chat.ToolOutcome("error", "LIVE EXPLORE", {"query": query},
-                                    {"error": f"Web search unavailable ({err.kind.value})."})
+                                    {"error": f"Web search unavailable ({err.kind.value}). No results were made up."})
         summary = {
             "provenance": web_label(result.retrieved_at),  # what the model and the tool step show
             "retrieved_at": result.retrieved_at.isoformat(),

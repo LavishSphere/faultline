@@ -365,3 +365,29 @@ def test_daily_caps_still_apply_to_llm_search(env):
     assert len(h.anthropic.chat_requests) == 1  # the refused call never reached the provider
     admin = h.turn("And Nvidia?", headers={"Authorization": f"Bearer {ADMIN}"}).json()
     assert admin["tool_calls"][0]["result_status"] == "ok"
+
+
+def _tavily_fails(status: int) -> httpx2.MockTransport:
+    return httpx2.MockTransport(lambda _req: httpx2.Response(status, json={"detail": "TEST FIXTURE failure"}))
+
+
+def test_a_failed_tavily_search_falls_back_to_anthropic_with_anthropic_attribution(env):
+    """Tavily is the preferred provider when its key is set; a Tavily outage or quota error must not stall the turn."""
+    env.setenv("TAVILY_API_KEY", "test-fixture-tavily-key")
+    env.delenv("FAULTLINE_WEB_SEARCH_PROVIDER", raising=False)
+    fake = FakeProvider(replies=[an_reply(search_block() + text_blocks())])
+    box = chat_routes.EngineToolBox(get_settings(), _tavily_fails(500), web_clients=factory(anthropic=fake))
+    assert box.web_provider == "tavily"
+    out = asyncio.run(box.run("web_search", {"query": "Nvidia CEO"}))
+    assert out.status == "ok" and out.summary["results"]
+    assert "Anthropic" in out.summary["attribution"] and "Tavily" not in json.dumps(out.summary)
+
+
+def test_tavily_failing_with_no_backup_key_is_one_tool_error(env):
+    env.setenv("TAVILY_API_KEY", "test-fixture-tavily-key")
+    env.delenv("FAULTLINE_WEB_SEARCH_PROVIDER", raising=False)
+    env.delenv("ANTHROPIC_API_KEY", raising=False)
+    env.delenv("OPENAI_API_KEY", raising=False)
+    box = chat_routes.EngineToolBox(get_settings(), _tavily_fails(500), web_clients=chat.ClientFactory({}))
+    out = asyncio.run(box.run("web_search", {"query": "Nvidia CEO"}))
+    assert out.status == "error" and set(out.summary) == {"error"} and "No results were made up" in out.summary["error"]
