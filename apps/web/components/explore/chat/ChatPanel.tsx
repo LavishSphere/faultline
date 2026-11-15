@@ -280,9 +280,9 @@ export function ChatPanel() {
             Ask the <em>engine</em>
           </h2>
           <p className="max-w-3xl text-base leading-relaxed text-text-2 md:text-lg">
-            Ask any business decision. The model answers in words and can search the current web, read prediction
-            markets, and call FAULTLINE&apos;s simulator and optimizer; every source it used is listed, and the universe
-            on the right re-runs the exact engine inputs it used.
+            Ask any business decision. The model answers in words and calls FAULTLINE&apos;s simulator and optimizer;
+            when web search is switched on for this server it also cites current web sources. Every tool and source it
+            used is listed, and the universe on the right re-runs the exact engine inputs it used.
           </p>
         </div>
         <div className="flex flex-wrap items-center gap-1.5 xl:justify-end">
