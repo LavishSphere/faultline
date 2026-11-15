@@ -101,7 +101,9 @@ def result_preview(name: str, outcome: ToolOutcome) -> str:
                 domains.append(d)
         more = ", …" if len(domains) > 3 else ""
         noun = "source" if len(results) == 1 else "sources"
-        return _clip(f"{len(results)} {noun}" + (f": {', '.join(domains[:3])}{more}" if domains else ""))
+        credit = str(s.get("attribution") or "")
+        by = next((f" via {name}" for name in ("Tavily", "Anthropic", "OpenAI") if name in credit), "")
+        return _clip(f"{len(results)} {noun}{by}" + (f": {', '.join(domains[:3])}{more}" if domains else ""))
     if name == "simulate":
         return _clip(f"low point {_money(s.get('min_cash'))} in week {s.get('min_cash_week')} · "
                      f"ends at {_money(s.get('ending_cash'))}")
