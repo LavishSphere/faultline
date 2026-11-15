@@ -1,66 +1,13 @@
 import type { ReactNode } from "react";
 
+import { parseReply, type Align, type TableBlock } from "@/lib/replyMarkdown";
+
 /**
- * The model's reply as text, with a minimal safe markdown subset: paragraphs, "-"/"*" and "1." lists, "#" headings,
- * **bold** and `code`. Everything becomes React text nodes (no HTML is parsed, no dangerouslySetInnerHTML), and every
- * character of the reply is kept: numbers are shown exactly as the model wrote them, never recomputed.
+ * The model's reply as text, with a minimal safe markdown subset (parsed in lib/replyMarkdown.ts): paragraphs, "-"/"*"
+ * and "1." lists, "#" headings, "---" rules, GitHub-flavored tables, **bold** and `code`. Everything becomes React text
+ * nodes (no HTML is parsed, no dangerouslySetInnerHTML), and every character of the reply is kept: numbers are shown
+ * exactly as the model wrote them, never recomputed.
  */
-
-type Block =
-  | { kind: "p"; lines: string[] }
-  | { kind: "h"; text: string }
-  | { kind: "ul" | "ol"; items: string[] };
-
-const BULLET = /^\s*[-*•]\s+(.*)$/;
-const NUMBERED = /^\s*\d{1,3}[.)]\s+(.*)$/;
-const HEADING = /^\s{0,3}#{1,4}\s+(.*)$/;
-
-export function parseReply(text: string): Block[] {
-  const blocks: Block[] = [];
-  let para: string[] | null = null;
-  let list: { kind: "ul" | "ol"; items: string[] } | null = null;
-  const flush = () => {
-    if (para) blocks.push({ kind: "p", lines: para });
-    if (list) blocks.push(list);
-    para = null;
-    list = null;
-  };
-  for (const line of text.replace(/\r\n?/g, "\n").split("\n")) {
-    if (!line.trim()) {
-      flush();
-      continue;
-    }
-    const h = HEADING.exec(line);
-    const b = BULLET.exec(line);
-    const n = NUMBERED.exec(line);
-    if (h) {
-      flush();
-      blocks.push({ kind: "h", text: h[1] ?? "" });
-    } else if (b || n) {
-      const kind = b ? "ul" : "ol";
-      if (para) {
-        blocks.push({ kind: "p", lines: para });
-        para = null;
-      }
-      if (!list || list.kind !== kind) {
-        if (list) blocks.push(list);
-        list = { kind, items: [] };
-      }
-      list.items.push((b ?? n)?.[1] ?? "");
-    } else if (list && /^\s{2,}\S/.test(line)) {
-      // An indented continuation of the previous list item.
-      list.items[list.items.length - 1] += ` ${line.trim()}`;
-    } else {
-      if (list) {
-        blocks.push(list);
-        list = null;
-      }
-      (para ??= []).push(line);
-    }
-  }
-  flush();
-  return blocks;
-}
 
 function inline(text: string, keyBase: string): ReactNode[] {
   const out: ReactNode[] = [];
@@ -91,6 +38,49 @@ function inline(text: string, keyBase: string): ReactNode[] {
   return out;
 }
 
+const ALIGN_CLASS: Record<Exclude<Align, null>, string> = { left: "text-left", right: "text-right", center: "text-center" };
+
+/** A GFM table from the reply. Scrolls inside its own box on narrow screens, so the page never scrolls sideways. */
+function ReplyTable({ table, keyBase }: { table: TableBlock; keyBase: string }) {
+  const cellClass = (c: number) => {
+    const align = table.align[c] ?? (table.numeric[c] ? "right" : "left");
+    const num = table.numeric[c] ? "whitespace-nowrap font-mono tabular-nums" : "min-w-[8ch]";
+    return `${ALIGN_CLASS[align]} ${num} px-3 py-1.5 align-top first:pl-2 last:pr-2`;
+  };
+  return (
+    <div
+      className="max-w-full overflow-x-auto rounded-md border border-line focus-visible:outline-2 focus-visible:outline-accent"
+      data-testid="chat-reply-table"
+      role="region"
+      aria-label="Table from the reply"
+      tabIndex={0}
+    >
+      <table className="min-w-full border-collapse text-[0.9em] leading-snug [overflow-wrap:normal] [word-break:normal]">
+        <thead className="bg-hover/60">
+          <tr className="border-b border-line">
+            {table.header.map((h, c) => (
+              <th key={c} scope="col" className={`${cellClass(c)} font-medium text-text`}>
+                {inline(h, `${keyBase}-h${c}`)}
+              </th>
+            ))}
+          </tr>
+        </thead>
+        <tbody>
+          {table.rows.map((r, ri) => (
+            <tr key={ri} className="border-b border-line/60 last:border-b-0">
+              {r.map((cell, c) => (
+                <td key={c} className={cellClass(c)}>
+                  {inline(cell, `${keyBase}-${ri}-${c}`)}
+                </td>
+              ))}
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
 export function ReplyText({ text, className = "" }: { text: string; className?: string }) {
   const blocks = parseReply(text);
   return (
@@ -118,6 +108,8 @@ export function ReplyText({ text, className = "" }: { text: string; className?: 
             </p>
           );
         }
+        if (b.kind === "hr") return <hr key={bi} className="border-line" />;
+        if (b.kind === "table") return <ReplyTable key={bi} table={b} keyBase={`t${bi}`} />;
         const items = b.items.map((it, ii) => (
           <li key={ii} className="pl-1">
             {inline(it, `l${bi}-${ii}`)}
@@ -128,7 +120,7 @@ export function ReplyText({ text, className = "" }: { text: string; className?: 
             {items}
           </ul>
         ) : (
-          <ol key={bi} className="flex list-decimal flex-col gap-1 pl-6 marker:font-mono marker:text-muted">
+          <ol key={bi} start={b.start} className="flex list-decimal flex-col gap-1 pl-6 marker:font-mono marker:text-muted">
             {items}
           </ol>
         );
