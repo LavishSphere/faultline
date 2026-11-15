@@ -18,6 +18,9 @@ const LIST_PHRASES: Record<string, string> = {
   list_judge_challenges: "listed judge challenges",
   list_decision_frames: "listed decision frames",
   prediction_markets: "checked prediction markets",
+  monte_carlo_decision: "ran a Monte Carlo of the decision",
+  monte_carlo_cash: "ran a Monte Carlo of cash",
+  query_internal_data: "queried the mock internal data",
 };
 
 /** A scalar input value as given (strings trimmed and shortened for the sentence only), or null. */

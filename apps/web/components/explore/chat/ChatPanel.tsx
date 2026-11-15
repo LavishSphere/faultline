@@ -32,6 +32,7 @@ import { ReplyText } from "./ReplyText";
 import { StarterCards } from "./StarterCards";
 import { EngineAgreement, Universe, type UniverseSource } from "./Universe";
 import { EvidenceCards } from "./EvidenceCards";
+import { MonteCarloCards } from "./MonteCarlo";
 import { VoiceButton } from "./VoiceButton";
 import "./chat.css";
 
@@ -708,6 +709,9 @@ function LaneView({
           ) : null}
         </div>
       ) : null}
+
+      {/* Numbers first: the engine's Monte Carlo results lead the answer; the model's words follow. */}
+      {!notOk ? <MonteCarloCards calls={r.tool_calls} reduce={reduce} /> : null}
 
       {r.reply.trim() && !notOk ? <ReplyText text={r.reply} className="max-w-[80ch]" /> : null}
       {!r.reply.trim() && !notOk ? (
