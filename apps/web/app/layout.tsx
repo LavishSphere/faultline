@@ -9,6 +9,7 @@ import { HealthProvider } from "@/components/HealthProvider";
 import { KeyNav } from "@/components/KeyNav";
 import { HeaderCase } from "@/components/HeaderCase";
 import { ReplayTimeline } from "@/components/ReplayTimeline";
+import { SiteNav } from "@/components/SiteNav";
 import { ThemeToggle } from "@/components/ThemeToggle";
 import { THEME_STORAGE_KEY } from "@/lib/theme";
 
@@ -62,8 +63,8 @@ export default function RootLayout({ children }: Readonly<{ children: React.Reac
           <div className="flex min-h-dvh flex-col">
             <div className="sticky top-0 z-40 bg-bg/75 backdrop-blur-[12px]">
               <header className="border-b border-line">
-                <div className="mx-auto flex w-full max-w-[1760px] items-center justify-between gap-3 px-4 py-3 md:px-10">
-                  <div className="flex min-w-0 items-center gap-4 md:gap-6">
+                <div className="mx-auto flex w-full max-w-[1760px] items-center justify-between gap-3 px-4 py-2.5 md:px-10">
+                  <div className="flex min-w-0 items-center gap-3 md:gap-6">
                     <Link
                       href="/"
                       className="flex items-center gap-2.5 rounded-sm"
@@ -75,9 +76,9 @@ export default function RootLayout({ children }: Readonly<{ children: React.Reac
                       >
                         <span className="absolute left-[-30%] top-1/2 h-px w-[160%] -rotate-[28deg] bg-accent" />
                       </span>
-                      <span className="font-mono text-[13px] font-medium tracking-[0.28em] text-text">FAULTLINE</span>
+                      <span className="hidden font-mono text-[13px] font-medium tracking-[0.28em] text-text sm:inline">FAULTLINE</span>
                     </Link>
-                    <span className="hidden h-4 w-px bg-line md:block" aria-hidden="true" />
+                    <SiteNav />
                     <HeaderCase />
                   </div>
                   <div className="flex min-w-0 items-center gap-2">

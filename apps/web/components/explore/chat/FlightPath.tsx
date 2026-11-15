@@ -123,7 +123,7 @@ export function FlightPath({ calls, reduce }: { calls: readonly ChatToolCall[]; 
           <span className="kicker !text-text-2">Flight path · steps the model took</span>
           <span className="font-mono text-[10.5px] text-muted">
             {calls.length} step{calls.length === 1 ? "" : "s"}
-            {failed ? ` · ${failed} failed` : ""} · revealed after the reply arrived, not live
+            {failed ? ` · ${failed} failed` : ""} · shown after the reply, not live
           </span>
         </p>
         <p

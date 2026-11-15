@@ -39,7 +39,7 @@ export const STEPS: readonly Step[] = [
     section: "live",
     titlePre: "Live",
     titleEm: "Explore",
-    lede: "Test a decision today. Tavily searches current news, the local model turns the results into cited evidence and suggests stress inputs, you confirm them, and the deterministic engine computes the cascade. Separate from the Blind Replay.",
+    lede: "Paste a headline: cited news, suggested stress inputs you confirm, the engine's cascade.",
   },
   {
     slug: "rewind",

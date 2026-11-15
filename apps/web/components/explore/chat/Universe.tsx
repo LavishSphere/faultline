@@ -149,13 +149,10 @@ export function Universe({
       className="universe-sky relative flex min-w-0 flex-col overflow-hidden rounded-xl border border-line"
       data-testid="universe"
     >
-      <header className="flex flex-col gap-3 border-b border-line/70 px-4 pb-4 pt-5 md:px-6">
+      <header className="flex flex-col gap-2 border-b border-line/70 px-4 pb-3 pt-4 md:px-6">
         <div className="flex min-w-0 flex-wrap items-start justify-between gap-3">
           <div className="min-w-0">
-            <p className="kicker">
-              <span className="text-text-2">F.1</span> · business universe
-            </p>
-            <h2 id={`${tabsId}-title`} className="display mt-1 text-[clamp(2rem,3.2vw,3.25rem)] leading-none text-text">
+            <h2 id={`${tabsId}-title`} className="display text-[clamp(1.75rem,2.4vw,2.5rem)] leading-none text-text">
               The engine&apos;s <em>view</em>
             </h2>
           </div>
@@ -167,14 +164,11 @@ export function Universe({
         <p className="font-mono text-[11px] leading-relaxed text-muted" data-testid="universe-caption">
           {active ? (
             <>
-              <span className="text-text-2">{active.title}</span> · Engine re-ran this exact input: the network and cash
-              path are POST /api/simulate and /api/optimize answers, not the model&apos;s words.
+              <span className="text-text-2">{active.title}</span> · Engine re-ran this exact input (POST /api/simulate,
+              /api/optimize).
             </>
           ) : (
-            <>
-              Ask a question. When the model calls simulate or optimize, the engine re-runs that exact input here and the
-              shockwave ripples through the network. Until then: structure only, no values.
-            </>
+            <>Structure only, no values, until the model calls the engine.</>
           )}
         </p>
         {b ? (
