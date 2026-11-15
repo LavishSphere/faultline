@@ -478,3 +478,31 @@ def test_internal_data_is_public_in_public_mode(monkeypatch):
     assert client.get("/api/internal-data").status_code == 200  # no token, like /api/simulate
     assert client.get("/api/internal-data/debt").status_code == 200
     assert client.post("/api/explore/chat", json={}).status_code in (401, 403)  # the chat stays gated
+
+
+# ----------------------------------------------------------------------------- hypothetical premise (#221)
+
+
+def test_premise_labels_the_run_and_never_reaches_the_engine(engine):
+    args = {**copy.deepcopy(DECISION_ARGS), "premise": "  the CEO had   3 affairs "}
+    out = asyncio.run(_box().run("monte_carlo_decision", args))
+    assert out.status == "ok", out.summary
+    (_, body), = engine
+    assert "premise" not in body and "premise" not in out.input  # the engine input is unchanged
+    assert out.summary["premise"] == {"text": "the CEO had 3 affairs", "label": chat.HYPOTHETICAL_PREMISE_LABEL,
+                                      "note": "Taken from the user's message as an assumption; not checked "
+                                              "against any source."}
+    assert "USER-SUPPLIED HYPOTHETICAL, NOT VERIFIED" in out.for_model()
+
+
+@pytest.mark.parametrize("premise", ["", "   ", None])
+def test_no_premise_adds_no_label(engine, premise):
+    args = {**copy.deepcopy(DECISION_ARGS), "premise": premise}
+    out = asyncio.run(_box().run("monte_carlo_decision", args))
+    assert out.status == "ok" and "premise" not in out.summary
+
+
+def test_decision_tool_asks_for_a_premise_without_spending_the_union_budget():
+    spec = next(s for s in _box().specs() if s.name == "monte_carlo_decision")
+    assert spec.parameters["properties"]["premise"]["type"] == "string"  # not nullable: no extra union parameter
+    assert "premise" in spec.parameters["required"]

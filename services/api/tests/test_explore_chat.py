@@ -155,7 +155,7 @@ class Harness:
                  openai: FakeProvider | None = None) -> None:
         self.openrouter = openrouter or FakeProvider(models=OPENROUTER_MODELS)
         self.anthropic = anthropic or FakeProvider(models=ANTHROPIC_LIST)
-        self.openai = openai or FakeProvider(models=[{"id": "gpt-5.1", "object": "model", "created": 0,
+        self.openai = openai or FakeProvider(models=[{"id": "gpt-5.5", "object": "model", "created": 0,
                                                       "owned_by": "openai"}])
         self.app = create_app()
         transports = {"openrouter": self.openrouter.transport(), "anthropic": self.anthropic.transport(),
@@ -359,26 +359,26 @@ def test_catalogue_never_offers_openrouter_copies_of_native_models(env):
     ids = [m["id"] for m in body["models"]]
     assert not [i for i in ids if i.startswith(("openrouter:openai/", "openrouter:anthropic/"))]
     assert "openrouter:plain/no-tools" not in ids and "openrouter:deepseek/deepseek-v4-flash:batch" not in ids
-    assert "openai:gpt-5.1" in ids and OPUS in ids
+    assert "openai:gpt-5.5" in ids and OPUS in ids
     providers = [m["provider"] for m in body["models"]]
     assert providers == sorted(providers, key=["openrouter", "openai", "anthropic"].index)
-    assert body["featured"][0] == QWEN and LLAMA not in body["featured"]  # #195: OpenRouter first, re-ranked
+    assert body["featured"][0] == QWEN and LLAMA not in body["featured"]  # #221: open-weight group first
     assert body["default"] == SONNET  # preselected: the model that handled the live bad-quarter test (#198)
     llama = next(m for m in body["models"] if m["id"] == LLAMA)
-    assert llama["note"] == "open-weight model, hosted via OpenRouter" and llama["context_length"] == 131072
+    assert llama["note"] == chat.OPEN_WEIGHT_NOTE and llama["context_length"] == 131072
     assert llama["pricing"] == {"input_per_mtok": 0.2, "output_per_mtok": 1.0}
 
 
 def test_openai_and_claude_requests_hit_native_apis(env):
     env.setenv("OPENAI_API_KEY", OPENAI_KEY)
-    h = Harness(openai=FakeProvider(models=[{"id": "gpt-5.1", "object": "model", "created": 0, "owned_by": "o"}],
+    h = Harness(openai=FakeProvider(models=[{"id": "gpt-5.5", "object": "model", "created": 0, "owned_by": "o"}],
                                     replies=[oa_text("Hello.")]),
                 anthropic=FakeProvider(models=ANTHROPIC_LIST,
                                        replies=[an_message([{"type": "text", "text": "Hi."}], "end_turn")]))
-    assert h.turn("hi", model_id="openai:gpt-5.1").json()["status"] == "ok"
+    assert h.turn("hi", model_id="openai:gpt-5.5").json()["status"] == "ok"
     assert h.turn("hi", model_id=OPUS).json()["status"] == "ok"
     assert h.openai.chat_requests[0]["url"].startswith("https://api.openai.com/")
-    assert h.openai.chat_requests[0]["json"]["model"] == "gpt-5.1"
+    assert h.openai.chat_requests[0]["json"]["model"] == "gpt-5.5"
     assert h.anthropic.chat_requests[0]["url"].startswith("https://api.anthropic.com/")
     assert [r for r in h.openrouter.chat_requests] == []  # OpenRouter never carried an OpenAI or Claude turn
     with pytest.raises(ValueError):
@@ -719,7 +719,7 @@ def test_daily_budget_stops_public_turns_but_not_admin(env):
 
 def test_unpriced_models_are_charged_at_the_cap():
     state = chat_routes.ChatState()
-    m = chat.CatalogModel("openai", "gpt-5.1", "GPT-5.1", "x", vetted=True)
+    m = chat.CatalogModel("openai", "gpt-5.5", "GPT-5.5", "x", vetted=True)
     state.record_spend(m, 1_000_000, 1_000_000, fallback_per_mtok=20.0)
     assert state.spent_today() == pytest.approx(40.0)
 
