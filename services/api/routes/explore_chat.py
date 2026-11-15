@@ -13,7 +13,9 @@ Routes:
 - ``GET  /api/explore/chat/status`` / ``POST /api/explore/chat/pause`` (admin): the presenter pause switch.
 
 Tools: simulate, optimize, decision, list_scenarios, list_judge_challenges, list_decision_frames, vc_lenses, and
-web_search (Tavily; offered only when TAVILY_API_KEY is set). Every tool result reaches the model labeled with its
+web_search (Tavily; offered only when TAVILY_API_KEY is set; per-IP and global daily caps for non-admin callers,
+FAULTLINE_CHAT_WEB_PER_IP_DAY / FAULTLINE_CHAT_WEB_DAILY; results labelled "REAL (web, retrieved <UTC>)"). Every
+tool result reaches the model labeled with its
 provenance. Nothing here reads replay cases, sealed outcomes, the prediction store or benchmark data, and nothing is
 saved: tests/test_explore_separation.py enforces both walls.
 
@@ -42,6 +44,7 @@ from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from typing import Annotated, Any, Literal
+from urllib.parse import urlsplit
 
 import httpx
 from fastapi import APIRouter, Depends, Request, Response
@@ -179,6 +182,9 @@ class ChatState:
         self.catalog: chat.Catalog | None = None
         self.spend_day: str | None = None  # UTC date the running total belongs to
         self.spent_usd = 0.0  # estimated provider spend today (usage x catalogue price), in process memory
+        self.web_day: str | None = None  # UTC date the web_search counters belong to
+        self.web_total = 0
+        self.web_by_ip: dict[str, int] = {}
 
     def spent_today(self) -> float:
         today = self.wall().date().isoformat()
@@ -194,6 +200,24 @@ class ChatState:
         pin = m.input_per_mtok if m.input_per_mtok is not None else fallback_per_mtok
         pout = m.output_per_mtok if m.output_per_mtok is not None else fallback_per_mtok
         self.spent_usd += (input_tokens * pin + output_tokens * pout) / 1_000_000
+
+    def web_take(self, ip: str | None, per_ip: int, daily: int) -> str | None:
+        """Count one web_search for a non-admin caller (`ip`), or None for an admin (unlimited, not counted).
+        Returns why it is refused (per-IP or global daily cap, per UTC day) or None when allowed and counted."""
+        if ip is None:
+            return None
+        today = self.wall().date().isoformat()
+        if self.web_day != today:
+            self.web_day, self.web_total, self.web_by_ip = today, 0, {}
+        if self.web_by_ip.get(ip, 0) >= per_ip:
+            return (f"web_search daily limit for this visitor reached ({per_ip} per day); answer from the results "
+                    "you already have, or say live sources are unavailable")
+        if self.web_total >= daily:
+            return ("web_search daily limit for this server reached; answer from the results you already have, or "
+                    "say live sources are unavailable")
+        self.web_by_ip[ip] = self.web_by_ip.get(ip, 0) + 1
+        self.web_total += 1
+        return None
 
     def paused(self) -> datetime | None:
         if self.paused_until is not None and self.wall() >= self.paused_until:
@@ -364,7 +388,9 @@ def _engine_tools(named: list[NamedShock]) -> tuple[chat.ToolSpec, ...]:
 
 
 WEB_SEARCH_TOOL = chat.ToolSpec(
-    "web_search", "Search the current web (Tavily). LIVE EXPLORE: current pages, not point-in-time. Cite urls.",
+    "web_search", "Search the current public web (Tavily) for facts about real companies, people, markets and "
+    "events. Results are REAL web pages retrieved now (current, not point-in-time). Cite each fact with its source "
+    "name, date and url from the results, and quote figures exactly as the snippet gives them.",
     _schema({"query": {"type": "string", "description": "Search text, up to 200 characters."}}),
 )
 
@@ -392,14 +418,22 @@ def _route_error_summary(err: RouteError) -> dict[str, Any]:
             "errors": [{"loc": e.loc, "msg": e.msg} for e in err.errors][:10]}
 
 
+def web_label(retrieved_at: datetime) -> str:
+    """Provenance shown with a web_search result: REAL web content, stamped with when FAULTLINE fetched it."""
+    return f"REAL (web, retrieved {retrieved_at.astimezone(UTC).strftime('%Y-%m-%dT%H:%M:%SZ')})"
+
+
 class EngineToolBox:
     """Runs each tool through the same route function the HTTP API uses, in-process."""
 
-    def __init__(self, settings: Settings, tavily_transport: httpx.AsyncBaseTransport | None) -> None:
+    def __init__(self, settings: Settings, tavily_transport: httpx.AsyncBaseTransport | None,
+                 web_quota: Callable[[], str | None] | None = None) -> None:
         self.settings = settings
         self.tavily_transport = tavily_transport
         self.web = tavily.key_configured()
         self.web_calls = 0  # one toolbox per turn
+        # Daily web_search caps for this caller (ChatState.web_take): a refusal message, or None. None = unlimited.
+        self.web_quota = web_quota
 
     def specs(self) -> list[chat.ToolSpec]:
         try:
@@ -593,10 +627,13 @@ class EngineToolBox:
         if self.web_calls >= MAX_WEB_SEARCHES_PER_TURN:
             raise _ToolInputError(f"web_search limit reached ({MAX_WEB_SEARCHES_PER_TURN} per turn); answer from "
                                   "the results you have")
-        self.web_calls += 1
         query = tavily.normalize_query(str(args.get("query") or ""))
         if not query or len(query) > 200:
             raise _ToolInputError("query must be 1-200 characters")
+        refusal = self.web_quota() if self.web_quota is not None else None
+        if refusal:
+            raise _ToolInputError(refusal)
+        self.web_calls += 1
         try:
             client = tavily.client_from_env(transport=self.tavily_transport, timeout_s=TAVILY_TIMEOUT_S)
             result = await client.search(query, max_results=WEB_RESULTS)
@@ -604,10 +641,16 @@ class EngineToolBox:
             logger.warning("chat web_search failed: %s", err.kind.value)
             return chat.ToolOutcome("error", "LIVE EXPLORE", {"query": query},
                                     {"error": f"Web search unavailable ({err.kind.value})."})
-        items = [{"title": h.title, "url": h.url, "snippet": h.snippet, "published_at": h.published_at_raw}
-                 for h in result.items]
-        summary = {"label": "LIVE EXPLORE: current, not point-in-time", "attribution": "Search powered by Tavily",
-                   "retrieved_at": result.retrieved_at.isoformat(), "items": items}
+        summary = {
+            "provenance": web_label(result.retrieved_at),  # what the model and the tool step show
+            "retrieved_at": result.retrieved_at.isoformat(),
+            "query": query,
+            "results": [{"title": h.title, "url": h.url, "domain": (urlsplit(h.url).hostname or "").lower(),
+                         "published_date": h.published_at.isoformat() if h.published_at else None,
+                         "snippet": h.snippet} for h in result.items],
+            "attribution": "Search powered by Tavily",
+            "note": "Current web pages, not point-in-time evidence. published_date is Tavily's estimate.",
+        }
         return chat.ToolOutcome("ok", "LIVE EXPLORE", {"query": query}, summary)
 
 
@@ -852,7 +895,9 @@ async def chat_turn(
                          "again in a moment.", 503, headers={"Retry-After": str(BUSY_RETRY_AFTER_S)})
 
     state.active += 1
-    toolbox = EngineToolBox(settings, tavily_transport)
+    caller = None if admin else rate_limit_key(request.client.host if request.client else "unknown")
+    toolbox = EngineToolBox(settings, tavily_transport, web_quota=lambda: state.web_take(
+        caller, settings.chat_web_per_ip_day, settings.chat_web_daily))
     history = [{"role": m.role, "content": m.content} for m in body.messages]
     try:
         adapter = chat.adapter_for(model, clients)

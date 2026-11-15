@@ -4,8 +4,9 @@ import { ChatPanel } from "./chat/ChatPanel";
 import { ExploreWorkbench } from "./ExploreWorkbench";
 
 /**
- * Screen F: LIVE EXPLORE (issue #61), the sixth step after RESEARCH. Current web research via Tavily, read by the local
- * model, confirmed by the human, computed by the deterministic engine. Separate from the Blind Replay.
+ * Screen F: LIVE EXPLORE (issue #61), the home screen `/` and the first step, before the Blind Replay. Current web
+ * research via Tavily, read by the local model, confirmed by the human, computed by the deterministic engine.
+ * Separate from the Blind Replay.
  * The live engine-tool chat ("Ask the engine", #186) is the hero of the screen; the analyze flow sits below it.
  */
 export function ExploreScreen({ step }: { step: Step }) {
