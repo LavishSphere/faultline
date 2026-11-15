@@ -62,17 +62,14 @@ export function StarterCards({ onPick, disabled }: { onPick: (prompt: string) =>
             disabled={disabled}
             title={s.prompt}
             data-testid="chat-starter"
-            className={`starter-card ${TONE_CLASS[s.tone]} group relative isolate flex h-full min-h-[9.5rem] w-full min-w-0 flex-col gap-3 overflow-hidden rounded-xl border border-line p-5 text-left disabled:cursor-not-allowed disabled:opacity-50 md:min-h-[11rem] md:p-6`}
+            className={`starter-card ${TONE_CLASS[s.tone]} group relative isolate flex h-full min-h-[6.5rem] w-full min-w-0 flex-col gap-2.5 overflow-hidden rounded-xl border border-line p-4 text-left disabled:cursor-not-allowed disabled:opacity-50 md:min-h-[8rem] md:p-5`}
           >
             <span className="flex items-center gap-3">
               <span className={`font-mono text-[10.5px] uppercase tracking-[0.16em] ${TONE_TEXT[s.tone]}`}>{s.kicker}</span>
             </span>
             <span className="starter-rule h-px w-12" aria-hidden="true" />
-            <span className="display min-w-0 break-words text-[1.6rem] leading-[1.08] text-text md:text-[1.9rem] 2xl:text-[2.05rem]">
+            <span className="display min-w-0 break-words text-[1.4rem] leading-[1.08] text-text md:text-[1.65rem] 2xl:text-[1.8rem]">
               {s.title}
-            </span>
-            <span className="mt-auto flex items-center gap-2 font-mono text-[10.5px] uppercase tracking-[0.14em] text-muted transition-colors duration-150 group-hover:text-text-2">
-              Ask the engine <span aria-hidden="true">→</span>
             </span>
           </button>
         </li>

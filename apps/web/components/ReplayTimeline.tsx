@@ -5,16 +5,16 @@ import { usePathname } from "next/navigation";
 import { SECTION_LABEL, sectionSteps, stepFromPath, stepHref } from "@/lib/steps";
 
 /**
- * Top presenter navigation in two sections. First, highlighted: LIVE EXPLORE ("Ask the engine", the home screen).
- * Second: the Blind Replay ("the honesty proof"), five screens under THEN / DECISION / REVEAL with a progress line.
+ * The Blind Replay step timeline ("the honesty proof"): five screens under THEN / DECISION / REVEAL with a progress
+ * line. Drawn only on replay pages; Explore (the home screen) shows the compact header nav instead (SiteNav).
  * This is navigation, not data: it carries no dates or values.
  */
 export function ReplayTimeline() {
   const pathname = usePathname();
   const current = stepFromPath(pathname) ?? null;
-  const live = sectionSteps("live");
   const replay = sectionSteps("replay");
-  const replayPos = current?.section === "replay" ? replay.findIndex((s) => s.slug === current.slug) : -1;
+  if (current?.section !== "replay") return null;
+  const replayPos = replay.findIndex((s) => s.slug === current.slug);
   const progress = replayPos >= 0 && replay.length > 1 ? (replayPos / (replay.length - 1)) * 100 : 0;
   const columns = { gridTemplateColumns: `repeat(${replay.length}, minmax(0, 1fr))` };
   const phases = [...new Set(replay.map((s) => s.phase))];
@@ -22,40 +22,6 @@ export function ReplayTimeline() {
   return (
     <nav aria-label="Presenter timeline" className="border-b border-line">
       <div className="mx-auto flex w-full max-w-[1760px] flex-col gap-3 px-4 pb-3 pt-3 md:flex-row md:items-stretch md:gap-8 md:px-10">
-        <section aria-labelledby="nav-live" className="flex shrink-0 flex-col gap-2 md:w-[260px]">
-          {/* Visually hidden on phones (the chat heading below repeats it) to keep the sticky header short. */}
-          <p
-            id="nav-live"
-            className="sr-only font-mono text-[10px] uppercase tracking-[0.18em] text-muted md:not-sr-only md:text-[11px]"
-          >
-            {SECTION_LABEL.live}
-          </p>
-          {live.map((step) => {
-            const active = current?.slug === step.slug;
-            return (
-              <Link
-                key={step.slug}
-                href={stepHref(step)}
-                aria-current={active ? "step" : undefined}
-                data-testid="nav-live-explore"
-                className={`group flex items-center justify-between gap-3 rounded-md border px-3 py-2 transition-colors ${
-                  active
-                    ? "border-accent bg-accent-soft text-text"
-                    : "border-line-strong text-text-2 hover:border-accent hover:bg-accent-soft hover:text-text"
-                }`}
-              >
-                <span className="flex min-w-0 items-baseline gap-2">
-                  <span className="num font-mono text-[10px] text-muted">{String(step.index + 1).padStart(2, "0")}</span>
-                  <span className="truncate text-sm font-medium">{step.label}</span>
-                </span>
-                <span className="font-mono text-[10px] uppercase tracking-[0.16em] text-accent">{step.phase}</span>
-              </Link>
-            );
-          })}
-        </section>
-
-        <span className="hidden w-px bg-line md:block" aria-hidden="true" />
-
         <section aria-labelledby="nav-replay" className="min-w-0 flex-1">
           <p
             id="nav-replay"

@@ -115,6 +115,21 @@ test.describe("Monte Carlo panels", () => {
     await expect(panel.getByTestId("mc-computed-by")).toContainText("Computed by FAULTLINE in Python, not by the language model.");
   });
 
+  test("cash: a yes/no plan action shows only its name; week and amount appear only when served", async ({ page }) => {
+    // A copy of the recorded cash run with one yes/no decision added in front (TEST FIXTURE edit): the optimizer
+    // serves use_backup_supplier with week, amount and share all null (core/optimizer.py ChosenAction).
+    const cash = structuredClone(CASH);
+    cash.monte_carlo.plan.actions = [{ action: "use_backup_supplier", week: null, amount: null, share: null }, ...cash.monte_carlo.plan.actions];
+    await mock(page, [toolCall("monte_carlo_cash", cash)]);
+    await page.goto("/explore/");
+    await ask(page, "What's the probability we breach the cash floor if our biggest supplier fails?");
+    const actions = page.getByTestId("mc-cash").getByTestId("mc-plan-action");
+    await expect(actions.nth(0)).toHaveText("Use backup supplier");
+    const first = cash.monte_carlo.plan.actions[1];
+    await expect(actions.nth(1)).toContainText(`wk ${first.week}`);
+    await expect(actions.filter({ hasText: "NOT AVAILABLE" })).toHaveCount(0);
+  });
+
   test("cash: breach tiles, fan bands, the view toggle and the per-week strip come from the served run", async ({ page }) => {
     await mock(page, ALL);
     await page.goto("/explore/");

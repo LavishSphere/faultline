@@ -24,7 +24,7 @@ import {
 import { costLabel, drivesUniverse, replyCostUsd } from "@/lib/universe";
 import { usePrefersReducedMotion } from "../../CascadeGraph";
 import { ProvenanceBadge } from "../../ProvenanceBadge";
-import { ModelWrittenBadge } from "./ChatBadges";
+import { ModelWrittenBadge, ProvenanceKey } from "./ChatBadges";
 import { FlightPath } from "./FlightPath";
 import { ModelGalaxy } from "./ModelGalaxy";
 import { ModelPalette } from "./ModelPalette";
@@ -272,26 +272,16 @@ export function ChatPanel() {
       className="chat-hero-glow relative flex min-w-0 flex-col rounded-xl border border-line bg-elevated"
       data-testid="chat-panel"
     >
-      <header className="flex flex-col gap-4 border-b border-line px-4 pb-5 pt-6 md:px-8 xl:flex-row xl:items-end xl:justify-between">
-        <div className="flex min-w-0 flex-col gap-2">
-          <p className="kicker">
-            <span className="text-text-2">F.0</span> · mission control for business decisions · tools run on the server
-          </p>
-          <h2 id="chat-title" className="display text-[clamp(2.75rem,5.5vw,5.25rem)] leading-[0.95] text-text">
+      <header className="flex items-start justify-between gap-3 border-b border-line px-4 pb-4 pt-5 md:items-end md:px-8">
+        <div className="flex min-w-0 flex-col gap-1.5">
+          <h1 id="chat-title" className="display text-[clamp(2.25rem,3.6vw,3.75rem)] leading-[0.95] text-text">
             Ask the <em>engine</em>
-          </h2>
-          <p className="max-w-3xl text-base leading-relaxed text-text-2 md:text-lg">
-            Ask any business decision. The model answers in words and calls FAULTLINE&apos;s simulator and optimizer;
-            when web search is switched on for this server it also cites current web sources. Every tool and source it
-            used is listed, and the universe on the right re-runs the exact engine inputs it used.
+          </h1>
+          <p className="text-[15px] leading-snug text-text-2 md:text-base">
+            Any business decision. Cited sources. Monte Carlo odds.
           </p>
         </div>
-        <div className="flex flex-wrap items-center gap-1.5 xl:justify-end">
-          <ProvenanceBadge kind="LIVE EXPLORE" />
-          <ModelWrittenBadge />
-          <ProvenanceBadge kind="SIMULATED" detail="engine numbers" />
-          <ProvenanceBadge kind="SYNTHETIC" detail="demo business" />
-        </div>
+        <ProvenanceKey />
       </header>
 
       {paused ? (
@@ -307,9 +297,9 @@ export function ChatPanel() {
         </div>
       ) : null}
 
-      <div className="flex min-w-0 flex-col gap-3 border-b border-line px-4 py-4 md:px-8">
+      <div className="flex min-w-0 flex-col gap-3 border-b border-line px-4 py-3 md:px-8">
         <div className="flex min-w-0 flex-wrap items-center justify-between gap-3">
-          <p className="kicker">Models · pick one, or race two</p>
+          <p className="kicker">Model</p>
           <div className="flex min-w-0 flex-wrap items-center gap-2">
             <button
               type="button"
@@ -372,7 +362,7 @@ export function ChatPanel() {
                   >
                     Change model B
                   </button>
-                  <span className="font-mono text-[10.5px] text-muted">Same question, two requests in parallel, same engine. Facts side by side; FAULTLINE ranks no one.</span>
+                  <span className="font-mono text-[10.5px] text-muted">Same question, same engine. Facts side by side, unranked.</span>
                 </div>
               ) : null}
             </>
@@ -401,12 +391,11 @@ export function ChatPanel() {
         ) : null}
       </div>
 
-      <div className="grid min-w-0 grid-cols-1 xl:grid-cols-[minmax(0,1fr)_minmax(0,1.08fr)]" data-testid="chat-cockpit">
+      <div className="grid min-w-0 grid-cols-1 xl:grid-cols-[minmax(0,3fr)_minmax(0,2fr)]" data-testid="chat-cockpit">
         <div className="flex min-w-0 flex-col xl:border-r xl:border-line">
-          <div className="flex min-w-0 flex-1 flex-col gap-5 px-4 py-5 md:px-8 md:py-6">
+          <div className="flex min-w-0 flex-1 flex-col gap-5 px-4 py-4 md:px-8 md:py-5">
             {turns.length === 0 ? (
               <div className="flex flex-col gap-3">
-                <p className="kicker">Start with a decision or a stress test</p>
                 <StarterCards onPick={(p) => send(p, lanesToAsk(), turns)} disabled={!selected || waiting || (race && !selectedB)} />
               </div>
             ) : (
@@ -483,10 +472,13 @@ export function ChatPanel() {
               </div>
             </div>
             <div className="flex min-w-0 flex-wrap items-center justify-between gap-x-4 gap-y-1 font-mono text-[10.5px] text-muted">
-              <span>Enter to send · Shift+Enter for a new line · ⌘K all models · not saved: clearing or reloading erases it</span>
-              <span className="num">
-                {text.length.toLocaleString("en-US")} / {CHAT_MAX_CHARS.toLocaleString("en-US")} chars · {history.length} / {CHAT_MAX_MESSAGES} messages
-              </span>
+              <span>Enter to send</span>
+              {/* Limits appear only near them, so the composer stays quiet. */}
+              {text.length >= CHAT_MAX_CHARS * 0.8 || history.length >= CHAT_MAX_MESSAGES - 4 ? (
+                <span className="num" data-testid="chat-limits">
+                  {text.length.toLocaleString("en-US")} / {CHAT_MAX_CHARS.toLocaleString("en-US")} chars · {history.length} / {CHAT_MAX_MESSAGES} messages
+                </span>
+              ) : null}
             </div>
             {hint ? (
               <p className="text-xs text-risk" role="alert" data-testid="chat-hint">
@@ -619,13 +611,12 @@ function LaneView({
           </span>
           <p className="flex min-w-0 flex-wrap items-baseline gap-x-2 text-[15px] text-text-2">
             <span className="font-medium text-text">Waiting for {lane.model.label}</span>
-            <span className="text-muted">· the model may be reading the engine…</span>
             <Elapsed since={o.startedAt} />
           </p>
         </div>
         {racing ? <LaneFacts lane={lane} response={null} ms={null} catalogue={catalogue} /> : null}
-        <p className="font-mono text-[10.5px] text-muted">
-          The reply arrives in one piece (POST {CHAT_PATH} is not streaming); the steps it took are shown once it lands.
+        <p className="font-mono text-[10.5px] text-muted" title={`POST ${CHAT_PATH} is not streaming`}>
+          Arrives in one piece, not streamed.
         </p>
         <button type="button" onClick={onStop} className="w-fit rounded-md border border-line-strong px-3 py-1.5 font-mono text-[10.5px] uppercase tracking-[0.12em] text-text-2 hover:bg-hover hover:text-text">
           Stop waiting
@@ -718,26 +709,41 @@ function LaneView({
         <p className="font-mono text-sm uppercase tracking-[0.08em] text-muted">Reply NOT AVAILABLE: the model returned no text.</p>
       ) : null}
 
-      {r.status === "ok" && r.notes.length ? (
-        <ul className="flex flex-col gap-0.5 border-l border-line-strong pl-3">
-          {r.notes.map((n, k) => (
-            <li key={k} className="break-words font-mono text-[10.5px] text-muted [overflow-wrap:anywhere]">
-              {n}
-            </li>
-          ))}
-        </ul>
-      ) : null}
-
       {!notOk || r.tool_calls.length ? <FlightPath calls={r.tool_calls} reduce={reduce} /> : null}
 
       <EvidenceCards calls={r.tool_calls} />
 
       {drivesUniverse(r.tool_calls) ? <EngineAgreement calls={r.tool_calls} /> : null}
 
-      <div className="flex min-w-0 flex-wrap items-center justify-between gap-2">
-        <p className="min-w-0 font-mono text-[10px] leading-snug text-muted">
-          {r.label} · words by the model, numbers from the engine tools it called · not saved
-        </p>
+      <div className="flex min-w-0 flex-wrap items-start justify-between gap-2">
+        {/* One short line; the API's label and any server notes sit under "details". A withheld or failed reply
+            never reaches this branch silently: its notes are shown in full above (chat-answer-problem). */}
+        {notOk ? <span /> : <details className="group min-w-0 flex-1 font-mono text-[10.5px] leading-snug text-muted" data-testid="chat-footnote">
+          <summary className="cursor-pointer list-none [&::-webkit-details-marker]:hidden">
+            Words: model · Numbers: engine + cited sources · not saved ·{" "}
+            <span className="text-text-2 underline decoration-line-strong underline-offset-2 group-open:no-underline">details</span>
+            {r.status === "ok" && r.notes.length ? (
+              <span className="text-risk" data-testid="chat-note-count">
+                {" "}
+                · {r.notes.length} server note{r.notes.length === 1 ? "" : "s"}
+              </span>
+            ) : null}
+          </summary>
+          <div className="mt-2 flex flex-col gap-1 border-l border-line-strong pl-3">
+            <p data-testid="chat-label">{r.label}</p>
+            <p>The model wrote the words; every engine number came from a tool the server ran, and the browser does not recompute it.</p>
+            <p>Not saved: clearing or reloading the page erases this conversation.</p>
+            {r.status === "ok" && r.notes.length ? (
+              <ul className="flex flex-col gap-0.5 pt-1" data-testid="chat-notes">
+                {r.notes.map((n, k) => (
+                  <li key={k} className="break-words text-text-2 [overflow-wrap:anywhere]">
+                    {n}
+                  </li>
+                ))}
+              </ul>
+            ) : null}
+          </div>
+        </details>}
         {onShow ? (
           <button
             type="button"
