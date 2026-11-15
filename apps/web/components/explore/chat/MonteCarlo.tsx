@@ -451,17 +451,62 @@ function Tornado({ d }: { d: McDecision }) {
   );
 }
 
+/** Every option's served prob_best as one stacked bar (widths are the served shares; nothing is renormalised). */
+function OddsBar({ d }: { d: McDecision }) {
+  const complete = d.options.length > 0 && d.options.every((o) => o.probBest !== null && o.probBest >= 0 && o.probBest <= 1);
+  if (!complete) return <NotAvailable what="Chance each option is best" />;
+  return (
+    <div className="flex min-w-0 flex-col gap-1.5" data-testid="mc-odds">
+      <p className="font-mono text-[10.5px] uppercase tracking-[0.14em] text-muted">Chance each option is best</p>
+      <div className="flex h-3 w-full min-w-0 overflow-hidden rounded-full border border-line bg-bg/40" role="img" aria-label={d.options.map((o) => `${o.label ?? o.id} ${pct(o.probBest)}`).join(", ")} data-testid="mc-odds-bar">
+        {d.options.map((o, i) => (
+          <span key={o.id} className="h-full" style={{ width: `${o.probBest! * 100}%`, background: colorAt(i) }} data-testid="mc-odds-seg" data-option={o.id} data-share={o.probBest!} />
+        ))}
+      </div>
+      <ul className="flex min-w-0 flex-wrap gap-x-4 gap-y-1">
+        {d.options.map((o, i) => (
+          <li key={o.id} className="flex min-w-0 items-center gap-1.5 text-[12px] text-text-2" data-testid="mc-odds-legend" data-option={o.id}>
+            <span className="inline-block h-2 w-2 rounded-full" style={{ background: colorAt(i) }} aria-hidden="true" />
+            <span className="min-w-0 truncate">{o.label ?? o.id}</span>
+            <span className="num text-text">{pct(o.probBest)}</span>
+          </li>
+        ))}
+      </ul>
+    </div>
+  );
+}
+
 function OptionStats({ d }: { d: McDecision }) {
   const unit = d.metric.unit;
   return (
     <ul className="grid min-w-0 grid-cols-1 gap-2 @lg:grid-cols-2 @5xl:grid-cols-3" data-testid="mc-option-stats">
       {d.options.map((o, i) => (
-        <li key={o.id} className={`min-w-0 rounded-md border p-3 ${d.best?.id === o.id ? "border-accent/70 bg-accent-soft" : "border-line bg-bg/40"}`}>
+        <li key={o.id} className={`flex min-w-0 flex-col gap-2.5 rounded-md border p-3 ${d.best?.id === o.id ? "border-accent/70 bg-accent-soft" : "border-line bg-bg/40"}`} data-testid="mc-option" data-option={o.id}>
           <p className="flex items-center gap-1.5 text-[13px] font-medium text-text">
             <span className="inline-block h-2 w-2 rounded-full" style={{ background: colorAt(i) }} aria-hidden="true" />
             {o.label ?? o.id}
           </p>
-          <dl className="mt-1.5 grid grid-cols-3 gap-x-3 gap-y-2 font-mono text-[10px] uppercase tracking-[0.08em] text-muted">
+          <div className="min-w-0">
+            <p className="flex min-w-0 flex-wrap items-baseline gap-x-2">
+              <span className="font-mono text-[10.5px] uppercase tracking-[0.1em] text-muted">Best in</span>
+              <span className="mc-odds-num text-[1.9rem] font-semibold text-text" data-testid="mc-option-best">{na(pct(o.probBest))}</span>
+            </p>
+            <p className="num text-[11.5px] text-muted" data-testid="mc-option-best-ci">{ciLabel(o.probBestCi95) ?? `95% CI ${NA}`}</p>
+          </div>
+          <div className="min-w-0 rounded-sm border border-fail/35 bg-[color-mix(in_srgb,var(--fail)_7%,transparent)] px-2.5 py-2" data-testid="mc-downside">
+            <p className="font-mono text-[10px] uppercase tracking-[0.14em] text-fail">Downside</p>
+            <dl className="mt-1 grid grid-cols-2 gap-x-3 gap-y-1 font-mono text-[10px] uppercase tracking-[0.08em] text-muted">
+              <div className="min-w-0">
+                <dt>Chance of loss</dt>
+                <dd className="mc-odds-num mt-0.5 text-[15px] normal-case tracking-normal text-fail" data-testid="mc-option-loss">{na(pct(o.probBelowZero))}</dd>
+              </div>
+              <div className="min-w-0">
+                <dt>Worst 5% average</dt>
+                <dd className="mc-odds-num mt-0.5 text-[15px] normal-case tracking-normal text-fail" data-testid="mc-option-es5">{na(metricValue(o.expectedShortfall5, unit))}</dd>
+              </div>
+            </dl>
+          </div>
+          <dl className="grid grid-cols-3 gap-x-3 gap-y-2 font-mono text-[10px] uppercase tracking-[0.08em] text-muted">
             <div>
               <dt>P5</dt>
               <dd className="num mt-0.5 whitespace-nowrap text-[12.5px] normal-case tracking-normal text-text-2">{na(metricValue(o.p5, unit))}</dd>
@@ -481,10 +526,6 @@ function OptionStats({ d }: { d: McDecision }) {
             <div>
               <dt>SD</dt>
               <dd className="num mt-0.5 whitespace-nowrap text-[12px] normal-case tracking-normal text-text-2">{na(metricValue(o.sd, unit))}</dd>
-            </div>
-            <div>
-              <dt>P(&lt;0)</dt>
-              <dd className="num mt-0.5 whitespace-nowrap text-[12px] normal-case tracking-normal text-text-2">{na(pct(o.probBelowZero))}</dd>
             </div>
           </dl>
         </li>
@@ -529,6 +570,7 @@ function DecisionPanel({ call, d, reduce }: { call: ChatToolCall; d: McDecision;
         <p className="num text-[12.5px] text-muted" data-testid="mc-headline-ci">
           {ciLabel(d.best?.ci95 ?? null) ?? `95% CI ${NA}`}
         </p>
+        <OddsBar d={d} />
       </div>
 
       {d.options.length ? <OptionStats d={d} /> : <NotAvailable what="Options" />}

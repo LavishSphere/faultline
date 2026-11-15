@@ -31,6 +31,18 @@
   filter: drop-shadow(0 0 28px color-mix(in srgb, var(--accent) 30%, transparent));
 }
 
+.mc-odds-num {
+  /* Same fix as .mc-headline-num: inline-block + right padding so a trailing "%" is never clipped. */
+  display: inline-block;
+  max-width: 100%;
+  padding: 0 0.08em 0.04em 0;
+  white-space: nowrap;
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+  letter-spacing: -0.02em;
+  line-height: 1;
+}
+
 .mc-grid-bg {
   background-image:
     linear-gradient(to right, color-mix(in srgb, var(--border) 55%, transparent) 1px, transparent 1px),
