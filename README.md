@@ -59,7 +59,7 @@ FAULTLINE splits the work. The model does what it's good at: searching, reading,
 ## How it works
 
 1. **Ask.** The user types a leadership or strategy decision, or picks a starter question.
-2. **Research.** The model searches the web, with follow-up searches when the first results leave gaps. The search backend is Tavily when its key is set, otherwise Anthropic's server-side web search, otherwise OpenAI web search, and a failed Anthropic search gets one retry on OpenAI.
+2. **Research.** The model searches the web, with follow-up searches when the first results leave gaps. Search order: Tavily (primary) → Anthropic's server-side web search → OpenAI web search. A failed Tavily search gets one try on Anthropic, then OpenAI, and the result carries the attribution of the provider that actually answered.
 3. **Model the decision.** The model builds a decision model: two to four options, each with uncertain drivers (a range, a distribution, and for events a probability), citing a source wherever it has one.
 4. **Simulate.** FAULTLINE's Python engine (numpy, seed `20261115`, SHA-256 of the canonical input) runs 20,000 Monte Carlo paths. For each option it reports the probability of being best with a Wilson 95% CI, P5 / P25 / P50 / P75 / P95, the probability of a loss, and a tornado sensitivity showing which driver moves the answer most.
 5. **Write the brief.** The model writes the answer around the engine's numbers, and states that its inputs are assumptions.
@@ -69,7 +69,7 @@ FAULTLINE splits the work. The model does what it's good at: searching, reading,
 ```mermaid
 flowchart LR
     U["User question"] --> M{{"LLM<br/>any tool-calling model"}}
-    M -->|web_search| W[("Tavily<br/>or Anthropic / OpenAI search")]
+    M -->|web_search| W[("Tavily (primary)<br/>fallbacks: Anthropic, then OpenAI")]
     W -->|snippets and URLs| M
     M -->|options and drivers| E["FAULTLINE engine<br/>numpy, seed 20261115"]
     E -->|"P(best), CI, P5 to P95, tornado"| M
@@ -87,13 +87,13 @@ flowchart LR
 </p>
 
 <p align="center">
-  <img src="docs/readme/models.png" width="860" alt="The model picker: open-weight, self-hostable models (GLM 5.3, GLM 5.1, DeepSeek V4 Pro, Qwen3.6 27B, Nemotron 3 Super, Gemma 4 31B, Llama 3.3 70B) beside closed APIs (Grok 4.6, GPT-6 Sol, Claude Sonnet 5.5, Claude Opus 5.5, Claude Haiku 5.5), and a button to browse all 228 models" />
+  <img src="docs/readme/models.png" width="860" alt="The model picker: open-weight, self-hostable models (GLM 5.3, GLM 5.1, DeepSeek V4 Pro, Qwen3.6 27B, Nemotron 3 Super, Gemma 4 31B, Llama 3.3 70B) beside closed APIs (Grok 4.6, GPT-6 Sol, Claude Sonnet 5.5, Claude Opus 5.5, Claude Haiku 5.5), and a button to browse the full model catalog" />
 </p>
 <p align="center">
-  <sub>The model picker as served tonight: seven open-weight models flagged self-hostable, five closed APIs, and 228 models in the full catalog. The engine and the figure check are the same whichever model answers.</sub>
+  <sub>The model picker as served tonight: seven open-weight models flagged self-hostable, five closed APIs, and 200+ more models in the full catalog. The engine and the figure check are the same whichever model answers.</sub>
 </p>
 
-**Any model.** The chat runs on any tool-calling model in the OpenRouter catalog (228 listed when the screenshot above was taken), plus the native Anthropic and OpenAI APIs. The featured open-weight models are flagged self-hostable: GLM-5.3, GLM-5.1, DeepSeek V4 Pro, Qwen3.6-27B, Nemotron 3 Super, Gemma 4 31B, Llama 3.3 70B and Qwen3-235B (each appears when it's in the live catalog). The featured closed models are Claude Sonnet 5.5 (the default), Claude Opus 5.5, GPT-6 Sol, Grok 4.6 and Claude Haiku 5.5. "Race two models" runs one question on two models side by side.
+**Any model.** The chat runs on any of 200+ models via OpenRouter, plus the native Anthropic and OpenAI APIs. The featured open-weight models are flagged self-hostable: GLM-5.3, GLM-5.1, DeepSeek V4 Pro, Qwen3.6-27B, Nemotron 3 Super, Gemma 4 31B, Llama 3.3 70B and Qwen3-235B (each appears when it's in the live catalog). The featured closed models are Claude Sonnet 5.5 (the default), Claude Opus 5.5, GPT-6 Sol, Grok 4.6 and Claude Haiku 5.5. "Race two models" runs one question on two models side by side.
 
 **Hypotheticals.** A premise about a real person that the sources don't support ("Jensen Huang had 3 affairs...") is answered as a labelled, unverified hypothetical. It is never presented as fact.
 
@@ -156,11 +156,11 @@ The full one-pager for judges is [docs/ALIGNMENT.md](docs/ALIGNMENT.md).
 
 ### Anthropic
 
-Claude Sonnet 5.5 is the default model in the chat, with Opus 5.5 and Haiku 5.5 also featured, through the native Anthropic API. Anthropic's server-side web search is next in line for the chat's `web_search` when no Tavily key is configured, and its snippets are verbatim page quotes the figure check can match. The whole repository was built with Claude Code, under the guardrails in [AGENTS.md](AGENTS.md).
+Claude Sonnet 5.5 is the default model in the chat, with Opus 5.5 and Haiku 5.5 also featured, through the native Anthropic API. Anthropic's server-side web search is the first fallback for the chat's `web_search` when a Tavily search fails, and its snippets are verbatim page quotes. The whole repository was built with Claude Code, under the guardrails in [AGENTS.md](AGENTS.md).
 
 ### Tavily
 
-Tavily is the chat's live web search. With its key set, Tavily is first in line for every `web_search` the model runs, and the snippets and URLs it returns are what the figure check accepts as sources. Tavily is never used inside the sealed Blind Replay.
+Tavily is the chat's live web search. Tavily is the primary backend for every `web_search` the model runs (the live API reports `web_search_provider: tavily`), and its snippets and URLs are the cited sources a brief's figures can be checked against. Tavily is never used inside the sealed Blind Replay.
 
 ### Link Ventures
 
