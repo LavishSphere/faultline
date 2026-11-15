@@ -395,6 +395,22 @@ def test_skeptic_rejection_is_422_and_not_persisted(world):
     assert world.records() == []
 
 
+def test_shown_market_id_citation_is_a_warning_only_with_market_input(world):
+    # Pre-run format fix (EVALUATION_PROTOCOL §8): the shown market's id cited in agent_plus_market is visible as a
+    # MARKET_ID_CITED warning; in agent_only no market is shown, so the same citation is an unknown id (422).
+    cites_market = {**ANSWER, "rationale": "Minutes signal patience (evid_ok, SYNTH-FED-H25)."}
+    world.fake.chat_contents = [json.dumps(cites_market)]
+    resp = run(world.client(), "agent_plus_market")
+    assert resp.status_code == 200, resp.text
+    warned = [p for p in resp.json()["skeptic"]["problems"] if p["code"] == "MARKET_ID_CITED"]
+    assert [(p["evidence_id"], p["severity"]) for p in warned] == [("SYNTH-FED-H25", "warning")]
+
+    world.fake.chat_contents = [json.dumps(cites_market)]
+    resp = run(world.client(), "agent_only")
+    assert resp.status_code == 422, resp.text
+    assert [e["type"] for e in resp.json()["errors"]] == ["UNKNOWN_CITED_ID"]
+
+
 @pytest.mark.parametrize(
     ("payload", "status", "code"),
     [

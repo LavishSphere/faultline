@@ -407,7 +407,7 @@ async def _forecast_all(provider, cases, store, variants, run_dir, manifest, don
                 code = next(c for cls, c in _FAILURE_CODES.items() if isinstance(exc, cls))
                 _fail(manifest, cid, variant, code, str(exc))
                 continue
-            report = skeptic.review(result.output, mi.evidence_ids)
+            report = skeptic.review(result.output, mi.evidence_ids, market_refs=skeptic.market_refs(mi.snapshot_json))
             if report.rejected:
                 _fail(manifest, cid, variant, "SKEPTIC_REJECTED", ", ".join(report.codes()))
                 continue

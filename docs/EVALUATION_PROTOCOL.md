@@ -308,6 +308,39 @@ below may be changed after any official reveal; a change needs a new dated subse
     scoring code just before the one-time run is riskier than the rule is worth here. Every scored event's outcome is in the
     card's per-event rows, so a reader can count YES and NO outcomes and apply the rule themselves. The rule is a candidate for the next run.
 
+### Pre-run format changes (decided before any official forecast)
+
+**2026-11-14: skeptic citation rules, prompt unchanged (template `replay-v1`, prompt hashes as before).**
+
+How it was decided:
+- After forecast-only rehearsals with the real `ollama/llama3.1:8b`, run on all committed cases × both variants.
+- Each rehearsal used a scratch store (`FAULTLINE_PREDICTIONS_DB`), with nothing revealed and nothing scored.
+- No official forecast existed at the time.
+- Outcome-blind: the change is based only on format failures, i.e. whether an answer passes `ForecastOutput`
+  validation and the skeptic. It was never judged on whether a forecast was right.
+- A prompt change (an explicit allowed-id list, tried as `replay-v2` in #171) raised the rehearsal failure rate,
+  so it was dropped. The prompt and every `prompt_sha256` are unchanged.
+
+Both rules apply only to citations in the rationale (`(...)` / `[...]` groups) and live in `agents/skeptic.py`:
+1. **Field label.** The model cited `(evidence_id: fomc-2026-jul.minutes)`, copying the JSON key of the evidence
+   items, and the skeptic rejected the label `evidence_id` as an un-offered id (`UNKNOWN_CITED_ID`).
+   - Inside a citation group, only the exact schema label `evidence_id` / `evidence_ids` is now dropped before the
+     group's tokens are checked. The label may be quoted and must be followed by `:` or `=`.
+   - Every remaining token must still match an offered id **exactly**.
+2. **Shown market id.** In `agent_plus_market`, a cited token that **exactly** equals a `market_id`, or a
+   `venue:market_id`, of a quote shown in that prompt is a citation of the market input, not an unknown id.
+   - It is reported as the warning `MARKET_ID_CITED`, so it stays visible in the run record.
+   - The refs are `skeptic.market_refs(ModelInput.snapshot_json)`, the exact market input given to the model, so they
+     are empty for `agent_only`. There, a market id stays `UNKNOWN_CITED_ID`.
+   - Another case's market id, a near miss, a changed case, a partial id and a wrong venue are all still
+     `UNKNOWN_CITED_ID`.
+
+Not changed:
+- There is no case folding, no partial or "closest" matching, and no editing of model output.
+- `ForecastOutput` validation, `PredictionStore.save` and `verify_row` (raw-output check) are unchanged.
+- A market id in the `evidence_ids` **field** is still rejected: `ForecastOutput` gives `MODEL_OUTPUT_INVALID`, and
+  the skeptic gives `UNKNOWN_EVIDENCE_ID`.
+
 ---
 
 ## 9. HTTP routes (#44 part A)

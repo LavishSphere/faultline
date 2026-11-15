@@ -17,10 +17,20 @@ Sentence splitting is a plain heuristic (split after . ! ? followed by whitespac
 are joined to the next sentence), so a warning is a prompt for a human look, not a verdict. Shape matching
 compares tokens with an offered id's prefix up to its last separator (``evid_a`` -> ``evid_``), ignoring case
 and treating ``_ - . :`` alike. Evidence ids are often slugs (``bad-quarter``), so shape alone is only a warning.
+
+Pre-run format rules (EVALUATION_PROTOCOL §8, 2026-11-14), for rationale citations only. The rationale and
+``evidence_ids`` are never edited, nothing is case-folded, and nothing is mapped to a "closest" id:
+* Field label: inside a citation group, the schema field name ``evidence_id`` / ``evidence_ids`` used as a label
+  (optionally quoted, followed by ``:`` or ``=``, e.g. ``(evidence_id: fomc-2026-jul.minutes)``) is dropped before
+  the group's tokens are checked. Every remaining token must still match an offered id exactly.
+* Shown market: a cited token that EXACTLY equals a ``market_id`` or ``venue:market_id`` of a quote shown in the
+  prompt (``market_refs(snapshot_json)``, empty for agent_only) cites the market input. It is reported as the
+  warning ``MARKET_ID_CITED`` instead of ``UNKNOWN_CITED_ID``. In ``evidence_ids`` a market id is still an error.
 """
 
 from __future__ import annotations
 
+import json
 import math
 import re
 from collections.abc import Iterable
@@ -43,6 +53,7 @@ ProblemCode = Literal[
     "CITATION_NOT_LISTED",
     "DUPLICATE_EVIDENCE_ID",
     "NO_EVIDENCE_CITED",
+    "MARKET_ID_CITED",
 ]
 
 _DECISIONS = frozenset(get_args(Decision))
@@ -52,6 +63,8 @@ _ID_TOKEN = re.compile(r"[A-Za-z0-9_\-.:]+")
 _SEPARATORS = re.compile(r"[\-.:]")
 # Citation forms: "(evid_a)", "(evid_a, evid_b)", "[evid_a]".
 _CITATION_GROUP = re.compile(r"[(\[]([^()\[\]]*)[)\]]")
+# The prompt's own JSON key used as a label in a citation: "evidence_id: x", '"evidence_ids": x', "evidence_id=x".
+_FIELD_LABEL = re.compile(r"""(?<![A-Za-z0-9_\-.:"'`])["'`]?evidence_ids?["'`]?\s*[:=]\s*""")
 # An id-shaped piece: id grammar (models.Identifier) with at least one separator or digit.
 _ID_SHAPED = re.compile(r"(?=[A-Za-z0-9_.:\-]*[_\-.:0-9])[A-Za-z0-9_.:\-]+")
 _STRONG_ID_MARK = re.compile(r"[_0-9]")
@@ -120,32 +133,54 @@ def _tokens(text: str) -> list[str]:
     return [t for t in (m.group(0).rstrip(".:-") for m in _ID_TOKEN.finditer(text)) if t]
 
 
-def _unoffered_cited_ids(text: str, offered: list[str]) -> tuple[set[str], set[str]]:
-    """Un-offered ids in the rationale, as (errors, warnings).
+def market_refs(snapshot_json: str) -> tuple[str, ...]:
+    """Every ``market_id`` and ``venue:market_id`` of the quotes in a ``ModelInput.snapshot_json`` (the exact
+    market input shown to the model). Empty for agent_only, whose snapshot has no quotes."""
+    quotes = json.loads(snapshot_json).get("market_quotes") or []
+    refs: list[str] = []
+    for q in quotes:
+        refs += [str(q["market_id"]), f"{q['venue']}:{q['market_id']}"]
+    return tuple(dict.fromkeys(refs))
+
+
+def _unoffered_cited_ids(
+    text: str, offered: list[str], markets: frozenset[str] = frozenset()
+) -> tuple[set[str], set[str], set[str]]:
+    """Un-offered ids in the rationale, as (errors, warnings, shown market refs cited).
 
     Error: only in an explicit citation form, i.e. inside ``(...)`` or ``[...]``, when the token is not offered
     and either (a) shares an offered id's prefix and contains ``_`` or a digit, or (b) sits in a pure id list
     (every piece id-shaped, at least one piece offered), e.g. ``(evid_a, evid-c)``.
     Warning: any other token, anywhere, that shares an offered id's prefix but is not offered. With slug ids
     such as ``bad-quarter`` this catches ordinary hyphenated words (``bad-tempered``), so it is never an error.
+    Market: a citation-group token exactly equal to a shown market ref (``markets``) is neither; it is returned
+    separately (module docstring). The field label ``evidence_id(s):`` is dropped from each group first.
     """
     prefixes = _id_prefixes(offered)
     offered_set = set(offered)
     errors: set[str] = set()
+    market_cited: set[str] = set()
     for group in _CITATION_GROUP.finditer(text):
-        content = group.group(1)
+        content = _FIELD_LABEL.sub(" ", group.group(1))
         pieces = [p.rstrip(".:-") for p in re.split(r"[\s,;]+", content.strip()) if p.strip()]
         pure_list = bool(pieces) and all(_ID_SHAPED.fullmatch(p) for p in pieces)
         has_offered = any(p in offered_set for p in pieces)
         for token in _tokens(content):
             if token in offered_set:
                 continue
+            if token in markets:
+                market_cited.add(token)
+                continue
             strong_shape = _shares_prefix(token, prefixes) and _STRONG_ID_MARK.search(token) is not None
             in_id_list = pure_list and has_offered and _ID_SHAPED.fullmatch(token) is not None
             if strong_shape or in_id_list:
                 errors.add(token)
-    warnings = {t for t in _tokens(text) if t not in offered_set and t not in errors and _shares_prefix(t, prefixes)}
-    return errors, warnings
+    warnings = {
+        t
+        for t in _tokens(text)
+        if t not in offered_set and t not in errors and t not in market_cited and _shares_prefix(t, prefixes)
+    }
+    return errors, warnings, market_cited
 
 
 def split_sentences(text: str) -> list[str]:
@@ -167,8 +202,11 @@ def split_sentences(text: str) -> list[str]:
     return merged
 
 
-def review(forecast: Any, offered_evidence_ids: Iterable[str]) -> SkepticReport:
-    """List every problem with ``forecast`` relative to the offered evidence ids. Never mutates ``forecast``."""
+def review(forecast: Any, offered_evidence_ids: Iterable[str], *, market_refs: Iterable[str] = ()) -> SkepticReport:
+    """List every problem with ``forecast`` relative to the offered evidence ids. Never mutates ``forecast``.
+
+    ``market_refs``: the shown market's ids, ``market_refs(mi.snapshot_json)`` (empty for agent_only)."""
+    shown_markets = frozenset(market_refs)
     offered = list(dict.fromkeys(offered_evidence_ids))
     offered_set = set(offered)
     problems: list[SkepticProblem] = []
@@ -252,7 +290,16 @@ def review(forecast: Any, offered_evidence_ids: Iterable[str]) -> SkepticReport:
                 )
             )
 
-    cited_errors, shape_warnings = _unoffered_cited_ids(rationale, offered)
+    cited_errors, shape_warnings, market_cited = _unoffered_cited_ids(rationale, offered, shown_markets)
+    for token in sorted(market_cited):
+        problems.append(
+            SkepticProblem(
+                code="MARKET_ID_CITED",
+                severity="warning",
+                message="rationale cites the market input shown in the prompt by its market id (not evidence)",
+                evidence_id=token,
+            )
+        )
     for token in sorted(cited_errors):
         problems.append(
             SkepticProblem(
