@@ -1,0 +1,75 @@
+/*
+ * "Ask the engine" motion (#186). Decoration on states the API already reported: a reply card fades in when the
+ * response has landed, the "steps the model took" are revealed one after another *after* that (they are a record,
+ * not a live feed), and the waiting bar only renders while a request is actually in flight.
+ * Everything here is off under prefers-reduced-motion; the final state renders at once.
+ */
+
+.chat-hero-glow {
+  background:
+    radial-gradient(60rem 22rem at 100% -10%, color-mix(in srgb, var(--accent) 16%, transparent), transparent 70%),
+    radial-gradient(40rem 18rem at -10% 110%, color-mix(in srgb, var(--viable) 7%, transparent), transparent 70%);
+}
+
+.chat-scroll-x {
+  scrollbar-width: thin;
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .chat-enter {
+    animation: chat-enter 420ms var(--ease) both;
+  }
+
+  .chat-step-in {
+    animation: chat-step-in 420ms var(--ease) both;
+  }
+
+  .chat-step-link {
+    transform-origin: left;
+    animation: chat-step-link 360ms var(--ease) both;
+  }
+
+  .chat-waiting-bar {
+    animation: chat-waiting 1.4s cubic-bezier(0.45, 0, 0.55, 1) infinite;
+  }
+}
+
+@keyframes chat-enter {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+@keyframes chat-step-in {
+  from {
+    opacity: 0;
+    transform: translateX(-6px) scale(0.98);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+@keyframes chat-step-link {
+  from {
+    transform: scaleX(0);
+  }
+  to {
+    transform: scaleX(1);
+  }
+}
+
+@keyframes chat-waiting {
+  0% {
+    transform: translateX(-100%);
+  }
+  100% {
+    transform: translateX(260%);
+  }
+}
