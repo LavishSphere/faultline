@@ -778,10 +778,15 @@ function CashPanel({ call, c, reduce }: { call: ChatToolCall; c: McCash; reduce:
   );
 }
 
+// Every ActionKind the optimizer serves (core/optimizer.py). The three yes/no decisions carry no week or amount.
 const ACTION_LABEL: Record<string, string> = {
+  use_backup_supplier: "Use backup supplier",
+  defer_capex: "Defer capex",
+  delay_expansion: "Delay expansion",
   purchase_cut: "Cut purchases",
   revolver_draw: "Draw revolver",
   revolver_repay: "Repay revolver",
+  payroll_cut: "Cut payroll",
 };
 
 function PlanTested({ plan }: { plan: McPlan }) {
@@ -806,8 +811,14 @@ function PlanTested({ plan }: { plan: McPlan }) {
         <ul className="flex min-w-0 flex-wrap gap-1.5">
           {plan.actions.map((a, k) => (
             <li key={k} className="rounded-sm border border-line bg-bg/40 px-2 py-1 font-mono text-[11px] text-text-2" data-testid="mc-plan-action">
-              <span className="text-muted">wk {a.week ?? NA}</span> {a.action ? (ACTION_LABEL[a.action] ?? a.action) : NA}{" "}
-              <span className="num text-text">{a.amount !== null ? cash(a.amount, true) : a.share !== null ? (pct(a.share) ?? NA) : NA}</span>
+              {/* Week and amount are shown only when served: a yes/no decision has neither, so nothing reads NOT AVAILABLE. */}
+              {a.week !== null ? <span className="text-muted">wk {a.week} </span> : null}
+              {a.action ? (ACTION_LABEL[a.action] ?? a.action) : NA}
+              {a.amount !== null ? (
+                <span className="num text-text"> {cash(a.amount, true)}</span>
+              ) : a.share !== null && pct(a.share) ? (
+                <span className="num text-text"> {pct(a.share)}</span>
+              ) : null}
             </li>
           ))}
         </ul>

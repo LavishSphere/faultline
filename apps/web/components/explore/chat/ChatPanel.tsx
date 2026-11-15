@@ -391,7 +391,7 @@ export function ChatPanel() {
         ) : null}
       </div>
 
-      <div className="grid min-w-0 grid-cols-1 xl:grid-cols-[minmax(0,1fr)_minmax(0,1.08fr)]" data-testid="chat-cockpit">
+      <div className="grid min-w-0 grid-cols-1 xl:grid-cols-[minmax(0,3fr)_minmax(0,2fr)]" data-testid="chat-cockpit">
         <div className="flex min-w-0 flex-col xl:border-r xl:border-line">
           <div className="flex min-w-0 flex-1 flex-col gap-5 px-4 py-4 md:px-8 md:py-5">
             {turns.length === 0 ? (
