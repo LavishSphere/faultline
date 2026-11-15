@@ -13,9 +13,10 @@ Routes:
 - ``GET  /api/explore/chat/status`` / ``POST /api/explore/chat/pause`` (admin): the presenter pause switch.
 
 Tools: simulate, optimize, decision, list_scenarios, list_judge_challenges, list_decision_frames, vc_lenses, and
-web_search (Tavily; offered only when TAVILY_API_KEY is set; per-IP and global daily caps for non-admin callers,
-FAULTLINE_CHAT_WEB_PER_IP_DAY / FAULTLINE_CHAT_WEB_DAILY; results labelled "REAL (web, retrieved <UTC>)"). Every
-tool result reaches the model labeled with its
+web_search (run on this backend for every chat model: Tavily, Anthropic or OpenAI web search per
+FAULTLINE_WEB_SEARCH_PROVIDER, see agents/explore_web_search.py; offered only when one is configured; per-IP and
+global daily caps for non-admin callers, FAULTLINE_CHAT_WEB_PER_IP_DAY / FAULTLINE_CHAT_WEB_DAILY; results
+labelled "REAL (web, retrieved <UTC>)"). Every tool result reaches the model labeled with its
 provenance. Nothing here reads replay cases, sealed outcomes, the prediction store or benchmark data, and nothing is
 saved: tests/test_explore_separation.py enforces both walls.
 
@@ -53,6 +54,7 @@ from pydantic import BaseModel, ConfigDict, Field, ValidationError, model_valida
 from starlette.requests import Request as StarletteRequest
 
 from agents import explore_chat as chat
+from agents import explore_web_search as web_llm
 from agents import tavily
 from config import CHAT_WINDOW_S, Settings, admin_token_matches, get_settings, public_chat_enabled
 from core.financials import ScenarioShock
@@ -78,7 +80,7 @@ TURN_TIMEOUT_S = 150.0
 DEFAULT_PAUSE_MINUTES = 30
 MAX_PAUSE_MINUTES = 120
 WEB_RESULTS = 5
-MAX_WEB_SEARCHES_PER_TURN = 3  # Tavily credits
+MAX_WEB_SEARCHES_PER_TURN = 3  # paid searches (Tavily credits; Anthropic: up to 3 searches each)
 TAVILY_TIMEOUT_S = 10.0
 BUSY_RETRY_AFTER_S = 5
 
@@ -412,9 +414,10 @@ def _with_frame_ids(tools: tuple[chat.ToolSpec, ...], frames: list[tuple[str, st
 
 
 WEB_SEARCH_TOOL = chat.ToolSpec(
-    "web_search", "Search the current public web (Tavily) for facts about real companies, people, markets and "
+    "web_search", "Search the current public web for facts about real companies, people, markets and "
     "events. Results are REAL web pages retrieved now (current, not point-in-time). Cite each fact with its source "
-    "name, date and url from the results, and quote figures exactly as the snippet gives them.",
+    "name, date and url from the results, and quote figures exactly as the snippet gives them. A `summary` field, "
+    "when present, is MODEL-WRITTEN: never take a figure from it.",
     _schema({"query": {"type": "string", "description": "Search text, up to 200 characters."}}),
 )
 
@@ -510,10 +513,13 @@ class EngineToolBox:
     """Runs each tool through the same route function the HTTP API uses, in-process."""
 
     def __init__(self, settings: Settings, tavily_transport: httpx.AsyncBaseTransport | None,
-                 web_quota: Callable[[], str | None] | None = None) -> None:
+                 web_quota: Callable[[], str | None] | None = None,
+                 web_clients: chat.ClientFactory | None = None) -> None:
         self.settings = settings
         self.tavily_transport = tavily_transport
-        self.web = tavily.key_configured()
+        self.web_provider = web_llm.provider_from_env()  # tavily | anthropic | openai | None (#214)
+        self.web = self.web_provider is not None
+        self.web_clients = web_clients or chat.ClientFactory()  # the SDK clients for Anthropic / OpenAI search
         self.web_calls = 0  # one toolbox per turn
         # Daily web_search caps for this caller (ChatState.web_take): a refusal message, or None. None = unlimited.
         self.web_quota = web_quota
@@ -780,6 +786,15 @@ class EngineToolBox:
         if refusal:
             raise _ToolInputError(refusal)
         self.web_calls += 1
+        if self.web_provider in ("anthropic", "openai"):
+            try:
+                found = await web_llm.search(self.web_provider, query, self.web_clients)
+            except web_llm.WebSearchError as err:
+                logger.warning("chat web_search (%s) failed: %s", self.web_provider, err.kind)
+                return chat.ToolOutcome("error", "LIVE EXPLORE", {"query": query},
+                                        {"error": f"Web search unavailable ({err.kind}). No results were made up."})
+            return chat.ToolOutcome("ok", "LIVE EXPLORE", {"query": query},
+                                    found.as_summary(web_label(found.retrieved_at)))
         try:
             client = tavily.client_from_env(transport=self.tavily_transport, timeout_s=TAVILY_TIMEOUT_S)
             result = await client.search(query, max_results=WEB_RESULTS)
@@ -1065,7 +1080,7 @@ async def chat_turn(
     state.active += 1
     caller = None if admin else rate_limit_key(request.client.host if request.client else "unknown")
     toolbox = EngineToolBox(settings, tavily_transport, web_quota=lambda: state.web_take(
-        caller, settings.chat_web_per_ip_day, settings.chat_web_daily))
+        caller, settings.chat_web_per_ip_day, settings.chat_web_daily), web_clients=clients)
     history = [{"role": m.role, "content": m.content} for m in body.messages]
     try:
         adapter = chat.adapter_for(model, clients)

@@ -17,6 +17,7 @@ import httpx
 from fastapi import APIRouter, Depends
 from pydantic import BaseModel, ConfigDict, Field
 
+from agents.explore_web_search import provider_from_env as web_search_provider
 from config import Settings, get_settings
 from models import HealthResponse, OllamaStatus, OptionalKeys
 
@@ -37,6 +38,9 @@ class PublicHealthResponse(BaseModel):
     model_ready: bool = Field(description="Ollama reachable AND the configured replay model is installed.")
     ollama_reachable: bool = Field(description="Ollama reachable at OLLAMA_BASE_URL.")
     tavily_configured: bool = Field(description="TAVILY_API_KEY is set (Live Explore still needs the admin token).")
+    web_search_provider: str | None = Field(
+        default=None, description="Backend name of the live chat's web_search tool (FAULTLINE_WEB_SEARCH_PROVIDER); "
+        "null = web_search is off.")
 
 
 OLLAMA_PROBE_TIMEOUT_S = 1.5
@@ -99,6 +103,7 @@ async def health(
             model_ready=present,
             ollama_reachable=probe.reachable,
             tavily_configured=settings.tavily_api_key_set,
+            web_search_provider=web_search_provider(),
         )
     manifest = manifest_sha256(settings)
 
@@ -134,4 +139,5 @@ async def health(
         data_dir_present=settings.data_dir.is_dir(),
         data_manifest_sha256=manifest,
         notices=notices,
+        web_search_provider=web_search_provider(),
     )

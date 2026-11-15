@@ -856,6 +856,21 @@ def unverified_numbers(reply: str, tool_results: list[dict[str, Any]]) -> list[s
     return list(dict.fromkeys(flagged))
 
 
+def figure_sources(value: Any) -> Any:
+    """A tool result without its MODEL-WRITTEN parts (#214): a web search's ``summary`` (marked by a ``summary_label``)
+    and any ``snippet`` whose ``snippet_label`` says MODEL-WRITTEN. Only titles and verbatim snippets back figures."""
+    if isinstance(value, dict):
+        drop = set()
+        if str(value.get("summary_label", "")).startswith("MODEL-WRITTEN"):
+            drop |= {"summary", "summary_label"}
+        if str(value.get("snippet_label", "")).startswith("MODEL-WRITTEN"):
+            drop |= {"snippet", "snippet_label"}
+        return {k: figure_sources(v) for k, v in value.items() if k not in drop}
+    if isinstance(value, list | tuple):
+        return [figure_sources(v) for v in value]
+    return value
+
+
 def uncited_urls(reply: str, allowed: set[str]) -> list[str]:
     return [u for u in dict.fromkeys(_URL.findall(reply)) if u.rstrip(".,;:") not in allowed]
 
@@ -974,7 +989,8 @@ async def run_chat(adapter: Adapter, toolbox: ToolBox, history: list[dict[str, s
             return done("error", "", [note])
         if step.stop == "max_tokens":
             notes.append(f"Reply cut at the {MAX_OUTPUT_TOKENS}-token cap.")
-        payloads = [{"input": r.input, "result": r.result_summary} for r in records if r.result_status == "ok"]
+        payloads = [{"input": r.input, "result": figure_sources(r.result_summary)} for r in records
+                    if r.result_status == "ok"]
         flagged = unverified_numbers(reply, payloads)
         no_ok_tool = not any(r.result_status == "ok" for r in records)
         # No engine result this turn: any digit outside a url could be a made-up figure, so the reply is withheld.

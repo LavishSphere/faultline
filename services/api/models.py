@@ -324,3 +324,6 @@ class HealthResponse(BaseModel):
         description="SHA256 of <FAULTLINE_DATA_DIR>/manifest.json bytes; null when NOT AVAILABLE."
     )
     notices: list[str] = Field(description="Plain-language notes on disabled features / missing setup.")
+    web_search_provider: str | None = Field(
+        default=None, description="Backend of the live chat's web_search tool (FAULTLINE_WEB_SEARCH_PROVIDER); "
+        "null = web_search is off.")
