@@ -65,9 +65,9 @@ export default function RootLayout({ children }: Readonly<{ children: React.Reac
                 <div className="mx-auto flex w-full max-w-[1760px] items-center justify-between gap-3 px-4 py-3 md:px-10">
                   <div className="flex min-w-0 items-center gap-4 md:gap-6">
                     <Link
-                      href="/rewind"
+                      href="/"
                       className="flex items-center gap-2.5 rounded-sm"
-                      aria-label="FAULTLINE, go to first screen"
+                      aria-label="FAULTLINE, go to the home screen (Live Explore)"
                     >
                       <span
                         aria-hidden="true"
