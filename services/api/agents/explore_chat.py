@@ -52,7 +52,7 @@ MAX_OUTPUT_TOKENS = 4000
 PROVIDER_TIMEOUT_S = 60.0
 CATALOG_TTL_S = 600.0
 CATALOG_FAILURE_TTL_S = 60.0  # a failed provider list is retried sooner
-MAX_FEATURED = 12
+MAX_FEATURED = 13
 
 CHAT_PROVENANCE = "LIVE EXPLORE"
 CHAT_LABEL = "MODEL-WRITTEN, numbers from engine tools"
@@ -96,6 +96,7 @@ FEATURED_PREFERENCE: tuple[str, ...] = (
     "openrouter:nvidia/nemotron-3-super-120b-a12b",
     "openrouter:google/gemma-4-31b-it",
     "openrouter:meta-llama/llama-3.3-70b-instruct",
+    "openrouter:qwen/qwen3-235b-a22b-2507",
     # Closed APIs. grok-4.6 passed both prompts; grok-4.7 passed neither in the same run.
     "anthropic:claude-sonnet-5-5",
     "anthropic:claude-opus-5-5",
