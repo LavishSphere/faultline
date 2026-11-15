@@ -65,6 +65,11 @@ export interface McOption {
   p75: number | null;
   p95: number | null;
   probBelowZero: number | null;
+  /** Share of paths where this option is best (ties split evenly; the served shares sum to 1), and its Wilson 95% CI. */
+  probBest: number | null;
+  probBestCi95: [number, number] | null;
+  /** Downside: mean metric over this option's worst 5% of paths (CVaR 5%, MATH_MODEL §11.1), as served. */
+  expectedShortfall5: number | null;
   /** Bin counts as served; null when missing or not one shorter than the shared edges. */
   counts: number[] | null;
 }
@@ -217,6 +222,9 @@ export function readDecision(call: ChatToolCall): McDecision | null {
         p75: num(o.p75),
         p95: num(o.p95),
         probBelowZero: num(o.prob_below_zero),
+        probBest: num(o.prob_best),
+        probBestCi95: ci(o.prob_best_ci95),
+        expectedShortfall5: num(o.expected_shortfall_5),
         counts,
       },
     ];

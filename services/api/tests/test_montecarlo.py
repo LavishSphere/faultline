@@ -25,6 +25,7 @@ from core.montecarlo import (
     DecisionRequest,
     canonical_sha256,
     cash_paths,
+    expected_shortfall,
     run_cash,
     run_decision,
     sample_cash_draws,
@@ -194,6 +195,92 @@ def test_histogram_quantiles_and_sensitivity_shape():
     assert res.sensitivity[0].swing == pytest.approx(80.0, abs=1.0)
 
 
+# --------------------------------------------------------------------------- per-option prob_best and CVaR (#240)
+
+
+def _assert_prob_best_contract(res):
+    assert sum(o.prob_best for o in res.options) == pytest.approx(1.0, abs=1e-9)
+    for o in res.options:
+        assert o.prob_best_ci95 == wilson(o.prob_best, res.n_paths)
+        assert o.prob_best_ci95[0] <= o.prob_best <= o.prob_best_ci95[1]
+    winner = next(o for o in res.options if o.id == res.best.id)
+    assert res.best.prob_best == winner.prob_best and res.best.ci95 == winner.prob_best_ci95
+    assert winner.prob_best == max(o.prob_best for o in res.options)
+
+
+def test_prob_best_per_option_sums_to_one_and_matches_best():
+    res = run_decision(DecisionRequest.model_validate(NVIDIA_CEO_EXAMPLE))
+    _assert_prob_best_contract(res)
+    assert 0.0 < res.options[0].prob_best < 1.0 and 0.0 < res.options[1].prob_best < 1.0
+    # two options: prob_best of a is exactly the pairwise share P(a better) (ties split the same way)
+    assert res.options[0].prob_best == pytest.approx(res.pairwise[0].prob_a_better, abs=1e-12)
+
+
+def test_prob_best_dominant_option_gets_one_and_the_others_zero():
+    opts = [_opt("low", _drv("x", "uniform", {"low": 0.0, "high": 1.0})),
+            _opt("high", _drv("x", "uniform", {"low": 10.0, "high": 11.0})),
+            _opt("mid", _drv("x", "uniform", {"low": 5.0, "high": 6.0}))]
+    up = run_decision(_req(opts, higher=True))
+    assert [o.prob_best for o in up.options] == [0.0, 1.0, 0.0]
+    down = run_decision(_req(opts, higher=False))
+    assert [o.prob_best for o in down.options] == [1.0, 0.0, 0.0]
+    _assert_prob_best_contract(up)
+    _assert_prob_best_contract(down)
+
+
+@pytest.mark.parametrize("k", [2, 3, 4])
+def test_prob_best_identical_options_split_evenly(k):
+    d = _drv("shared", "normal", {"mean": 5.0, "sd": 3.0})  # same name -> same draws -> every path a k-way tie
+    res = run_decision(_req([_opt(f"o{i}", d) for i in range(k)]))
+    assert all(o.prob_best == pytest.approx(1.0 / k, abs=1e-12) for o in res.options)
+    _assert_prob_best_contract(res)
+    # independent identical options: about 1/k each
+    ind = run_decision(_req([_opt(f"o{i}", _drv(f"x{i}", "normal", {"mean": 0, "sd": 1})) for i in range(k)],
+                            n_paths=50_000))
+    assert all(o.prob_best == pytest.approx(1.0 / k, abs=0.015) for o in ind.options)
+    _assert_prob_best_contract(ind)
+
+
+def test_expected_shortfall_hand_examples():
+    x = np.arange(100, dtype=float)  # 0..99; k = ceil(0.05 * 100) = 5
+    assert expected_shortfall(x, True) == pytest.approx((0 + 1 + 2 + 3 + 4) / 5)  # = 2.0
+    assert expected_shortfall(x, False) == pytest.approx((95 + 96 + 97 + 98 + 99) / 5)  # = 97.0
+    y = np.array([7.0, -3.0, 12.0, 0.0, -10.0, 5.0, 1.0, 2.0, 3.0, 4.0] * 3)  # N = 30; k = ceil(1.5) = 2
+    assert expected_shortfall(y, True) == pytest.approx((-10.0 + -10.0) / 2)
+    assert expected_shortfall(y, False) == pytest.approx((12.0 + 12.0) / 2)
+    z = np.array([-10.0, -3.0, 0.0, 1.0] + [2.0] * 17)  # N = 21; k = ceil(1.05) = 2 -> (-10 + -3) / 2 = -6.5
+    assert expected_shortfall(z, True) == pytest.approx(-6.5)
+    both = expected_shortfall(np.vstack([x, x + 1.0]), True)  # row-wise on an (options, paths) array
+    assert both.tolist() == pytest.approx([2.0, 3.0])
+
+
+def test_expected_shortfall_in_the_engine_is_the_worst_tail_mean():
+    # U(0, 100): the worst 5% (higher is better) is U(0, 5), mean 2.5; lower is better: U(95, 100), mean 97.5
+    opts = [_opt("a", _drv("x", "uniform", {"low": 0.0, "high": 100.0})),
+            _opt("b", _drv("y", "normal", {"mean": 0.0, "sd": 1.0}))]
+    up = run_decision(_req(opts, higher=True, n_paths=100_000))
+    down = run_decision(_req(opts, higher=False, n_paths=100_000))
+    assert up.options[0].expected_shortfall_5 == pytest.approx(2.5, abs=0.1)
+    assert down.options[0].expected_shortfall_5 == pytest.approx(97.5, abs=0.1)
+    # N(0, 1): CVaR_5 = -phi(z_0.05) / 0.05 = -0.10314 / 0.05 = -2.0627 (lower tail)
+    assert up.options[1].expected_shortfall_5 == pytest.approx(-2.0627, abs=0.03)
+    assert down.options[1].expected_shortfall_5 == pytest.approx(2.0627, abs=0.03)
+    for res in (up, run_decision(DecisionRequest.model_validate(NVIDIA_CEO_EXAMPLE))):
+        for o in res.options:
+            assert o.expected_shortfall_5 <= o.p5 <= o.mean  # higher is better: the tail mean sits below P5
+    for o in down.options:
+        assert o.expected_shortfall_5 >= o.p95  # lower is better: the worst tail is the top 5%
+
+
+def test_prob_best_and_cvar_are_reproducible_with_the_seed():
+    req = DecisionRequest.model_validate(NVIDIA_CEO_EXAMPLE)
+    a, b = run_decision(req), run_decision(req)
+    pick = [(o.prob_best, o.prob_best_ci95, o.expected_shortfall_5) for o in a.options]
+    assert pick == [(o.prob_best, o.prob_best_ci95, o.expected_shortfall_5) for o in b.options]
+    c = run_decision(req.model_copy(update={"seed": 7}))
+    assert [o.expected_shortfall_5 for o in c.options] != [o.expected_shortfall_5 for o in a.options]
+
+
 # --------------------------------------------------------------------------- reproducibility and hashing
 
 
@@ -286,7 +373,9 @@ def test_decision_route_example_response(client):
     assert set(j) == {"provenance", "label", "question", "metric", "n_paths", "seed", "input_sha256", "runtime_ms",
                       "options", "pairwise", "best", "sensitivity", "assumptions"}
     assert set(j["options"][0]) == {"id", "label", "mean", "sd", "p5", "p25", "p50", "p75", "p95",
-                                    "prob_below_zero", "histogram"}
+                                    "prob_below_zero", "prob_best", "prob_best_ci95", "expected_shortfall_5",
+                                    "histogram"}
+    assert sum(o["prob_best"] for o in j["options"]) == pytest.approx(1.0, abs=1e-9)
     assert [(p["a"], p["b"]) for p in j["pairwise"]] == [("keep", "replace")]
     assert j["best"]["id"] in {"keep", "replace"} and 0 <= j["best"]["ci95"][0] <= j["best"]["ci95"][1] <= 1
     assert len(j["sensitivity"]) == 5 and len(j["assumptions"]) == 5

@@ -30,6 +30,22 @@ test("readDecision copies the engine fields verbatim", () => {
   assert.deepEqual(d.binEdges, raw.options[0].histogram.bin_edges);
   assert.deepEqual(d.options[1].counts, raw.options[1].histogram.counts);
   assert.equal(d.options[0].p50, raw.options[0].p50);
+  raw.options.forEach((o, i) => {
+    assert.equal(d.options[i].probBest, o.prob_best);
+    assert.deepEqual(d.options[i].probBestCi95, o.prob_best_ci95);
+    assert.equal(d.options[i].expectedShortfall5, o.expected_shortfall_5);
+  });
+});
+
+test("readDecision: a run recorded before #240 has no per-option odds, so they read null (NOT AVAILABLE)", () => {
+  const body = structuredClone(fixture("mc-decision"));
+  for (const o of body.monte_carlo.options) {
+    delete o.prob_best;
+    delete o.prob_best_ci95;
+    o.expected_shortfall_5 = "x";
+  }
+  const d = readDecision(call("monte_carlo_decision", body));
+  assert.deepEqual(d.options.map((o) => [o.probBest, o.probBestCi95, o.expectedShortfall5]), [[null, null, null], [null, null, null]]);
 });
 
 test("readDecision drops counts that do not fit the edges and unsafe source links", () => {

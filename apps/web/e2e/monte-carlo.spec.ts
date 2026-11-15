@@ -86,6 +86,25 @@ test.describe("Monte Carlo panels", () => {
     await expect(panel.getByTestId("mc-headline-ci")).toHaveText(ci(mc.best.ci95));
     await expect(panel.locator('[data-provenance="SIMULATED"]').first()).toBeVisible();
 
+    // #240: every option card leads with its served prob_best (+ CI), then the downside row; the stacked bar carries
+    // every served share. The browser computes none of them.
+    type Opt = { id: string; prob_best: number; prob_best_ci95: [number, number]; prob_below_zero: number; expected_shortfall_5: number };
+    const bn = (v: number) => `${v < 0 ? "−" : ""}$${Math.abs(v).toLocaleString("en-US", { maximumSignificantDigits: 4 })}bn`;
+    expect(mc.metric.unit).toBe("USD bn");
+    await expect(panel.getByTestId("mc-option")).toHaveCount(mc.options.length);
+    for (const o of mc.options as Opt[]) {
+      const card = panel.locator(`[data-testid="mc-option"][data-option="${o.id}"]`);
+      await expect(card.getByTestId("mc-option-best")).toHaveText(pct(o.prob_best));
+      await expect(card.getByTestId("mc-option-best-ci")).toHaveText(ci(o.prob_best_ci95));
+      await expect(card.getByTestId("mc-option-loss")).toHaveText(pct(o.prob_below_zero));
+      await expect(card.getByTestId("mc-option-es5")).toHaveText(bn(o.expected_shortfall_5));
+    }
+    const best = (mc.options as Opt[]).find((o) => o.id === mc.best.id)!;
+    expect(best.prob_best).toBe(mc.best.prob_best);
+    const shares = await panel.getByTestId("mc-odds-seg").evaluateAll((els) => els.map((e) => [e.getAttribute("data-option"), Number(e.getAttribute("data-share"))]));
+    expect(shares).toEqual((mc.options as Opt[]).map((o) => [o.id, o.prob_best]));
+    await expect(panel.getByTestId("mc-odds-legend")).toHaveText((mc.options as Opt[]).map((o) => new RegExp(`${pct(o.prob_best).replace(".", "\\.")}$`)));
+
     // One ridge per option, every bin drawn with its served count.
     await expect(panel.getByTestId("mc-ridge")).toHaveCount(mc.options.length);
     const counts = await panel.locator('[data-option="replace"] rect').evaluateAll((els) => els.map((e) => Number(e.getAttribute("data-count"))));
@@ -179,6 +198,45 @@ test.describe("Monte Carlo panels", () => {
     await ask(page, "TEST FIXTURE malformed");
     await expect(page.getByTestId("mc-unreadable")).toBeVisible();
     await expect(page.getByTestId("mc-decision")).toHaveCount(0);
+  });
+
+  test("a run without per-option odds (recorded before #240) shows NOT AVAILABLE, never a computed share", async ({ page }) => {
+    const old = structuredClone(DECISION);
+    for (const o of old.monte_carlo.options) {
+      delete o.prob_best;
+      delete o.prob_best_ci95;
+      delete o.expected_shortfall_5;
+    }
+    await mock(page, [toolCall("monte_carlo_decision", old)]);
+    await page.goto("/explore/");
+    await ask(page, "TEST FIXTURE old run");
+    const panel = page.getByTestId("mc-decision");
+    await expect(panel).toBeVisible();
+    await expect(panel.getByTestId("mc-option-best")).toHaveText(old.monte_carlo.options.map(() => "NOT AVAILABLE"));
+    await expect(panel.getByTestId("mc-option-best-ci")).toHaveText(old.monte_carlo.options.map(() => "95% CI NOT AVAILABLE"));
+    await expect(panel.getByTestId("mc-option-es5")).toHaveText(old.monte_carlo.options.map(() => "NOT AVAILABLE"));
+    await expect(panel.getByTestId("mc-option-loss").first()).toHaveText(pct(old.monte_carlo.options[0].prob_below_zero));
+    await expect(panel.getByTestId("mc-odds-bar")).toHaveCount(0);
+    await expect(panel.getByTestId("mc-headline-prob")).toHaveText(pct(old.monte_carlo.best.prob_best)); // best is unchanged
+  });
+
+  test("screenshot at 1440 (dark)", async ({ browser }) => {
+    test.skip(!SHOTS, "MC_SHOTS not set");
+    const context = await browser.newContext({ colorScheme: "dark", reducedMotion: "reduce", viewport: { width: 1440, height: 900 } });
+    await context.addInitScript(() => {
+      try {
+        localStorage.setItem("faultline-theme", "dark");
+      } catch {}
+    });
+    const page = await context.newPage();
+    await mock(page, ALL);
+    await page.goto("/explore/");
+    await ask(page, "Should Nvidia keep Jensen Huang as CEO? Give me the odds.");
+    await expect(page.getByTestId("mc-decision")).toBeVisible();
+    await page.getByTestId("mc-headline").scrollIntoViewIfNeeded();
+    await page.screenshot({ path: `${SHOTS}/mc-1440-dark-viewport.png` });
+    await page.getByTestId("mc-decision").screenshot({ path: `${SHOTS}/mc-1440-dark-decision.png` });
+    await context.close();
   });
 
   test("390 px wide: no horizontal page scroll", async ({ page }) => {

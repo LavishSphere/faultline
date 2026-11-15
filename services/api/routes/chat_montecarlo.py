@@ -26,6 +26,7 @@ MIN_PATHS = 1_000
 MAX_DECISION_PATHS = 50_000
 MAX_CASH_PATHS = 20_000
 CI_LEVEL = 0.95  # the engine's ci95 fields; stated so "95% CI" in a reply matches a tool figure
+ES_TAIL = 0.05  # expected_shortfall_5 averages the worst 5% of paths; stated so "worst-5% average" matches a figure
 TOP_SENSITIVITY = 3
 
 
@@ -249,9 +250,11 @@ MONTE_CARLO_DECISION_TOOL: dict[str, Any] = {
     "description": (
         "Monte Carlo comparison of 2-4 options of a real-world decision (SIMULATED). Each option's outcome in ONE "
         "metric (e.g. '5-year shareholder value change, $B') is the sum of 1-8 uncertain drivers you specify. "
-        "Returns per option mean / P5 / P50 / P95 and the chance of a loss, the probability each option is best "
-        "with a 95% CI, pairwise win probabilities and a driver sensitivity table. Your ranges are assumptions: "
-        "anchor them on web_search results (put the url in source) or mark them as your estimate (source null)."),
+        "Returns per option mean / P5 / P50 / P95, the chance of a loss, the worst-5% average "
+        "(expected_shortfall_5: mean of the option's worst 5% of paths) and the probability it is best "
+        "(prob_best, with a 95% CI; the shares sum to 1), pairwise win probabilities and a driver sensitivity "
+        "table. Your ranges are assumptions: anchor them on web_search results (put the url in source) or mark "
+        "them as your estimate (source null)."),
     "parameters": _obj({
         "question": {"type": "string", "description": "The decision, one line."},
         "metric": _obj({"name": {"type": "string"}, "unit": {"type": "string", "description": "e.g. $B, %, pts"},
@@ -312,9 +315,16 @@ def _get(d: Any, key: str) -> Any:
     return d.get(key) if isinstance(d, dict) else None
 
 
+# Per option: the chance it is best (+ 95% CI) and the downside (chance of a loss, mean of the worst 5% of paths),
+# so a reply can say "Replace: best in 34%, worst-5% average -$412B" and pass the figure check (#240).
+OPTION_SUMMARY_KEYS = ("id", "label", "mean", "p5", "p50", "p95", "prob_below_zero", "prob_best", "prob_best_ci95",
+                       "expected_shortfall_5")
+
+
 def decision_summary(out: dict[str, Any]) -> dict[str, Any]:
-    """Compact view for the model: best option with prob_best + CI, P5/P50/P95 per option, the top sensitivity
-    rows, the run identity. The full engine response travels separately under `monte_carlo` (UI only)."""
+    """Compact view for the model: best option with prob_best + CI, per option P5/P50/P95, prob_best + CI, chance
+    of a loss and the worst-5% average (expected_shortfall_5), the top sensitivity rows, the run identity. The full
+    engine response travels separately under `monte_carlo` (UI only)."""
     sens = sorted((s for s in out.get("sensitivity") or [] if isinstance(s, dict)),
                   key=lambda s: -abs(float(s.get("swing") or 0)))[:TOP_SENSITIVITY]
     return {
@@ -324,9 +334,9 @@ def decision_summary(out: dict[str, Any]) -> dict[str, Any]:
         "seed": out.get("seed"),
         "input_sha256": out.get("input_sha256"),
         "ci_level": CI_LEVEL,
+        "expected_shortfall_tail": ES_TAIL,
         "best": out.get("best"),
-        "options": [{k: _get(o, k) for k in ("id", "label", "mean", "p5", "p50", "p95", "prob_below_zero")}
-                    for o in out.get("options") or []],
+        "options": [{k: _get(o, k) for k in OPTION_SUMMARY_KEYS} for o in out.get("options") or []],
         "pairwise": out.get("pairwise"),
         "top_sensitivity": sens,
         "assumptions": out.get("assumptions"),

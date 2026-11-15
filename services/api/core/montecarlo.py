@@ -44,6 +44,7 @@ Z95 = 1.959963984540054  # Φ^{-1}(0.975)
 Z90 = 1.2815515655446004  # Φ^{-1}(0.90), used to fit the lognormal from its P90
 QUANTILES = (0.05, 0.25, 0.50, 0.75, 0.95)
 HIST_BINS = 40
+ES_TAIL_PCT = 5  # expected shortfall tail: the worst 5% of paths (§11.1) [assumed]
 MAX_ABS_PARAM = 1e12  # |parameter| cap so sums of 8 drivers stay far from float overflow
 _U_EPS = 1e-12  # uniforms are clipped to [eps, 1 - eps] so normal/lognormal inverse CDFs stay finite
 
@@ -233,6 +234,9 @@ class OptionStats(_Model):
     p75: float
     p95: float
     prob_below_zero: float
+    prob_best: float  # share of paths where this option is best; tied paths split evenly (sums to 1 over options)
+    prob_best_ci95: CI  # Wilson 95% interval of prob_best
+    expected_shortfall_5: float  # mean metric over this option's worst 5% of paths (CVaR 5%), §11.1
     histogram: Histogram
 
 
@@ -316,6 +320,22 @@ def _better(a: np.ndarray, b: np.ndarray, higher_is_better: bool) -> np.ndarray:
     return win + 0.5 * (a == b)
 
 
+def tail_count(n: int, pct: int = ES_TAIL_PCT) -> int:
+    """k = ceil(pct/100 · n), in exact integer arithmetic (§11.1)."""
+    return max(1, (pct * n + 99) // 100)
+
+
+def expected_shortfall(x: np.ndarray, higher_is_better: bool, pct: int = ES_TAIL_PCT) -> np.ndarray:
+    """CVaR: mean of the k = ceil(pct% · N) worst values along the last axis (§11.1).
+
+    Worst = smallest when higher_is_better, largest otherwise. Works on a 1-D path vector or an (options, paths) array.
+    """
+    k = tail_count(x.shape[-1], pct)
+    s = np.sort(x, axis=-1)
+    tail = s[..., :k] if higher_is_better else s[..., -k:]
+    return tail.mean(axis=-1)
+
+
 def run_decision(req: DecisionRequest) -> DecisionResponse:
     start = time.perf_counter()
     n = req.n_paths
@@ -330,12 +350,20 @@ def run_decision(req: DecisionRequest) -> DecisionResponse:
         lo, hi = lo - 0.5, hi + 0.5
     edges = np.linspace(lo, hi, HIST_BINS + 1)
 
+    # Best per path; an exact tie between m options gives each 1/m of that path, so prob_best sums to 1.
+    extreme = totals.max(axis=0) if hib else totals.min(axis=0)
+    is_best = totals == extreme
+    share = is_best / is_best.sum(axis=0)
+    prob_best = share.mean(axis=1)
+    es5 = expected_shortfall(totals, hib)
+
     options = []
-    for opt, x in zip(req.options, totals, strict=True):
+    for opt, x, pb, es in zip(req.options, totals, prob_best, es5, strict=True):
         counts, _ = np.histogram(x, bins=edges)
         options.append(OptionStats(
             id=opt.id, label=opt.label, mean=float(x.mean()), sd=float(x.std(ddof=1)), **_quantiles(x),
             prob_below_zero=float(np.mean(x < 0.0)),
+            prob_best=float(pb), prob_best_ci95=wilson(float(pb), n), expected_shortfall_5=float(es),
             histogram=Histogram(bin_edges=[float(e) for e in edges], counts=[int(c) for c in counts]),
         ))
 
@@ -346,11 +374,6 @@ def run_decision(req: DecisionRequest) -> DecisionResponse:
             p = float(_better(totals[i], totals[j], hib).mean())
             pairwise.append(Pairwise(a=req.options[i].id, b=req.options[j].id, prob_a_better=p, ci95=wilson(p, n)))
 
-    # Best per path; an exact tie between m options gives each 1/m of that path.
-    extreme = totals.max(axis=0) if hib else totals.min(axis=0)
-    is_best = totals == extreme
-    share = is_best / is_best.sum(axis=0)
-    prob_best = share.mean(axis=1)
     b = int(np.argmax(prob_best))  # first option wins an exact tie in prob_best
     best = Best(id=req.options[b].id, prob_best=float(prob_best[b]), ci95=wilson(float(prob_best[b]), n))
 

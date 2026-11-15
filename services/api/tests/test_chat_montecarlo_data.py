@@ -46,10 +46,12 @@ FAKE_DECISION: dict[str, Any] = {
     "seed": 20261115, "input_sha256": "ab" * 32, "runtime_ms": 12.5,
     "options": [
         {"id": "keep", "label": "Keep the CEO", "mean": 41.2, "sd": 30.1, "p5": -8.4, "p25": 20.0, "p50": 40.3,
-         "p75": 61.0, "p95": 92.7, "prob_below_zero": 0.083,
+         "p75": 61.0, "p95": 92.7, "prob_below_zero": 0.083, "prob_best": 0.783, "prob_best_ci95": [0.777, 0.789],
+         "expected_shortfall_5": -21.6,
          "histogram": {"bin_edges": [-20.0, 0.85, 120.0], "counts": [85, 19915]}},
         {"id": "replace", "label": "Replace the CEO", "mean": 12.5, "sd": 25.0, "p5": -30.2, "p25": -3.0,
-         "p50": 11.9, "p75": 28.0, "p95": 55.4, "prob_below_zero": 0.31,
+         "p50": 11.9, "p75": 28.0, "p95": 55.4, "prob_below_zero": 0.31, "prob_best": 0.217,
+         "prob_best_ci95": [0.211, 0.223], "expected_shortfall_5": -412.0,
          "histogram": {"bin_edges": [-60.0, 0.85, 80.0], "counts": [85, 19915]}},
     ],
     "pairwise": [{"a": "keep", "b": "replace", "prob_a_better": 0.783, "ci95": [0.777, 0.789]}],
@@ -293,6 +295,24 @@ def test_percentages_are_checked_against_tool_shares():
     # 85 appears only in histogram counts (and 0.85 only in bin edges): not a figure the model may quote
     assert chat.unverified_numbers("Keep wins 85% of the time.", res) == ["85%"]
     assert chat.unverified_numbers("Value change P50 of $12.9B.", res) == ["$12.9B"]
+
+
+def test_per_option_odds_and_downside_reach_the_model_and_pass_the_figure_check():
+    """#240: every option's prob_best (+ CI) and worst-5% average are in the compact view the model sees."""
+    s = mc.decision_summary(FAKE_DECISION)
+    assert [(o["id"], o["prob_best"], o["prob_best_ci95"], o["expected_shortfall_5"]) for o in s["options"]] == [
+        ("keep", 0.783, [0.777, 0.789], -21.6), ("replace", 0.217, [0.211, 0.223], -412.0)]
+    res = _payloads({**s, "monte_carlo": FAKE_DECISION})
+    ok = ("Replace: best in 22% (95% CI 21.1-22.3%), worst-5% average -$412B, chance of a loss 31%. "
+          "Keep: best in 78%, worst-5% average -$21.6B.")
+    assert chat.unverified_numbers(ok, res) == []
+    assert chat.unverified_numbers("Replace: best in 34%.", res) == ["34%"]  # not a share of this run
+    assert chat.unverified_numbers("Replace: best in 21.7%.", res) == []
+    # a share of 0.344 is quotable as 34% / 34.4%
+    one = _payloads(mc.decision_summary({**FAKE_DECISION, "options": [
+        {**FAKE_DECISION["options"][1], "prob_best": 0.344, "prob_best_ci95": [0.337, 0.351]}]}))
+    assert chat.unverified_numbers("Replace: best in 34% (34.4%), CI 33.7-35.1%.", one) == []
+    assert chat.unverified_numbers("Replace: worst-5% average -$450B.", res) == ["$450B"]
 
 
 def test_percentages_from_inputs_and_web_text_count():
