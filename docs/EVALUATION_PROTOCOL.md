@@ -341,6 +341,17 @@ Not changed:
 - A market id in the `evidence_ids` **field** is still rejected: `ForecastOutput` gives `MODEL_OUTPUT_INVALID`, and
   the skeptic gives `UNKNOWN_EVIDENCE_ID`.
 
+**2026-11-14: handling of model-format failures in the first official run (lead decision, before any official forecast).**
+
+- Rehearsal 3 (real model, scratch store, outcome-blind; #183): `agent_only` 29/29 valid; `agent_plus_market` 23/29. The
+  same 6 `agent_plus_market` cases fail in every v1 rehearsal: the model puts a market ticker into `evidence_ids`.
+- Each case × variant is forecast **once**. A forecast that fails validation or the skeptic, after the provider's single
+  built-in repair turn, is recorded as failed in the run record and is **not retried, re-prompted or replaced**.
+- Scoring then runs explicitly with `scripts/record_runs.py --score RUN_ID`. A variant with any missing forecast keeps
+  its `no_persisted_prediction` blocker and **cannot be labelled OFFICIAL**; its card is still shown, with the count of
+  missing forecasts. The pre-registered primary variant is `agent_only`.
+- No code change to scoring, the store or the evaluator was made for this decision.
+
 ---
 
 ## 9. HTTP routes (#44 part A)

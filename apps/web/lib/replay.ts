@@ -136,7 +136,8 @@ export type SkepticProblemCode =
   | "UNCITED_CLAIM"
   | "CITATION_NOT_LISTED"
   | "DUPLICATE_EVIDENCE_ID"
-  | "NO_EVIDENCE_CITED";
+  | "NO_EVIDENCE_CITED"
+  | "MARKET_ID_CITED";
 
 /** agents/skeptic.py `SkepticProblem`. */
 export interface SkepticProblem {
@@ -419,6 +420,7 @@ function checkPrediction(p: unknown, at: string): string | null {
 const SKEPTIC_CODES: readonly SkepticProblemCode[] = [
   "UNKNOWN_EVIDENCE_ID", "UNKNOWN_CITED_ID", "POSSIBLE_UNKNOWN_ID", "P_YES_OUT_OF_RANGE", "INVALID_DECISION",
   "RATIONALE_LENGTH", "UNCITED_CLAIM", "CITATION_NOT_LISTED", "DUPLICATE_EVIDENCE_ID", "NO_EVIDENCE_CITED",
+  "MARKET_ID_CITED",
 ];
 
 function checkSkeptic(v: unknown): string | null {
