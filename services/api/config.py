@@ -9,6 +9,10 @@ Modes (docs/DEPLOY.md):
   no rate limit.
 - `public` (baked into the deploy image): model inference (`/api/replay/run`) requires FAULTLINE_ADMIN_TOKEN,
   CORS allows only https origins, per-IP rate limiting is on and cannot be switched off (0 is a ConfigError).
+- `public` + FAULTLINE_PUBLIC_INFERENCE=1 (opt-in, default off): POST /api/replay/run and
+  POST /api/replay/{id}/reveal are open to anonymous visitors, behind a global concurrency cap, a bounded queue and
+  per-IP limits (routes/public_inference.py). Refused at startup unless FAULTLINE_DEMO_STORE marks a scratch store
+  that is not the official one, so public runs never touch the official store or earn OFFICIAL (#155/#156).
 """
 
 from __future__ import annotations
@@ -49,6 +53,17 @@ MIN_ADMIN_TOKEN_LEN = 32
 # (a passphrase, a pasted-with-quotes value, upper case) is a ConfigError at startup and never matches.
 PUBLIC_ADMIN_TOKEN_PATTERN = re.compile(r"^[0-9a-f]{64}$")
 
+# Public live inference (opt-in). CPU inference takes minutes, so: one model run at a time, a short bounded queue,
+# and a per-IP budget per window. Reveals are cheap (no model call) and get a more generous per-IP budget.
+DEFAULT_INFERENCE_CONCURRENCY = 1
+DEFAULT_INFERENCE_QUEUE = 3
+DEFAULT_INFERENCE_MAX_WAIT_S = 240
+DEFAULT_INFERENCE_PER_IP = 3
+DEFAULT_REVEAL_PER_IP = 20
+INFERENCE_WINDOW_S = 600  # the per-IP budgets are per 10 minutes
+_TRUE = ("1", "true", "yes", "on")
+_FALSE = ("", "0", "false", "no", "off")
+
 
 class ConfigError(ValueError):
     """A deployment variable has an unusable value. Raised at startup so misconfiguration is loud."""
@@ -76,6 +91,13 @@ class Settings:
     # FAULTLINE_DEMO_STORE is set (scripts/demo_api.py, `make demo-scratch`): this process serves a demo scratch
     # store, so no scorecard computed or served from it may be OFFICIAL (#155). Presence only, read per call.
     demo_store_set: bool
+    # FAULTLINE_PUBLIC_INFERENCE (default off). Only changes behaviour in public mode (see module docstring).
+    public_inference: bool = False
+    inference_concurrency: int = DEFAULT_INFERENCE_CONCURRENCY
+    inference_queue: int = DEFAULT_INFERENCE_QUEUE
+    inference_max_wait_s: int = DEFAULT_INFERENCE_MAX_WAIT_S
+    inference_per_ip: int = DEFAULT_INFERENCE_PER_IP
+    reveal_per_ip: int = DEFAULT_REVEAL_PER_IP
 
     @property
     def predictions_db_is_official(self) -> bool:
@@ -203,6 +225,37 @@ def _rate_limit_per_min(mode: Mode) -> int:
     return value
 
 
+def public_inference_from_env() -> bool:
+    """FAULTLINE_PUBLIC_INFERENCE as a bool. Anything but a clear yes/no is a ConfigError (no guessing)."""
+    raw = os.environ.get("FAULTLINE_PUBLIC_INFERENCE", "").strip().lower()
+    if raw in _TRUE:
+        return True
+    if raw in _FALSE:
+        return False
+    raise ConfigError(f"FAULTLINE_PUBLIC_INFERENCE must be 1/0 (or true/false), got {raw!r}.")
+
+
+def _positive_int(name: str, default: int) -> int:
+    value = _non_negative_int(name, default)
+    if value == 0:
+        raise ConfigError(f"{name} must be at least 1.")
+    return value
+
+
+def _check_public_inference_store(predictions_db: Path) -> None:
+    """Public inference writes only a marked scratch store, never the official one (lead policy, #130/#155/#156)."""
+    if not _is_set("FAULTLINE_DEMO_STORE"):
+        raise ConfigError(
+            "FAULTLINE_PUBLIC_INFERENCE=1 needs FAULTLINE_DEMO_STORE set (the server scratch store), so public runs "
+            "are never OFFICIAL. deploy/docker-compose.yml sets it."
+        )
+    if same_path(predictions_db, DEFAULT_PREDICTIONS_DB):
+        raise ConfigError(
+            "FAULTLINE_PUBLIC_INFERENCE=1 needs FAULTLINE_PREDICTIONS_DB pointed at a scratch store, not the official "
+            "store."
+        )
+
+
 def admin_token_matches(presented: str | None) -> bool:
     """Constant-time check of a presented admin token. False when no (strong enough) token is configured."""
     expected = _admin_token()
@@ -218,6 +271,10 @@ def get_settings() -> Settings:
     max_body_bytes = _non_negative_int("FAULTLINE_MAX_BODY_BYTES", DEFAULT_MAX_BODY_BYTES)
     if max_body_bytes == 0:
         raise ConfigError("FAULTLINE_MAX_BODY_BYTES must be at least 1.")
+    predictions_db = predictions_db_from_env()
+    public_inference = public_inference_from_env()
+    if public_inference:
+        _check_public_inference_store(predictions_db)
     return Settings(
         ollama_base_url=(os.environ.get("OLLAMA_BASE_URL", "").strip() or DEFAULT_OLLAMA_BASE_URL).rstrip("/"),
         ollama_model=os.environ.get("FAULTLINE_OLLAMA_MODEL", "").strip() or DEFAULT_OLLAMA_MODEL,
@@ -229,6 +286,12 @@ def get_settings() -> Settings:
         admin_token_configured=bool(_admin_token()),
         rate_limit_per_min=_rate_limit_per_min(mode),
         max_body_bytes=max_body_bytes,
-        predictions_db=predictions_db_from_env(),
+        predictions_db=predictions_db,
         demo_store_set=_is_set("FAULTLINE_DEMO_STORE"),
+        public_inference=public_inference,
+        inference_concurrency=_positive_int("FAULTLINE_INFERENCE_CONCURRENCY", DEFAULT_INFERENCE_CONCURRENCY),
+        inference_queue=_non_negative_int("FAULTLINE_INFERENCE_QUEUE", DEFAULT_INFERENCE_QUEUE),
+        inference_max_wait_s=_positive_int("FAULTLINE_INFERENCE_MAX_WAIT_S", DEFAULT_INFERENCE_MAX_WAIT_S),
+        inference_per_ip=_positive_int("FAULTLINE_INFERENCE_PER_IP", DEFAULT_INFERENCE_PER_IP),
+        reveal_per_ip=_positive_int("FAULTLINE_REVEAL_PER_IP", DEFAULT_REVEAL_PER_IP),
     )

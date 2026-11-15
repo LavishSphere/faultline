@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import ipaddress
 import json
 import math
 import re
@@ -15,6 +14,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from starlette.types import ASGIApp, Message, Receive, Scope, Send
 
+from client_ip import client_key, rate_limit_key  # noqa: F401 - rate_limit_key re-exported for tests
 from config import Settings, admin_token_matches, get_settings
 from errors import FaultlineError, faultline_error_handler
 from routes import (
@@ -44,12 +44,17 @@ MODE_HEADER = "X-Faultline-Mode"
 #          public mode it needs `Authorization: Bearer <FAULTLINE_ADMIN_TOKEN>`, checked twice: here at the edge
 #          (ADMIN_GATED_PREFIXES) and inside the route (routes.replay.require_admin_in_public_mode).
 # "public": deterministic or read-only; served to anyone, behind the rate limit and the body cap.
+# "inference": admin, EXCEPT when FAULTLINE_PUBLIC_INFERENCE=1: then public at both layers (edge:
+#          PUBLIC_INFERENCE_PATHS; route: routes.public_inference.require_run_access / require_reveal_access), behind
+#          the inference safeguards
+#          (one model run at a time, bounded queue, per-IP budgets) and writing only the scratch store.
 # tests/test_public_mode_routes.py walks the OpenAPI schema: a route missing from this table fails the suite.
 ADMIN = "admin"
 PUBLIC = "public"
+INFERENCE = "inference"
 PUBLIC_MODE_ROUTES: dict[tuple[str, str], str] = {
-    ("POST", "/api/replay/run"): ADMIN,  # local-model inference + writes the prediction store
-    ("POST", "/api/replay/{prediction_id}/reveal"): ADMIN,  # reveals a sealed outcome + writes the reveal ledger
+    ("POST", "/api/replay/run"): INFERENCE,  # local-model inference + writes the prediction store
+    ("POST", "/api/replay/{prediction_id}/reveal"): INFERENCE,  # reveals a sealed outcome + writes the reveal ledger
     ("GET", "/api/replay/recorded"): PUBLIC,  # committed RECORDED RUN rows, verified; read-only, never reveals (#116)
     ("POST", "/api/benchmark/compute"): ADMIN,  # reveals outcomes to score + writes a scorecard file
     ("POST", "/api/explore/analyze"): ADMIN,  # Tavily credits + local-model inference
@@ -73,6 +78,12 @@ ADMIN_GATED_PREFIXES = ("/api/replay", "/api/explore", "/api/benchmark/compute")
 # Exact paths under a gated prefix that are public (read-only). Exact match only: anything below or beside them
 # (e.g. /api/replay/recorded/x, /api/replay/recordedx) stays admin-only.
 PUBLIC_EXACT_PATHS = frozenset({"/api/replay/recorded"})
+# FAULTLINE_PUBLIC_INFERENCE=1 only: the two "inference" rows, POST only, matched in full (anchored, one path
+# segment for the id). Nothing else under /api/replay, and never /api/explore or /api/benchmark/compute.
+PUBLIC_INFERENCE_PATHS = (
+    re.compile(r"/api/replay/run"),
+    re.compile(r"/api/replay/[a-z0-9_-]{1,128}/reveal"),
+)
 ADMIN_MESSAGE = (
     "Admin only on the public demo: this route runs the model, spends paid search credits or reveals sealed "
     "outcomes, and needs the admin token (Authorization: Bearer <FAULTLINE_ADMIN_TOKEN>). The public demo shows "
@@ -100,21 +111,34 @@ def _normalised_path(path: str) -> str:
     return re.sub(r"/{2,}", "/", path).lower().rstrip("/")
 
 
-def is_admin_gated(path: str) -> bool:
+def is_public_inference_path(method: str, path: str) -> bool:
+    """POST /api/replay/run or POST /api/replay/{id}/reveal, exactly (the edge side of FAULTLINE_PUBLIC_INFERENCE)."""
+    norm = _normalised_path(path)
+    return method.upper() == "POST" and any(p.fullmatch(norm) for p in PUBLIC_INFERENCE_PATHS)
+
+
+def is_admin_gated(path: str, method: str = "GET", *, public_inference: bool = False) -> bool:
     norm = _normalised_path(path)
     if norm in PUBLIC_EXACT_PATHS:
         return False
+    if public_inference and is_public_inference_path(method, path):
+        return False  # the route-level gate (routes.public_inference) still applies the safeguards
     return any(norm == p or norm.startswith(p + "/") for p in ADMIN_GATED_PREFIXES)
 
 
 class AdminGateMiddleware:
     """Public mode: refuse every ADMIN_GATED_PREFIXES path unless a valid admin bearer token is presented."""
 
-    def __init__(self, app: ASGIApp) -> None:
+    def __init__(self, app: ASGIApp, public_inference: bool = False) -> None:
         self.app = app
+        self.public_inference = public_inference
 
     async def __call__(self, scope: Scope, receive: Receive, send: Send) -> None:
-        if scope["type"] == "http" and scope["method"] != "OPTIONS" and is_admin_gated(scope["path"]):
+        if (
+            scope["type"] == "http"
+            and scope["method"] != "OPTIONS"
+            and is_admin_gated(scope["path"], scope["method"], public_inference=self.public_inference)
+        ):
             auth = dict(scope["headers"]).get(b"authorization", b"").decode("latin-1")
             scheme, _, token = auth.partition(" ")
             token = token.strip()
@@ -212,19 +236,6 @@ class TokenBucketLimiter:
         return allowed, retry_after
 
 
-def rate_limit_key(host: str) -> str:
-    """IPv4: the address. IPv6: its /64, since one client can rotate through a whole /64 (docs/DEPLOY.md)."""
-    try:
-        ip = ipaddress.ip_address(host)
-    except ValueError:
-        return host
-    if isinstance(ip, ipaddress.IPv6Address):
-        if ip.ipv4_mapped is not None:
-            return str(ip.ipv4_mapped)
-        return str(ipaddress.IPv6Network((ip, 64), strict=False))
-    return str(ip)
-
-
 class RateLimitMiddleware:
     """429 per client IP. Behind Caddy, uvicorn --proxy-headers sets scope["client"] from X-Forwarded-For."""
 
@@ -234,8 +245,7 @@ class RateLimitMiddleware:
 
     async def __call__(self, scope: Scope, receive: Receive, send: Send) -> None:
         if scope["type"] == "http":
-            client = scope.get("client")
-            allowed, retry_after = self.limiter.check(rate_limit_key(client[0] if client else "unknown"))
+            allowed, retry_after = self.limiter.check(client_key(scope.get("client")))
             if not allowed:
                 await _send_error(
                     send,
@@ -285,7 +295,7 @@ def install_edge_protection(app: FastAPI, settings: Settings) -> None:
     # CORS is outermost so 403/413/429 bodies stay readable by the allowed web origin.
     if settings.mode == "public":
         _disable_api_docs(app)
-        app.add_middleware(AdminGateMiddleware)
+        app.add_middleware(AdminGateMiddleware, public_inference=settings.public_inference)
     app.add_middleware(BodySizeLimitMiddleware, max_bytes=settings.max_body_bytes)
     if settings.rate_limit_per_min > 0:
         app.add_middleware(RateLimitMiddleware, per_minute=settings.rate_limit_per_min)
@@ -294,7 +304,10 @@ def install_edge_protection(app: FastAPI, settings: Settings) -> None:
         CORSMiddleware,
         allow_origins=list(settings.cors_origins),
         allow_methods=["GET", "POST"],
-        allow_headers=["Content-Type"],  # no Authorization: the admin token is never sent from a browser
+        # Authorization only with FAULTLINE_PUBLIC_INFERENCE=1 (presenter mode: the team's admin token from the
+        # allowlisted site, for queue priority and no per-IP budget). Otherwise the token is never sent from a browser.
+        # Never credentials or cookies; the token is compared in constant time (config.admin_token_matches).
+        allow_headers=["Content-Type", "Authorization"] if settings.public_inference else ["Content-Type"],
         allow_credentials=False,
         expose_headers=[MODE_HEADER, "Retry-After"],
         max_age=600,

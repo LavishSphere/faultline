@@ -7,6 +7,7 @@ import "./globals.css";
 import { HealthChip } from "@/components/HealthChip";
 import { HealthProvider } from "@/components/HealthProvider";
 import { KeyNav } from "@/components/KeyNav";
+import { PresenterToken } from "@/components/PresenterToken";
 import { HeaderCase } from "@/components/HeaderCase";
 import { ReplayTimeline } from "@/components/ReplayTimeline";
 import { ThemeToggle } from "@/components/ThemeToggle";
@@ -94,6 +95,7 @@ export default function RootLayout({ children }: Readonly<{ children: React.Reac
           </div>
         </HealthProvider>
         <KeyNav />
+        <PresenterToken />
       </body>
     </html>
   );

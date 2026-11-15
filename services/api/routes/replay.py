@@ -2,7 +2,9 @@
 
 Both routes change state, so in public mode both are admin-only, enforced HERE (``require_admin_in_public_mode``),
 with or without #28's edge middleware: an early public reveal would mark the event revealed and silently
-disqualify later admin runs. Local mode is open.
+disqualify later admin runs. Local mode is open. Exception, opt-in: with FAULTLINE_PUBLIC_INFERENCE=1 both are public
+behind the safeguards in ``routes.public_inference`` (the route gate is ``require_run_access`` /
+``require_reveal_access``, which fall back to ``require_admin_in_public_mode`` while the flag is off).
 
 ``POST /api/replay/run`` ``{case_id, variant}`` (pre-reveal):
 
@@ -66,8 +68,9 @@ from core.temporal_gate import MarketNotAvailable, ModelInput
 from errors import FaultlineError
 from markets.base import MarketLabel
 from models import ApiError, ErrorCode, Identifier, Prediction, Provenance, Sha256Hex
-from routes import CodedRoute, FieldIssue, RouteError
+from routes import CodedRoute, FieldIssue, RouteError, RouteErrorBody
 from routes.cases import MarketAtCutoff, coded_responses, market_at_cutoff, require_case_store
+from routes.public_inference import InferenceAccess, model_slot, require_reveal_access, require_run_access
 
 router = APIRouter(tags=["replay"], route_class=CodedRoute)
 
@@ -129,6 +132,10 @@ def require_admin_in_public_mode(request: Request) -> None:
 _ADMIN_RESPONSES: dict[int | str, dict[str, Any]] = {
     401: {"model": ApiError, "description": "ADMIN_TOKEN_REQUIRED (public mode): no bearer token presented"},
     403: {"model": ApiError, "description": "ADMIN_TOKEN_REQUIRED (public mode): wrong token, or none configured"},
+}
+_RATE_LIMIT_RESPONSE: dict[int | str, dict[str, Any]] = {
+    429: {"model": RouteErrorBody, "description": "RATE_LIMITED (FAULTLINE_PUBLIC_INFERENCE=1): per-IP budget used "
+          "up; Retry-After says when to try again. Nothing was run or revealed."},
 }
 
 
@@ -261,8 +268,8 @@ def _skeptic_rejection(report: skeptic.SkepticReport) -> RouteError:
 @router.post(
     "/replay/run",
     response_model=ReplayRunResponse,
-    dependencies=[Depends(require_admin_in_public_mode)],
     responses=_ADMIN_RESPONSES
+    | _RATE_LIMIT_RESPONSE
     | coded_responses(
         _404="NOT_FOUND: unknown case, or no cases yet",
         _422=(
@@ -271,12 +278,17 @@ def _skeptic_rejection(report: skeptic.SkepticReport) -> RouteError:
         ),
         _409="PREDICTION_EXISTS: a forecast with this id is already persisted",
         _500="DATA_INVALID: a case file failed a check, or the forecast failed its audit-hash check (not saved)",
-        _503="MODEL_UNAVAILABLE: the local model could not be called. Nothing saved; no substitute answer.",
+        _503=(
+            "MODEL_UNAVAILABLE: the local model could not be called. BUSY (FAULTLINE_PUBLIC_INFERENCE=1): the model "
+            "is running another forecast and the queue is full or the wait ran out (Retry-After). Nothing saved; "
+            "no substitute answer."
+        ),
     ),
     summary="Run one sealed Blind Replay forecast and persist it before any reveal",
 )
 async def run_replay(
     body: ReplayRunRequest,
+    access: Annotated[InferenceAccess, Depends(require_run_access)],
     settings: Annotated[Settings, Depends(get_settings)],
     provider: Annotated[ModelProvider, Depends(get_provider)],
 ) -> ReplayRunResponse:
@@ -290,10 +302,13 @@ async def run_replay(
             "agent_plus_market cannot run: no market quote within 24h before the cutoff (market NOT AVAILABLE).",
         ) from None
 
-    try:
-        result = await provider.forecast(mi.prompt, mi.evidence_ids)
-    except ProviderError as exc:
-        raise _provider_error(exc) from None
+    # One global model-run slot while the provider runs (no-op unless public inference is on). The provider is
+    # async (httpx.AsyncClient), so the event loop stays free while CPU inference takes minutes.
+    async with model_slot(access):
+        try:
+            result = await provider.forecast(mi.prompt, mi.evidence_ids)
+        except ProviderError as exc:
+            raise _provider_error(exc) from None
 
     report = skeptic.review(result.output, mi.evidence_ids, market_refs=skeptic.market_refs(mi.snapshot_json))
     if report.rejected:
@@ -418,8 +433,8 @@ def _reveal_responses() -> dict[int | str, dict[str, Any]]:
 @router.post(
     "/replay/{prediction_id}/reveal",
     response_model=RevealResponse,
-    dependencies=[Depends(require_admin_in_public_mode)],
-    responses=_ADMIN_RESPONSES | _reveal_responses(),
+    dependencies=[Depends(require_reveal_access)],
+    responses=_ADMIN_RESPONSES | _RATE_LIMIT_RESPONSE | _reveal_responses(),
     summary="Reveal the outcome of a persisted forecast and score it (appends a reveal to the audit log)",
 )
 def reveal_prediction(prediction_id: str) -> RevealResponse:

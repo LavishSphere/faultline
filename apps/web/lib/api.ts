@@ -54,6 +54,8 @@ export interface HealthResponse {
     error?: string | null;
   };
   notices?: string[];
+  /** Public mode only: FAULTLINE_PUBLIC_INFERENCE is on, so anyone may run / reveal a live forecast (capped). */
+  public_inference?: boolean;
   models?: string[];
   ollama_models?: string[];
   [key: string]: unknown;
@@ -84,6 +86,8 @@ export interface HealthSummary {
    * forecasts shown are committed RECORDED RUNs. `local`: `make demo` on the presenter's laptop. `null`: not sent.
    */
   serverMode: ServerMode;
+  /** `public_inference` as sent (public mode); null when the API did not send it (local mode, older builds). */
+  publicInference: boolean | null;
   checkedAt: Date;
 }
 
@@ -129,6 +133,7 @@ export function summarizeHealth(
     requiredModel: typeof st?.required_model === "string" && st.required_model ? st.required_model : null,
     modelError: typeof st?.error === "string" && st.error ? st.error : null,
     serverMode: readServerMode(modeHeader),
+    publicInference: typeof raw.public_inference === "boolean" ? raw.public_inference : null,
     checkedAt,
   };
 }

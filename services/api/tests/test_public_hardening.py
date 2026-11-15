@@ -383,7 +383,8 @@ def test_public_health_is_booleans_only(monkeypatch, tmp_path):
     resp = _health(_tags(["llama3.1:8b", "gemma2:2b"]))
     assert resp.status_code == 200
     body = resp.json()
-    assert body == {"status": "ok", "model_ready": True, "ollama_reachable": True, "tavily_configured": True}
+    assert body == {"status": "ok", "model_ready": True, "ollama_reachable": True, "tavily_configured": True,
+                    "public_inference": False}
     assert set(body) == set(PublicHealthResponse.model_fields)
     for secret in ("llama3.1", "gemma2", FAKE_TAVILY, TOKEN, str(tmp_path), "127.0.0.1"):
         assert secret not in resp.text, secret
@@ -392,7 +393,8 @@ def test_public_health_is_booleans_only(monkeypatch, tmp_path):
 def test_public_health_ollama_down(monkeypatch):
     monkeypatch.setenv("FAULTLINE_MODE", "public")
     body = TestClient(create_app()).get("/api/health").json()  # closed loopback port
-    assert body == {"status": "ok", "model_ready": False, "ollama_reachable": False, "tavily_configured": False}
+    assert body == {"status": "ok", "model_ready": False, "ollama_reachable": False, "tavily_configured": False,
+                    "public_inference": False}
 
 
 def test_public_health_model_missing(monkeypatch):

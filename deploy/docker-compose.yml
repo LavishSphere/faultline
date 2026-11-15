@@ -40,6 +40,14 @@ services:
       # uvicorn --proxy-headers trusts X-Forwarded-For only from Caddy's network (never "*").
       FORWARDED_ALLOW_IPS: *edge_subnet
       FAULTLINE_OLLAMA_MODEL: ${FAULTLINE_OLLAMA_MODEL:-llama3.1:8b}
+      # Opt-in public live inference (docs/DEPLOY.md "Public live inference"). Off unless deploy/.env says 1.
+      # Requires FAULTLINE_DEMO_STORE above (the api refuses to start otherwise).
+      FAULTLINE_PUBLIC_INFERENCE: ${FAULTLINE_PUBLIC_INFERENCE:-0}
+      FAULTLINE_INFERENCE_CONCURRENCY: ${FAULTLINE_INFERENCE_CONCURRENCY:-1}
+      FAULTLINE_INFERENCE_QUEUE: ${FAULTLINE_INFERENCE_QUEUE:-3}
+      FAULTLINE_INFERENCE_MAX_WAIT_S: ${FAULTLINE_INFERENCE_MAX_WAIT_S:-240}
+      FAULTLINE_INFERENCE_PER_IP: ${FAULTLINE_INFERENCE_PER_IP:-3}
+      FAULTLINE_REVEAL_PER_IP: ${FAULTLINE_REVEAL_PER_IP:-20}
     user: "10001:10001"
     read_only: true
     tmpfs:
@@ -99,10 +107,12 @@ services:
     # capabilities or privilege escalation.
     cap_drop: [ALL]
     security_opt: ["no-new-privileges:true"]
+    # 30 GB RAM VM: 16g / 14 CPUs for an 8B model on CPU, leaving headroom for api, Caddy and the OS.
     deploy:
       resources:
         limits:
-          memory: 32g
+          memory: 16g
+          cpus: "14"
           pids: 512
     networks: [models]
 

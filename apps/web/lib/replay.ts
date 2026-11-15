@@ -17,6 +17,7 @@
  */
 
 import { API_BASE } from "./api";
+import { presenterAuthHeader } from "./presenter";
 
 // --------------------------------------------------------------------------------------------- wire types
 
@@ -603,6 +604,8 @@ async function request(
   payload?: unknown,
   /** false only for /openapi.json, whose schema names (e.g. SimulationResult) are not case data. */
   refuseOutcomeKeys = true,
+  /** true only for POST /api/replay/run: attach the presenter token, if one is stored (lib/presenter.ts). */
+  presenterAuth = false,
 ): Promise<ReplayResult<unknown>> {
   const label = `${method} ${path}`;
   const controller = new AbortController();
@@ -620,10 +623,11 @@ async function request(
   try {
     const res = await fetch(`${API_BASE}${path}`, {
       method,
-      headers:
-        payload === undefined
-          ? { Accept: "application/json" }
-          : { Accept: "application/json", "Content-Type": "application/json" },
+      headers: {
+        Accept: "application/json",
+        ...(payload === undefined ? {} : { "Content-Type": "application/json" }),
+        ...(presenterAuth ? presenterAuthHeader() : {}),
+      },
       body: payload === undefined ? undefined : JSON.stringify(payload),
       cache: "no-store",
       signal: controller.signal,
@@ -714,8 +718,9 @@ export const RUN_TIMEOUT_MS = 420_000;
 /**
  * POST /api/replay/run `{case_id, variant}` (routes/replay.py). Only ever called from an explicit click: it runs the
  * local model and persists a prediction before any reveal. Generous timeout because a local model can be slow; no
- * progress is invented. In public mode the route is admin-only (401/403 ADMIN_TOKEN_REQUIRED); this client never
- * sends a token, so the public demo shows that refusal, never a substitute forecast.
+ * progress is invented. In public mode the route is admin-only (401/403 ADMIN_TOKEN_REQUIRED) unless the server runs
+ * with FAULTLINE_PUBLIC_INFERENCE=1; a refusal is shown as such, never a substitute forecast. The presenter token
+ * (lib/presenter.ts, `?presenter=1`) is sent only when one is stored in this tab.
  */
 export async function runReplay(
   c: Pick<ReplayCasePublic, "event_id" | "as_of">,
@@ -723,7 +728,7 @@ export async function runReplay(
   signal?: AbortSignal,
 ): Promise<ReplayResult<ReplayRun>> {
   const caseId = c.event_id;
-  const res = await request("POST", REPLAY_RUN_PATH, RUN_TIMEOUT_MS, signal, { case_id: caseId, variant });
+  const res = await request("POST", REPLAY_RUN_PATH, RUN_TIMEOUT_MS, signal, { case_id: caseId, variant }, true, true);
   if (!res.ok) return res;
   const run = readReplayRun(res.data);
   if (typeof run === "string") {
