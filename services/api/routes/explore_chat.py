@@ -266,9 +266,9 @@ SHOCK_SCHEMA: dict[str, Any] = {
             "description": "Demand multiplier 1-delta on weeks start_week..end_week, then linear recovery.",
             "properties": {
                 "delta": {"type": "number", "description": "Fraction of demand lost, 0..1 (0.2 = -20%)."},
-                "start_week": {"type": "integer"},
-                "end_week": {"type": "integer"},
-                "recovery_weeks": _NULLABLE_INT,
+                "start_week": {"type": "integer", "description": "First shocked week, 1..26 (week 1 is the first)."},
+                "end_week": {"type": "integer", "description": "Last shocked week, start_week..26."},
+                "recovery_weeks": {**_NULLABLE_INT, "description": "Weeks of linear recovery after end_week."},
             },
             "required": ["delta", "start_week", "end_week", "recovery_weeks"],
             "additionalProperties": False,
@@ -276,7 +276,8 @@ SHOCK_SCHEMA: dict[str, Any] = {
         "rate": {
             "type": ["object", "null"],
             "description": "Annual interest-rate rise from start_week (0.02 = +200bp).",
-            "properties": {"delta_rate": {"type": "number"}, "start_week": {"type": "integer"}},
+            "properties": {"delta_rate": {"type": "number"},
+                           "start_week": {"type": "integer", "description": "1..26 (week 1 is the first)."}},
             "required": ["delta_rate", "start_week"],
             "additionalProperties": False,
         },
@@ -286,7 +287,8 @@ SHOCK_SCHEMA: dict[str, Any] = {
             "properties": {
                 "availability": {
                     "type": "array", "items": {"type": "number"},
-                    "description": "Supplier availability per week, 0..1, one entry per week of the horizon.",
+                    "description": "Supplier availability per week, 0..1, exactly one entry per week of the 26-week "
+                                   "horizon (entry 1 = week 1); 1 = normal, 0 = nothing delivered.",
                 },
                 "dependent_share": {"type": "number", "description": "Share of sales that depend on it, 0..1."},
             },
@@ -316,7 +318,8 @@ ENGINE_TOOLS: tuple[chat.ToolSpec, ...] = (
     chat.ToolSpec("decision", "Evaluate ACT / WAIT / HEDGE for a decision frame at a probability of YES. Returns "
                   "SIMULATED payoffs (lowest cash) and the engine's recommendation.",
                   _schema({"frame_id": {"type": "string", "description": "Id from list_decision_frames."},
-                           "p_yes": {"type": "number", "description": "Probability of YES, 0..1."}})),
+                           "p_yes": {"type": "number", "description": "Probability of YES, 0..1: the user's own "
+                                     "number, or 0.5 as a neutral placeholder (say so) when they give none."}})),
     chat.ToolSpec("list_scenarios", "List the named stress scenarios (SYNTHETIC) with their exact shocks.",
                   _schema({})),
     chat.ToolSpec("list_judge_challenges", "List the ILLUSTRATIVE judge challenges with their exact shocks.",
@@ -341,6 +344,10 @@ def normalize_scenario_key(text: str) -> str:
     -> one dash. "Bad_Quarter", "bad quarter" and "BAD-QUARTER" all give "bad-quarter"."""
     key = text.strip().strip("'\"`").casefold()
     return re.sub(r"[\s_\-]+", "-", key).strip("-")
+
+
+# scenario_id strings that mean null (seen from deepseek-v3.2 in the #195 baseline: "null", "None", "none", "").
+NULL_SCENARIO_KEYS = frozenset({"", "null", "none", "nil"})
 
 
 def match_named(text: str, named: list[NamedShock]) -> list[NamedShock]:
@@ -387,6 +394,21 @@ def _engine_tools(named: list[NamedShock]) -> tuple[chat.ToolSpec, ...]:
     return tuple(out)
 
 
+def _with_frame_ids(tools: tuple[chat.ToolSpec, ...], frames: list[tuple[str, str]]) -> tuple[chat.ToolSpec, ...]:
+    """decision's frame_id as an enum of the loaded frames, each listed with its question (#195: models skipped
+    the decision tool or listed frames first). A plain string enum: no null, so Anthropic strict tools accept it."""
+    listed = "; ".join(f"{fid} ({question})" for fid, question in frames)
+    frame_id = {"type": "string", "enum": [fid for fid, _ in frames],
+                "description": f"The decision frame; no need to call list_decision_frames first. Frames: {listed}."}
+    out = []
+    for spec in tools:
+        if spec.name == "decision":
+            props = {**spec.parameters["properties"], "frame_id": frame_id}
+            spec = chat.ToolSpec(spec.name, spec.description, {**spec.parameters, "properties": props})
+        out.append(spec)
+    return tuple(out)
+
+
 WEB_SEARCH_TOOL = chat.ToolSpec(
     "web_search", "Search the current public web (Tavily) for facts about real companies, people, markets and "
     "events. Results are REAL web pages retrieved now (current, not point-in-time). Cite each fact with its source "
@@ -418,6 +440,19 @@ def _route_error_summary(err: RouteError) -> dict[str, Any]:
             "errors": [{"loc": e.loc, "msg": e.msg} for e in err.errors][:10]}
 
 
+def _action_totals(actions: list[Any]) -> dict[str, dict[str, Any]]:
+    """{action kind: {"total_amount", "weeks"}} for an optimize plan; amounts summed in Python, rounded to cents."""
+    totals: dict[str, dict[str, Any]] = {}
+    for a in actions:
+        t = totals.setdefault(a.action, {"total_amount": 0.0, "weeks": []})
+        if a.amount is not None:
+            t["total_amount"] += float(a.amount)
+        t["weeks"].append(a.week)
+    for t in totals.values():
+        t["total_amount"] = _r(t["total_amount"])
+    return totals
+
+
 def web_label(retrieved_at: datetime) -> str:
     """Provenance shown with a web_search result: REAL web content, stamped with when FAULTLINE fetched it."""
     return f"REAL (web, retrieved {retrieved_at.astimezone(UTC).strftime('%Y-%m-%dT%H:%M:%SZ')})"
@@ -440,7 +475,14 @@ class EngineToolBox:
             named = self._named()
         except RouteError:  # a fixture that fails its schema: plain string ids, the lookup reports the error
             named = None
-        return [*(_engine_tools(named) if named else ENGINE_TOOLS), *([WEB_SEARCH_TOOL] if self.web else [])]
+        tools = _engine_tools(named) if named else ENGINE_TOOLS
+        try:
+            frames = [(f.id, f.question_template) for f in decision_routes.list_frames(self.settings).frames]
+        except RouteError:
+            frames = []
+        if frames:
+            tools = _with_frame_ids(tools, frames)
+        return [*tools, *([WEB_SEARCH_TOOL] if self.web else [])]
 
     # ---- shock resolution: the canonical, validated ScenarioShock JSON the engine runs
 
@@ -466,6 +508,8 @@ class EngineToolBox:
 
     def _shock_body(self, args: dict[str, Any]) -> dict[str, Any]:
         sid, raw = args.get("scenario_id"), args.get("shock")
+        if isinstance(sid, str) and normalize_scenario_key(sid) in NULL_SCENARIO_KEYS:
+            sid = None  # a model writing null as text ("null", "None", "") means "use shock", not an unknown id
         if sid:
             if not isinstance(sid, str):
                 raise _ToolInputError("scenario_id must be a string")
@@ -525,6 +569,15 @@ class EngineToolBox:
             "min_cash_change_vs_baseline": _r(resp.deltas.min_cash_delta),
             "ending_cash_change_vs_baseline": _r(resp.deltas.ending_cash_delta),
             "min_cash_floor": _r(resp.min_cash_floor),
+            # Computed here, not by the model (#195: models subtracted the floor themselves and were withheld).
+            # Positive = headroom above the floor at the low point; negative = how far below it.
+            "min_cash_vs_floor": (None if resp.min_cash_floor is None
+                                  else _r(res.min_cash - resp.min_cash_floor)),
+            # The same falls as positive amounts ("the shock cuts the low point by ..."), so a model never has to
+            # flip a sign or subtract (#195: the commonest reason for a withheld reply after the first tuning).
+            "min_cash_drop_vs_baseline": _r(-resp.deltas.min_cash_delta),
+            "ending_cash_drop_vs_baseline": _r(-resp.deltas.ending_cash_delta),
+            "min_cash_drop_from_start": _r(res.cash_0 - res.min_cash),
             "first_week_below_floor": resp.first_week_below_floor,
             "weeks_below_floor": resp.weeks_below_floor,
             "weekly_cash": [_r(c) for c in res.cash],
@@ -549,6 +602,9 @@ class EngineToolBox:
             "min_cash_week": resp.min_cash_week,
             "actions": [{"action": a.action, "week": a.week, "amount": _r(a.amount), "share": a.share}
                         for a in (resp.actions or [])],
+            # Totals per action kind over the horizon, summed here (#195: models added the weekly amounts up
+            # themselves, e.g. "total purchase cuts", and were withheld).
+            "action_totals": _action_totals(resp.actions or []),
             "binding_constraints": resp.binding_constraints,
             "disruption_cost": _r(resp.disruption_cost),
             "payroll_cut_cap": resp.payroll_cut_cap,

@@ -59,7 +59,8 @@ ALLOWED_IMPORTERS = {
 }
 ALLOWED_IMPORTER_PREFIXES = ("agents/explore_",)  # #61: agents/explore_analyst.py
 # Relative to the repo scripts/ directory. #187: `make chat-models` (check_chat_models.py) prints the chat catalogue.
-ALLOWED_SCRIPTS = {"tavily_curate.py", "check_chat_models.py"}
+# #195: chat_qa.py runs the chat QA bank against a running API over HTTP (it imports no FAULTLINE module).
+ALLOWED_SCRIPTS = {"tavily_curate.py", "check_chat_models.py", "chat_qa.py"}
 # Exact references other files may contain. main.py mounts the router (and nothing else). The CI secret
 # scanner names the Tavily key pattern so it can block committed keys.
 ALLOWED_REFS = {
