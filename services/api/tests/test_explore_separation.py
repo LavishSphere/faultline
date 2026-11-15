@@ -56,6 +56,7 @@ ALLOWED_IMPORTERS = {
     "agents/tavily.py",
     "routes/explore.py",
     "routes/explore_chat.py",  # #187: the LIVE EXPLORE chat routes (agents/explore_chat.py is under the prefix)
+    "routes/explore_starters.py",  # #223: chat starter questions from current news (Anthropic web search)
 }
 ALLOWED_IMPORTER_PREFIXES = ("agents/explore_",)  # #61: agents/explore_analyst.py
 # Relative to the repo scripts/ directory. #187: `make chat-models` (check_chat_models.py) prints the chat catalogue.
@@ -70,7 +71,9 @@ ALLOWED_REFS = {
                 "const:/api/explore/search",
                 # #187: mounts the chat router and classifies its exact paths (edge gate, body cap, route table).
                 "import:routes.explore_chat", "const:/api/explore/chat", "const:/api/explore/chat/models",
-                "const:/api/explore/chat/status", "const:/api/explore/chat/pause"},
+                "const:/api/explore/chat/status", "const:/api/explore/chat/pause",
+                # #223: mounts the starters router and classifies its path.
+                "import:routes.explore_starters", "const:/api/explore/chat/starters"},
     "ci/content_scan.py": {"const:Tavily API key"},
     # #214: /api/health reports which backend the chat's web_search uses (a name, never a key). It imports only the
     # env resolver; health is not a replay module (the replay import test below still runs in a clean interpreter).

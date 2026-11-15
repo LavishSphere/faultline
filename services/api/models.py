@@ -100,6 +100,8 @@ class ErrorCode(StrEnum):
     UPSTREAM_ERROR = "UPSTREAM_ERROR"  # the hosted model provider failed or answered unexpectedly (502)
     PAUSED = "PAUSED"  # the presenter paused the public chat (503); admin calls still work
     BUDGET = "BUDGET"  # the chat's daily spend ceiling is reached (503); admin calls still work
+    # GET /api/explore/chat/starters (#223): no key, or fewer than 2 news starters passed validation (503)
+    STARTERS_UNAVAILABLE = "STARTERS_UNAVAILABLE"
 
 
 class ApiError(BaseModel):

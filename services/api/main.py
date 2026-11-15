@@ -22,6 +22,7 @@ from routes import (
     decision,
     explore,
     explore_chat,
+    explore_starters,
     health,
     integrity,
     internal_data,
@@ -63,6 +64,8 @@ PUBLIC_MODE_ROUTES: dict[tuple[str, str], str] = {
     ("POST", "/api/explore/chat"): PUBLIC_IF_CHAT_FLAG,  # hosted-model credits; FAULTLINE_PUBLIC_CHAT=1 opens it (#187)
     ("GET", "/api/explore/chat/models"): PUBLIC,  # model catalogue; key presence as booleans only
     ("GET", "/api/explore/chat/status"): PUBLIC,  # presenter pause state
+    # news starter questions (#223): cached 6 h, single-flight, <= 4 refreshes a day; never one call per visitor
+    ("GET", "/api/explore/chat/starters"): PUBLIC,
     ("POST", "/api/explore/chat/pause"): ADMIN,  # presenter pause switch
     ("GET", "/api/health"): PUBLIC,
     ("POST", "/api/simulate"): PUBLIC,
@@ -86,7 +89,8 @@ PUBLIC_MODE_ROUTES: dict[tuple[str, str], str] = {
 ADMIN_GATED_PREFIXES = ("/api/replay", "/api/explore", "/api/benchmark/compute")
 # Exact paths under a gated prefix that are public (read-only). Exact match only: anything below or beside them
 # (e.g. /api/replay/recorded/x, /api/replay/recordedx) stays admin-only.
-PUBLIC_EXACT_PATHS = frozenset({"/api/replay/recorded", "/api/explore/chat/models", "/api/explore/chat/status"})
+PUBLIC_EXACT_PATHS = frozenset({"/api/replay/recorded", "/api/explore/chat/models", "/api/explore/chat/status",
+                                "/api/explore/chat/starters"})
 # Exact paths that are public only while FAULTLINE_PUBLIC_CHAT=1 (read per request; anything else stays admin-only).
 FLAG_PUBLIC_PATHS = frozenset({"/api/explore/chat"})
 # Exact paths with a larger body cap than FAULTLINE_MAX_BODY_BYTES (20 chat messages of 4,000 characters).
@@ -340,6 +344,8 @@ def create_app() -> FastAPI:
     app.include_router(explore.router, prefix="/api")
     # LIVE EXPLORE chat (#187): hosted models calling the engine tools. Walled off from the Blind Replay.
     app.include_router(explore_chat.router, prefix="/api")
+    # LIVE EXPLORE chat starter questions from current news (#223), cached in process.
+    app.include_router(explore_starters.router, prefix="/api")
     return app
 
 
