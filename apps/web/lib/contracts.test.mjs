@@ -5,7 +5,7 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 import { KNOWN_VERDICTS, checkRevealResponse, isSyntheticRef, notesForVariant, readBenchmark } from "./benchmark.ts";
 import { checkCaseEvidence, checkRecordedResponse, isSyntheticQuote, outcomeKeyPaths } from "./replay.ts";
-import { summarizeHealth } from "./api.ts";
+import { describeModelStatus, readServerMode, summarizeHealth } from "./api.ts";
 
 const SHA = "a".repeat(64);
 
@@ -420,4 +420,50 @@ test("summarizeHealth: Ollama down keeps the probe's error; no readiness field a
   assert.equal(down.model, "unavailable");
   assert.match(down.modelError ?? "", /not reachable/);
   assert.equal(summarizeHealth({ status: "ok" }).model, "unknown");
+});
+
+// #184: the public server (X-Faultline-Mode: public) runs no model by design. TEST FIXTURE shaped like the real
+// public /api/health body (no ollama_status, so no model name is served).
+const HEALTH_PUBLIC = { status: "ok", model_ready: false, ollama_reachable: false, tavily_configured: false };
+
+test("summarizeHealth public mode, model_ready false: recorded runs, never ready or 'unavailable', no invented name", () => {
+  const s = summarizeHealth(HEALTH_PUBLIC, new Date(), "public");
+  assert.equal(s.serverMode, "public");
+  assert.equal(s.model, "unavailable");
+  assert.equal(s.requiredModel, null);
+  const v = describeModelStatus(s);
+  assert.equal(v.kind, "public_recorded");
+  assert.equal(v.chip, "PUBLIC DEMO · RECORDED RUNS");
+  assert.doesNotMatch(`${v.chip} ${v.explain} ${v.badge}`, /unavailable|ready/i);
+  assert.match(v.explain, /runs no model/);
+  assert.match(v.explain, /local open model \(offline\)/);
+  assert.doesNotMatch(v.explain, /llama/i, "no model name unless the API serves one");
+  assert.equal(v.modelLabel, null);
+  // A served name (health, else the model card) is used verbatim.
+  assert.match(describeModelStatus(s, "llama3.1:8b").explain, /local open model \(llama3\.1:8b, offline\)/);
+});
+
+test("summarizeHealth public mode, model_ready true: model on server, admin-only runs", () => {
+  const s = summarizeHealth(HEALTH_READY, new Date(), "public");
+  assert.equal(s.serverMode, "public");
+  assert.equal(s.model, "available");
+  const v = describeModelStatus(s);
+  assert.equal(v.kind, "public_server_model");
+  assert.equal(v.chip, "PUBLIC DEMO · MODEL ON SERVER (admin-only runs)");
+  assert.equal(v.modelLabel, "llama3.1:8b");
+});
+
+test("summarizeHealth local mode (or no header) is unchanged: ready, or the honest unavailable state", () => {
+  for (const header of ["local", null]) {
+    const ready = summarizeHealth(HEALTH_READY, new Date(), header);
+    assert.equal(ready.serverMode, header);
+    assert.equal(describeModelStatus(ready).chip, "Local model ready · llama3.1:8b");
+    assert.equal(describeModelStatus(ready).badge, "runs locally, no cloud");
+    const down = summarizeHealth({ ...HEALTH_READY, model_ready: false }, new Date(), header);
+    assert.equal(describeModelStatus(down).kind, "local_unavailable");
+    assert.equal(describeModelStatus(down).chip, "Local model unavailable · llama3.1:8b");
+  }
+  assert.equal(summarizeHealth(HEALTH_READY).serverMode, null);
+  assert.equal(readServerMode(" Public "), "public");
+  assert.equal(readServerMode("other"), null);
 });
