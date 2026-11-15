@@ -103,6 +103,11 @@ function WebSources({ call }: { call: ChatToolCall }) {
   return (
     <div className="flex min-w-0 flex-col gap-2" data-testid="chat-web-sources">
       <Header title={`Sources${query ? ` · “${query}”` : ""}`} badge={badge} stamp={at ? `retrieved ${at}` : null} />
+      {str(s?.label) ? (
+        <p className="font-mono text-[10.5px] uppercase tracking-[0.1em] text-info" data-testid="source-label">
+          {str(s?.label)}
+        </p>
+      ) : null}
       {!sources || sources.length === 0 ? (
         <p className="font-mono text-[11px] uppercase tracking-[0.1em] text-muted">Search results NOT AVAILABLE</p>
       ) : (
@@ -136,7 +141,13 @@ function WebSources({ call }: { call: ChatToolCall }) {
           ))}
         </ul>
       )}
-      {str(s?.attribution) ? <p className="font-mono text-[10px] text-muted">{str(s?.attribution)}</p> : null}
+      {str(s?.attribution) || str(s?.note) ? (
+        <p className="flex min-w-0 flex-wrap gap-x-2 gap-y-0.5 font-mono text-[10.5px] text-muted" data-testid="source-credit">
+          {str(s?.attribution) ? <span className="text-text-2">{str(s?.attribution)}</span> : null}
+          {str(s?.attribution) && str(s?.note) ? <span aria-hidden="true">·</span> : null}
+          {str(s?.note) ? <span className="min-w-0 break-words">{str(s?.note)}</span> : null}
+        </p>
+      ) : null}
     </div>
   );
 }
@@ -146,7 +157,7 @@ const VENUE: Record<string, string> = { kalshi: "Kalshi", polymarket: "Polymarke
 function MarketQuotes({ call }: { call: ChatToolCall }) {
   const s = isObj(call.result_summary) ? call.result_summary : null;
   const quotes = quotesOf(s);
-  const badge = str(s?.provenance) ?? "LIVE MARKET QUOTE";
+  const badge = str(s?.provenance) ?? call.provenance;
   const at = dateLabel(s?.fetched_at, STAMP);
   return (
     <div className="flex min-w-0 flex-col gap-2" data-testid="chat-market-quotes">
@@ -167,8 +178,13 @@ function MarketQuotes({ call }: { call: ChatToolCall }) {
                 <dl className="grid grid-cols-2 gap-2 font-mono text-[11px]">
                   <div className="min-w-0">
                     <dt className="text-[10px] uppercase tracking-[0.1em] text-muted">Price (YES)</dt>
-                    <dd className="num mt-0.5 text-lg text-text" data-testid="quote-price">
-                      {q.price === null ? NA : q.price.toString()}
+                    <dd className="num mt-0.5 text-lg text-text">
+                      <span data-testid="quote-price">{q.price === null ? NA : q.price.toString()}</span>
+                      {q.price !== null ? (
+                        <span className="ml-1.5 text-[10px] uppercase tracking-[0.08em] text-muted" data-testid="quote-price-unit">
+                          units as served
+                        </span>
+                      ) : null}
                     </dd>
                   </div>
                   <div className="min-w-0">

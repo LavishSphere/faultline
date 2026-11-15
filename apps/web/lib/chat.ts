@@ -284,7 +284,7 @@ export function describeChatFailure(f: ApiFailure): ChatFailureView {
     return { kind: "malformed", heading: "The reply did not match the chat contract, so none of it is shown.", detail };
   }
   if (f.status === 503 && f.code === "PAUSED") {
-    return { kind: "paused", heading: "The team is presenting right now. Chat is back in a few minutes.", detail: null };
+    return { kind: "paused", heading: "The team is presenting right now. Public chat is paused by the presenter.", detail: null };
   }
   if (f.status === 429) return { kind: "rate_limited", heading: "Limit reached, try again in a few minutes.", detail };
   if (f.status === 401 || f.status === 403) {

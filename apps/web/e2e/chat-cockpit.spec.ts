@@ -205,7 +205,10 @@ test.describe("Cockpit: evidence the model fetched", () => {
         input: { query: "TEST FIXTURE meta ceo" },
         result_status: "ok",
         result_summary: {
-          provenance: "REAL",
+          provenance: "REAL (web, retrieved 2026-11-14T18:00:00Z)",
+          label: "LIVE EXPLORE: current, not point-in-time",
+          attribution: "Search powered by Tavily",
+          note: "TEST FIXTURE note: current web pages, not point-in-time evidence",
           retrieved_at: "2026-11-14T18:00:00Z",
           query: "TEST FIXTURE meta ceo",
           results: [
@@ -213,7 +216,7 @@ test.describe("Cockpit: evidence the model fetched", () => {
             { title: "TEST FIXTURE unsafe link", url: "javascript:alert(1)", domain: null, published_date: null, snippet: null },
           ],
         },
-        provenance: "REAL",
+        provenance: "LIVE EXPLORE",
       },
       {
         name: "prediction_markets",
@@ -239,7 +242,11 @@ test.describe("Cockpit: evidence the model fetched", () => {
     await expect(sources.nth(0).getByTestId("source-domain")).toHaveText("example.com");
     await expect(sources.nth(0).getByTestId("source-date")).toHaveText("Nov 10, 2026");
     await expect(sources.nth(0).getByTestId("source-link")).toHaveAttribute("href", "https://www.example.com/a");
-    await expect(sources.nth(0).locator('[data-provenance="REAL"]')).toBeVisible();
+    // The server's provenance string is shown as-is; the label, Tavily credit and note sit with the cards.
+    await expect(sources.nth(0).locator('[data-provenance="REAL (web, retrieved 2026-11-14T18:00:00Z)"]')).toBeVisible();
+    await expect(answer.getByTestId("source-label")).toHaveText("LIVE EXPLORE: current, not point-in-time");
+    await expect(answer.getByTestId("source-credit")).toContainText("Search powered by Tavily");
+    await expect(answer.getByTestId("source-credit")).toContainText("TEST FIXTURE note");
     // A non-http(s) URL never becomes a link; missing fields say so.
     await expect(sources.nth(1).getByTestId("source-link")).toHaveCount(0);
     await expect(sources.nth(1)).toContainText("date not available");
@@ -247,6 +254,7 @@ test.describe("Cockpit: evidence the model fetched", () => {
     const quotes = answer.getByTestId("chat-quote-card");
     await expect(quotes).toHaveCount(2);
     await expect(quotes.nth(0).getByTestId("quote-price")).toHaveText("0.62");
+    await expect(quotes.nth(0).getByTestId("quote-price-unit")).toHaveText("units as served");
     await expect(quotes.nth(0).getByTestId("quote-volume")).toHaveText("15,000");
     await expect(quotes.nth(0)).toContainText("market-implied (price-derived)");
     await expect(quotes.nth(0).locator('[data-provenance="LIVE MARKET QUOTE"]')).toBeVisible();
@@ -372,6 +380,30 @@ test.describe("Cockpit: states", () => {
     await expect(page.getByTestId("chat-failure")).toHaveAttribute("data-kind", "paused");
     await expect(page.getByTestId("chat-failure")).toContainText("The team is presenting right now");
     await expect(page.getByTestId("chat-answer")).toHaveCount(0);
+  });
+
+  test("the paused banner clears once a send succeeds; an error reply carries no MODEL-WRITTEN badge", async ({ page }) => {
+    await mockModels(page);
+    let paused = true;
+    await page.route(STATUS_URL, (route) =>
+      route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ paused, until: null, note: "TEST FIXTURE" }) }),
+    );
+    await mockChat(page, (_req, n) =>
+      n === 1
+        ? { body: chatReply({ status: "error", reply: "", notes: ["TEST FIXTURE: no usable answer"] }) }
+        : { body: chatReply() },
+    );
+    await open(page);
+    await expect(page.getByTestId("chat-paused")).toBeVisible();
+    await expect(page.getByTestId("chat-paused-until")).not.toContainText("few minutes");
+    paused = false;
+    await ask(page, "first");
+    const err = page.getByTestId("chat-answer").first();
+    await expect(err).toHaveAttribute("data-status", "error");
+    await expect(err.locator('[data-provenance="MODEL-WRITTEN"]')).toHaveCount(0);
+    await expect(page.getByTestId("chat-paused")).toHaveCount(0);
+    await ask(page, "second");
+    await expect(page.getByTestId("chat-answer").nth(1).locator('[data-provenance="MODEL-WRITTEN"]')).toBeVisible();
   });
 
   test("⌘K opens the full catalogue; search and Enter pick a model", async ({ page }) => {

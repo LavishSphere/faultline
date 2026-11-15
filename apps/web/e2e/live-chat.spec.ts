@@ -214,7 +214,7 @@ test.describe("Ask the engine: honest failures", () => {
     { status: 502, code: "UPSTREAM_ERROR", text: "The model provider returned an error." },
     { status: 403, code: "ADMIN_REQUIRED", text: "Chat is disabled on the public demo right now." },
     { status: 401, code: "ADMIN_REQUIRED", text: "Chat is disabled on the public demo right now." },
-    { status: 503, code: "PAUSED", text: "The team is presenting right now. Chat is back in a few minutes." },
+    { status: 503, code: "PAUSED", text: "The team is presenting right now. Public chat is paused by the presenter." },
   ];
   for (const c of cases) {
     test(`HTTP ${c.status} ${c.code} shows an honest message and no answer`, async ({ page }) => {

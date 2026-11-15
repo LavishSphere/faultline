@@ -108,7 +108,8 @@ export function ChatPanel() {
   const [race, setRace] = useState(false);
   const [palette, setPalette] = useState<null | "A" | "B">(null);
   const [galaxyOpen, setGalaxyOpen] = useState(true);
-  const [paused, setPaused] = useState(false);
+  const [paused, setPaused] = useState<{ until: string | null } | null>(null);
+  const isPaused = paused !== null;
   const [turns, setTurns] = useState<Turn[]>([]);
   /** The answer shown on the universe; null follows the latest answer that called the engine. */
   const [shown, setShown] = useState<{ turn: number; lane: number } | null>(null);
@@ -127,14 +128,21 @@ export function ChatPanel() {
     return () => ctrl.abort();
   }, [modelsRetry]);
 
-  // The presenter pause switch: a banner only (an admin caller may still chat while paused).
+  // The presenter pause switch: a banner only (an admin caller may still chat while paused). Read on load, and every
+  // 30 s while paused, so the banner clears when the presenter resumes (a successful send clears it too).
   useEffect(() => {
     const ctrl = new AbortController();
-    void getChatStatus(ctrl.signal).then((r) => {
-      if (!ctrl.signal.aborted && r.ok) setPaused(r.data.paused);
-    });
-    return () => ctrl.abort();
-  }, []);
+    const poll = () =>
+      void getChatStatus(ctrl.signal).then((r) => {
+        if (!ctrl.signal.aborted && r.ok) setPaused(r.data.paused ? { until: r.data.until } : null);
+      });
+    poll();
+    const t = isPaused ? setInterval(poll, 30_000) : null;
+    return () => {
+      ctrl.abort();
+      if (t) clearInterval(t);
+    };
+  }, [isPaused]);
 
   useEffect(() => {
     const set = aborts.current;
@@ -201,7 +209,8 @@ export function ChatPanel() {
         const outcome: Outcome = res.ok
           ? { kind: "done", response: res.data, ms: ms2 }
           : { kind: "failed", failure: describeChatFailure(res), ms: ms2 };
-        if (!res.ok && res.status === 503 && res.code === "PAUSED") setPaused(true);
+        if (!res.ok && res.status === 503 && res.code === "PAUSED") setPaused((p) => p ?? { until: null });
+        if (res.ok) setPaused(null);
         setTurns((ts) => ts.map((t) => (t.id === id ? { ...t, lanes: t.lanes.map((l, i) => (i === lane ? { ...l, outcome } : l)) } : t)));
       });
     });
@@ -288,7 +297,12 @@ export function ChatPanel() {
         <div className="chat-paused flex min-w-0 flex-wrap items-center gap-3 border-b border-info/50 px-4 py-4 md:px-8" role="status" data-testid="chat-paused">
           <span aria-hidden="true" className="chat-paused-dot size-2.5 shrink-0 rounded-full bg-info" />
           <p className="min-w-0 text-base font-medium text-text md:text-lg">The team is presenting right now.</p>
-          <p className="min-w-0 text-sm text-text-2">Public chat is paused by the presenter (PAUSED) and is back in a few minutes.</p>
+          <p className="min-w-0 text-sm text-text-2" data-testid="chat-paused-until">
+            Public chat is paused by the presenter (PAUSED)
+            {paused.until && !Number.isNaN(Date.parse(paused.until))
+              ? ` until ${new Intl.DateTimeFormat("en-US", { hour: "2-digit", minute: "2-digit", hour12: false, timeZone: "UTC" }).format(Date.parse(paused.until))} UTC, as the API reports.`
+              : "."}
+          </p>
         </div>
       ) : null}
 
@@ -652,7 +666,8 @@ function LaneView({
         <ModelLine model={lane.model} response={r} ms={o.ms} letter={letter} />
         <span className="flex flex-wrap items-center gap-1.5">
           <ProvenanceBadge kind="LIVE EXPLORE" />
-          <ModelWrittenBadge />
+          {/* MODEL-WRITTEN only on a reply the model actually wrote (status ok). */}
+          {!notOk ? <ModelWrittenBadge /> : null}
         </span>
       </div>
 
