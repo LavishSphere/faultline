@@ -449,7 +449,10 @@ def test_anthropic_adapter_request_and_tool_round_trip(env):
     assert first["thinking"] == {"type": "adaptive"} and first["fallbacks"] == "default"
     assert first["output_config"] == {"effort": "low"}
     assert "I don't have that number" in first["system"]
-    assert all(t["strict"] is True and t["input_schema"]["additionalProperties"] is False for t in first["tools"])
+    # Strict while Anthropic's 16 union-parameter budget holds (anthropic_tools); every schema stays closed.
+    assert all(t.get("strict", True) is True and t["input_schema"]["additionalProperties"] is False
+               for t in first["tools"])
+    assert any(t.get("strict") is True for t in first["tools"])
     # The assistant turn goes back unchanged (thinking block included), then one user turn of tool_result blocks.
     assistant, results = second["messages"][-2], second["messages"][-1]
     assert assistant["role"] == "assistant"
