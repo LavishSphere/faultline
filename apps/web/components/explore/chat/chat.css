@@ -73,3 +73,40 @@
     transform: translateX(260%);
   }
 }
+
+/* Stage 2 (#197): the answer shown on the universe, the waiting orbit, the presenting banner. */
+.chat-on-universe {
+  box-shadow:
+    0 0 0 1px color-mix(in srgb, var(--accent) 45%, transparent),
+    0 0 32px -12px var(--accent);
+}
+
+.chat-paused {
+  background: linear-gradient(90deg, color-mix(in srgb, var(--info) 10%, transparent), transparent 70%);
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .chat-orbit-on {
+    animation: chat-orbit 1.6s linear infinite;
+  }
+
+  .chat-paused-dot {
+    animation: chat-breathe 2.4s ease-in-out infinite;
+  }
+}
+
+@keyframes chat-orbit {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+@keyframes chat-breathe {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.35;
+  }
+}

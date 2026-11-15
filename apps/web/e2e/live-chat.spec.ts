@@ -174,8 +174,10 @@ test.describe("Ask the engine: conversation", () => {
     await chips.nth(2).click();
     await expect(detail).toContainText("Not available");
 
-    // The browser recomputes nothing: no engine route is called on the reply's behalf.
-    expect(enginePosts).toEqual([]);
+    // The browser recomputes nothing: the only engine calls on the reply's behalf are the universe's re-runs of the
+    // exact simulate / optimize inputs (stage 2, #197; covered in detail in e2e/chat-cockpit.spec.ts).
+    await expect(page.getByTestId("universe-body")).toHaveAttribute("data-status", "ok");
+    expect([...new Set(enginePosts)].sort()).toEqual([`${E2E_API_BASE}/api/optimize`, `${E2E_API_BASE}/api/simulate`]);
   });
 
   test("the second question carries the conversation so far; Clear chat empties it", async ({ page }) => {
@@ -200,7 +202,7 @@ test.describe("Ask the engine: conversation", () => {
     ]);
     await page.getByRole("button", { name: "Clear chat" }).click();
     await expect(page.getByTestId("chat-answer")).toHaveCount(0);
-    await expect(page.getByTestId("chat-starter")).toHaveCount(3);
+    await expect(page.getByTestId("chat-starter")).toHaveCount(4);
   });
 });
 
@@ -261,7 +263,18 @@ test.describe("Ask the engine: honest failures", () => {
     await expect(page.getByTestId("chat-reply")).toHaveCount(0);
   });
 
-  test("without the chat route (real API) the picker says NOT AVAILABLE", async ({ page }) => {
+  test("the real API with no provider keys: every model is shown unavailable and nothing can be sent", async ({ page }) => {
+    // Since #193 the e2e API serves the chat catalogue; CI configures no provider key, so no model is available.
+    await page.goto("/explore/");
+    const pills = page.getByTestId("chat-model-pill");
+    await expect(pills.first()).toBeVisible();
+    expect(await pills.evaluateAll((els) => els.map((e) => e.getAttribute("data-available")))).not.toContain("true");
+    await expect(page.getByTestId("chat-selected-model")).toContainText("No model selected");
+    await expect(page.getByRole("button", { name: "Ask", exact: true })).toBeDisabled();
+  });
+
+  test("when the models route fails the picker says NOT AVAILABLE", async ({ page }) => {
+    await mockModels(page, { code: "TEST", message: "TEST FIXTURE down" }, 500);
     await page.goto("/explore/");
     await expect(page.getByTestId("chat-models-failed")).toContainText("Models NOT AVAILABLE");
     await expect(page.getByRole("button", { name: "Ask", exact: true })).toBeDisabled();

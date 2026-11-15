@@ -301,3 +301,22 @@ export function describeChatFailure(f: ApiFailure): ChatFailureView {
   if (f.kind === "validation") return { kind: "validation", heading: "The server rejected this message.", detail };
   return { kind: "http", heading: `The chat request failed${f.status ? ` (HTTP ${f.status})` : ""}.`, detail };
 }
+
+export const CHAT_STATUS_PATH = "/api/explore/chat/status";
+
+/** GET /api/explore/chat/status: the presenter pause switch (routes/explore_chat.py `ChatStatus`). */
+export interface ChatPauseStatus {
+  paused: boolean;
+  until: string | null;
+}
+
+/** GET /api/explore/chat/status. Never throws; a body that does not match is `malformed` (no banner is shown). */
+export async function getChatStatus(signal?: AbortSignal): Promise<ApiResult<ChatPauseStatus>> {
+  const res = await requestJson<ChatPauseStatus>("GET", CHAT_STATUS_PATH, 6000, signal);
+  if (!res.ok) return res;
+  const v: unknown = res.data;
+  if (!isObj(v) || typeof v.paused !== "boolean" || !strOrNull(v.until)) {
+    return { ok: false, kind: "malformed", error: "malformed chat status payload" };
+  }
+  return res;
+}
