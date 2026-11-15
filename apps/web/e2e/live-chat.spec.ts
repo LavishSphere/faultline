@@ -129,7 +129,7 @@ test.describe("Ask the engine: conversation", () => {
     const shock = await badQuarterShock(page);
     const calls = [
       { name: "simulate", input: { scenario_id: "bad-quarter", shock }, result_status: "ok", result_summary: "TEST FIXTURE summary A", provenance: "SIMULATED" },
-      { name: "optimize", input: { scenario_id: "bad-quarter", shock, protect_payroll: true }, result_status: "ok", result_summary: "TEST FIXTURE summary B", provenance: "SIMULATED" },
+      { name: "optimize", input: { scenario_id: "bad-quarter", shock, protect_payroll: true }, result_status: "ok", result_summary: { fixture: "TEST FIXTURE summary B" }, provenance: "SIMULATED" },
       { name: "decision", input: { frame_id: "supply-disruption", p_yes: 0.4 }, result_status: "ok", result_summary: null, provenance: "SIMULATED" },
     ];
     const bodies = await mockChat(page, () => ({ body: chatReply({ tool_calls: calls }), delayMs: 1500 }));
@@ -170,7 +170,7 @@ test.describe("Ask the engine: conversation", () => {
     await chips.nth(1).click();
     const detail = answer.getByTestId("chat-tool-detail");
     await expect(detail).toContainText('"protect_payroll": true');
-    await expect(detail).toContainText("TEST FIXTURE summary B");
+    await expect(detail).toContainText(`"fixture": "TEST FIXTURE summary B"`);
     await chips.nth(2).click();
     await expect(detail).toContainText("Not available");
 

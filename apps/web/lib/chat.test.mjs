@@ -71,6 +71,11 @@ test("chat reply: a valid body passes, including usage null and the non-ok statu
   assert.equal(checkChatResponse(reply({ usage: null })), null);
   assert.equal(checkChatResponse(reply({ status: "unavailable", reply: "", tool_calls: [], notes: ["no key"] })), null);
   assert.equal(checkChatResponse(reply({ status: "error" })), null);
+  // The #193 backend sends result_summary as an object of engine fields.
+  const objSummary = { name: "optimize", input: { shock: {}, protect_payroll: true }, result_status: "ok", result_summary: { status: "OPTIMAL" }, provenance: "SIMULATED" };
+  assert.equal(checkChatResponse(reply({ tool_calls: [objSummary] })), null);
+  assert.match(checkChatResponse(reply({ tool_calls: [{ ...objSummary, result_summary: 3 }] })), /result/);
+  assert.match(checkChatResponse(reply({ tool_calls: [{ ...objSummary, result_summary: [1] }] })), /result/);
 });
 
 test("chat reply: an unknown status is rejected", () => {

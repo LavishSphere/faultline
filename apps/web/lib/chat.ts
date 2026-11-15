@@ -84,7 +84,8 @@ export interface ChatToolCall {
   name: string;
   input: Record<string, unknown>;
   result_status: string;
-  result_summary: string | null;
+  /** What the model was shown, from the engine: an object on the #193 backend; a string or null is also accepted. */
+  result_summary: Record<string, unknown> | string | null;
   provenance: string;
 }
 
@@ -147,7 +148,7 @@ export function checkModelsResponse(v: unknown): string | null {
 function checkToolCall(t: unknown, i: number): string | null {
   if (!isObj(t) || typeof t.name !== "string" || !t.name) return `tool_calls[${i}] name`;
   if (!isObj(t.input)) return `tool_calls[${i}] input`;
-  if (typeof t.result_status !== "string" || !strOrNull(t.result_summary)) return `tool_calls[${i}] result`;
+  if (typeof t.result_status !== "string" || !(strOrNull(t.result_summary) || isObj(t.result_summary))) return `tool_calls[${i}] result`;
   if (typeof t.provenance !== "string") return `tool_calls[${i}] provenance`;
   return null;
 }

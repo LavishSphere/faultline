@@ -80,10 +80,15 @@ export function ToolSteps({ calls, reduce }: { calls: readonly ChatToolCall[]; r
             </div>
             <div className="min-w-0">
               <p className="kicker mb-1">Result summary from the server</p>
-              {current.result_summary ? (
+              {typeof current.result_summary === "string" && current.result_summary ? (
                 <p className="whitespace-pre-wrap break-words text-[13px] leading-relaxed text-text-2 [overflow-wrap:anywhere]">
                   {current.result_summary}
                 </p>
+              ) : current.result_summary && typeof current.result_summary === "object" ? (
+                // The engine's numbers exactly as the server sent them; shown verbatim, never recomputed.
+                <pre className="max-h-64 overflow-auto whitespace-pre-wrap break-all font-mono text-[11px] leading-relaxed text-text-2">
+                  {JSON.stringify(current.result_summary, null, 2)}
+                </pre>
               ) : (
                 <p className="font-mono text-[11px] uppercase tracking-[0.12em] text-muted">Not available</p>
               )}
