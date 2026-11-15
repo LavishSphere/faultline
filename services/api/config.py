@@ -57,6 +57,9 @@ DEFAULT_CHAT_PER_IP = 10  # chat turns per client IP per CHAT_WINDOW_S
 CHAT_WINDOW_S = 600
 DEFAULT_CHAT_CONCURRENCY = 4
 DEFAULT_CHAT_DAILY_BUDGET_USD = 25.0  # in-process spend ceiling per UTC day; non-admin turns stop with 503 BUDGET
+# Chat web_search (Tavily credits), non-admin callers only, per UTC day, in process memory. 0 = no web search.
+DEFAULT_CHAT_WEB_PER_IP_DAY = 30
+DEFAULT_CHAT_WEB_DAILY = 500
 DEFAULT_CHAT_MAX_PRICE_PER_MTOK = 20.0  # USD per million OUTPUT tokens; dearer models leave the public catalogue
 # OpenAI and Claude models are called only through their native APIs (lead rule): OpenRouter copies are never offered.
 NATIVE_ONLY_PREFIXES = ("openai/", "anthropic/")
@@ -98,6 +101,8 @@ class Settings:
     public_chat: bool = False  # FAULTLINE_PUBLIC_CHAT=1: POST /api/explore/chat open to visitors in public mode
     chat_max_price_per_mtok: float = DEFAULT_CHAT_MAX_PRICE_PER_MTOK
     chat_daily_budget_usd: float = DEFAULT_CHAT_DAILY_BUDGET_USD
+    chat_web_per_ip_day: int = DEFAULT_CHAT_WEB_PER_IP_DAY  # web_search calls per client IP per UTC day
+    chat_web_daily: int = DEFAULT_CHAT_WEB_DAILY  # web_search calls per UTC day, all non-admin callers together
 
     def chat_key_set(self, provider: str) -> bool:
         return {"openrouter": self.openrouter_api_key_set, "openai": self.openai_api_key_set,
@@ -322,4 +327,6 @@ def get_settings() -> Settings:
         public_chat=public_chat_enabled(),
         chat_max_price_per_mtok=_chat_max_price(),
         chat_daily_budget_usd=_positive_usd("FAULTLINE_CHAT_DAILY_BUDGET_USD", DEFAULT_CHAT_DAILY_BUDGET_USD),
+        chat_web_per_ip_day=_non_negative_int("FAULTLINE_CHAT_WEB_PER_IP_DAY", DEFAULT_CHAT_WEB_PER_IP_DAY),
+        chat_web_daily=_non_negative_int("FAULTLINE_CHAT_WEB_DAILY", DEFAULT_CHAT_WEB_DAILY),
     )
