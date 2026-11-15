@@ -30,7 +30,7 @@ ANTHROPIC_KEY = "test-anthropic-" + "a" * 24
 OPENAI_KEY = "test-openai-" + "i" * 24
 ADMIN = "c3" * 32  # 64 lower-case hex: the public-mode admin token shape
 LLAMA = "openrouter:meta-llama/llama-4-maverick"
-QWEN = "openrouter:qwen/qwen3-235b-a22b-2507"  # first featured model the fixture catalogue serves (#195 order)
+QWEN = "openrouter:qwen/qwen3.6-27b"  # first featured model the fixture catalogue serves (FEATURED_PREFERENCE)
 OPUS = "anthropic:claude-opus-5-5"
 SONNET = "anthropic:claude-sonnet-5-5"
 
@@ -80,7 +80,7 @@ def or_model(mid: str, *, tools: bool = True, out_per_token: str = "0.000001") -
 
 OPENROUTER_MODELS = [
     or_model("meta-llama/llama-4-maverick"),
-    or_model("qwen/qwen3-235b-a22b-2507"),
+    or_model("qwen/qwen3.6-27b"),
     or_model("openai/gpt-5.1"),  # must never be offered via OpenRouter
     or_model("anthropic/claude-opus-5-5"),  # must never be offered via OpenRouter
     or_model("pricey/frontier-max", out_per_token="0.0001"),  # $100 per million output tokens
@@ -271,6 +271,7 @@ def test_number_not_in_any_tool_result_withholds_the_reply(env):
     h = Harness(openrouter=FakeProvider(models=OPENROUTER_MODELS, replies=[
         oa_tool_calls(("simulate", {"scenario_id": "bad-quarter", "shock": None})),
         oa_text("Lowest cash is $987,654 (SIMULATED)."),
+        oa_text("Lowest cash is $987,654 (SIMULATED)."),  # the one repair round (#221) repeats the figure
     ]))
     out = h.turn().json()
     assert out["status"] == "error" and out["reply"] == ""

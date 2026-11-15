@@ -131,7 +131,7 @@ def test_models_endpoint_reports_open_weights_and_features_open_models_first(env
     assert not flags["openrouter:qwen/qwen3-max"] and not flags["openrouter:google/gemini-3.1-flash-lite"]
     assert not flags["openrouter:x-ai/grok-4.3"] and not flags["anthropic:claude-sonnet-5-5"]
     featured = body["featured"]
-    assert len(featured) <= chat.MAX_FEATURED == 13
+    assert len(featured) <= chat.MAX_FEATURED == 12
     groups = [flags[i] for i in featured]
     assert groups == sorted(groups, reverse=True) and groups[0] and not groups[-1]  # open first, then closed
     assert "openrouter:google/gemini-3.1-flash-lite" not in featured and "openrouter:x-ai/grok-4.3" not in featured
@@ -146,11 +146,13 @@ def test_models_endpoint_reports_open_weights_and_features_open_models_first(env
 
 def test_featured_preference_lists_open_weight_models_before_closed_ones():
     flags = [chat.is_open_weight(*i.split(":", 1)) for i in chat.FEATURED_PREFERENCE]
-    assert flags == sorted(flags, reverse=True) and flags.count(True) == 8 and flags.count(False) == 5
+    assert flags == sorted(flags, reverse=True) and flags.count(True) == 7 and flags.count(False) == 5
     assert len(chat.FEATURED_PREFERENCE) == chat.MAX_FEATURED
     assert not [i for i in chat.FEATURED_PREFERENCE if "gemini" in i]
     assert chat.FEATURED_PREFERENCE[0] == "openrouter:z-ai/glm-5.3"
-    assert chat.FEATURED_PREFERENCE[8] == "anthropic:claude-sonnet-5-5"
+    assert chat.FEATURED_PREFERENCE[7:] == ("anthropic:claude-sonnet-5-5", "anthropic:claude-opus-5-5",
+                                            "openai:gpt-6-sol", "openrouter:x-ai/grok-4.6",
+                                            "anthropic:claude-haiku-5-5")
 
 
 def test_prompt_makes_the_search_then_monte_carlo_then_brief_pipeline_mandatory():

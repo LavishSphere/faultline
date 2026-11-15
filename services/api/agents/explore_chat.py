@@ -52,7 +52,7 @@ MAX_OUTPUT_TOKENS = 4000
 PROVIDER_TIMEOUT_S = 60.0
 CATALOG_TTL_S = 600.0
 CATALOG_FAILURE_TTL_S = 60.0  # a failed provider list is retried sooner
-MAX_FEATURED = 13  # two groups: open-weight, then closed (FEATURED_PREFERENCE)
+MAX_FEATURED = 12  # two groups: open-weight, then closed (FEATURED_PREFERENCE)
 
 CHAT_PROVENANCE = "LIVE EXPLORE"
 CHAT_LABEL = "MODEL-WRITTEN, numbers from engine tools"
@@ -84,20 +84,20 @@ OPENAI_REASONING_EFFORT: dict[str, str | None] = {mid: effort for mid, _, effort
 # then closed ones. Order from the lead's live run of two CEO-decision questions per model through the public API
 # (2026-11-15, #221): within each group, the models that ran web_search + monte_carlo_decision most often first.
 # No pass rates are shown in the UI. Closed: Claude Sonnet (the default), Opus, GPT-6 Sol (the GPT-6.1 models do not
-# call tools on Chat Completions, see OPENAI_VETTED), Grok 4.7, Haiku. Gemini is not featured (it stays in Cmd-K).
+# call tools on Chat Completions, see OPENAI_VETTED), Grok 4.6 (4.7 was withheld on both), Haiku. Gemini is not
+# featured (it stays in Cmd-K).
 FEATURED_PREFERENCE: tuple[str, ...] = (
     "openrouter:z-ai/glm-5.3",
     "openrouter:z-ai/glm-5.1",
     "openrouter:deepseek/deepseek-v4-pro",
     "openrouter:qwen/qwen3.6-27b",
     "openrouter:nvidia/nemotron-3-super-120b-a12b",
-    "openrouter:qwen/qwen3-235b-a22b-2507",
     "openrouter:google/gemma-4-31b-it",
     "openrouter:meta-llama/llama-3.3-70b-instruct",
     "anthropic:claude-sonnet-5-5",
     "anthropic:claude-opus-5-5",
     "openai:gpt-6-sol",
-    "openrouter:x-ai/grok-4.7",
+    "openrouter:x-ai/grok-4.6",
     "anthropic:claude-haiku-5-5",
 )
 
@@ -629,6 +629,10 @@ class Adapter(Protocol):
 
     def add_tool_results(self, results: list[tuple[str, str, bool]]) -> None: ...
 
+    def add_user_note(self, previous_reply: str, note: str) -> None:
+        """Keep the model's final text reply in the conversation and add a user-role note after it (repair)."""
+        ...
+
 
 def _parse_args(raw: Any) -> dict[str, Any] | None:
     if isinstance(raw, dict):
@@ -714,6 +718,11 @@ class OpenAICompatibleAdapter:
     def add_tool_results(self, results: list[tuple[str, str, bool]]) -> None:
         self.messages.extend({"role": "tool", "tool_call_id": call_id, "content": content}
                              for call_id, content, _is_error in results)
+
+    def add_user_note(self, previous_reply: str, note: str) -> None:
+        # step() keeps only tool-calling assistant turns, so the text reply is added here
+        self.messages.append({"role": "assistant", "content": previous_reply})
+        self.messages.append({"role": "user", "content": note})
 
 
 ANTHROPIC_BETAS = ["server-side-fallback-2026-07-01"]
@@ -812,6 +821,10 @@ class AnthropicAdapter:
             {"type": "tool_result", "tool_use_id": call_id, "content": content, "is_error": is_error}
             for call_id, content, is_error in results
         ]})
+
+    def add_user_note(self, previous_reply: str, note: str) -> None:
+        del previous_reply  # step() already appended the whole assistant content
+        self.messages.append({"role": "user", "content": note})
 
 
 def adapter_for(m: CatalogModel, factory: ClientFactory) -> Adapter:
@@ -969,6 +982,16 @@ def _urls_in(value: Any, out: set[str]) -> None:
 TOOLS_FAILED_NOTE = "This model didn't call the engine tools correctly; try another model. No numbers were made up."
 UNSUPPORTED_FIGURES_NOTE = ("The model stated figures the engine didn't produce, so its reply is withheld; try again "
                             "or another model.")
+REPAIRED_NOTE = "1 reply revised to remove unsupported figures."
+
+
+def repair_message(flagged: list[str]) -> str:
+    """The one repair round's instruction (#221): the exact figures the check could not find in any tool result."""
+    return (f"These figures are not in any tool result: {', '.join(flagged)}. Rewrite the answer using only figures "
+            "that appear in the tool results (or cited snippets), or drop those figures. Do not compute new "
+            "numbers.")
+
+
 NO_TOOL_NUMBERS_NOTE = ("This model answered with figures without calling the engine tools, so its reply is withheld; "
                         "try another model.")
 
@@ -1002,8 +1025,14 @@ class _Usage:
 
 
 async def run_chat(adapter: Adapter, toolbox: ToolBox, history: list[dict[str, str]], *, web_search: bool,
-                   on_step: Callable[[], Awaitable[None]] | None = None) -> ChatOutcome:
+                   on_step: Callable[[], Awaitable[None]] | None = None,
+                   on_event: Callable[[str, dict[str, Any]], Awaitable[None]] | None = None) -> ChatOutcome:
     """At most MAX_TOOL_ROUNDS rounds of tool execution, then the model must answer in text.
+
+    A reply whose figures fail the figure check gets ONE repair round (#221): the model is told exactly which
+    figures no tool result contains and asked to rewrite without them; the rewrite is checked again and withheld if
+    it still fails. ``on_event("repair", {...})`` is called when a repair starts (streaming); both rounds' tokens
+    count.
 
     Raises ChatUpstreamError for provider failures; everything else is a ChatOutcome.
     """
@@ -1014,6 +1043,7 @@ async def run_chat(adapter: Adapter, toolbox: ToolBox, history: list[dict[str, s
     usage = _Usage()
     rounds = 0
     malformed = 0
+    repaired = False
 
     def done(status: Literal["ok", "unavailable", "error"], reply: str, notes: list[str]) -> ChatOutcome:
         return ChatOutcome(status=status, reply=reply, tool_calls=records,
@@ -1074,8 +1104,16 @@ async def run_chat(adapter: Adapter, toolbox: ToolBox, history: list[dict[str, s
         if no_ok_tool and (flagged or re.search(r"\d", _URL.sub(" ", reply))):
             return done("error", "", [NO_TOOL_NUMBERS_NOTE])
         # A figure the engine did not produce is never shown under the "numbers from engine tools" label.
+        if flagged and not repaired:
+            repaired = True
+            adapter.add_user_note(step.text, repair_message(flagged))
+            if on_event is not None:
+                await on_event("repair", {"unsupported": flagged})
+            continue
         if flagged:
             return done("error", "", [UNSUPPORTED_FIGURES_NOTE + " Unsupported: " + ", ".join(flagged[:10]) + "."])
+        if repaired:
+            notes.append(REPAIRED_NOTE)
         allowed: set[str] = set()
         _urls_in(payloads, allowed)
         stray = uncited_urls(reply, allowed)

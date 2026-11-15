@@ -324,7 +324,8 @@ def test_chat_turn_with_monte_carlo_passes_the_figure_check_and_ships_the_full_r
 def test_chat_turn_with_an_invented_probability_is_withheld(env, engine):
     h = Harness(openrouter=FakeProvider(models=OPENROUTER_MODELS, replies=[
         oa_tool_calls(("monte_carlo_decision", copy.deepcopy(DECISION_ARGS))),
-        oa_text("Keep is best in 85% of paths (SIMULATED).")]))
+        oa_text("Keep is best in 85% of paths (SIMULATED)."),
+        oa_text("Keep is best in 85% of paths (SIMULATED).")]))  # the repair round (#221) repeats it
     out = h.turn("Should Nvidia keep Jensen Huang as CEO?").json()
     assert out["status"] == "error" and out["reply"] == ""
     assert any("85%" in n for n in out["notes"])
