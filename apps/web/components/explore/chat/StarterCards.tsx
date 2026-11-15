@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { getChatStarters, httpUrl, newsDate, type NewsStarter, type StarterTag } from "@/lib/starters";
+import { httpUrl, loadStartersWithRetry, newsCards, newsDate, STATIC_STARTERS, type StarterItem, type StarterTag } from "@/lib/starters";
 import { WireBadge } from "./ChatBadges";
 import "./flight.css";
 
@@ -9,26 +9,10 @@ import "./flight.css";
  * Starter prompts: management decisions only (leadership, M&A, strategy, governance, workforce). They carry questions,
  * never results. When GET /api/explore/chat/starters answers, each card is a current-events question with the news
  * item it came from ("In the news: …", http(s) links only) under the server's REAL (web) provenance. On 404 / 503 /
- * network failure the four static questions below are shown, with no news line.
+ * network failure the four standard questions (lib/starters.ts) are shown, with no news line; after a 503 or a
+ * timeout the request is retried quietly and the news questions swap in when they arrive. Always four cards, each
+ * with the same source-line slot, so the swap does not move the layout (#234).
  */
-
-interface Starter {
-  tag: StarterTag;
-  title: string;
-  prompt: string;
-  news?: NewsStarter;
-}
-
-export const STATIC_STARTERS: Starter[] = [
-  { tag: "Leadership", title: "Should Meta keep Mark Zuckerberg as CEO?", prompt: "Should Meta keep Mark Zuckerberg as CEO? Give me the odds." },
-  { tag: "Leadership", title: "Should Nvidia keep Jensen Huang as CEO?", prompt: "Should Nvidia keep Jensen Huang as CEO? Give me the odds." },
-  { tag: "M&A", title: "Should Disney sell ABC?", prompt: "Should Disney sell ABC? Give me the odds and the main risks." },
-  {
-    tag: "Governance",
-    title: "A CEO is hit by a scandal. Keep, suspend or replace?",
-    prompt: "A CEO is hit by a scandal. Should the board keep, suspend or replace them? Give me the odds.",
-  },
-];
 
 const TONE: Record<StarterTag, { card: string; text: string }> = {
   Leadership: { card: "starter-tone-accent", text: "text-accent" },
@@ -38,35 +22,34 @@ const TONE: Record<StarterTag, { card: string; text: string }> = {
   Workforce: { card: "starter-tone-info", text: "text-info" },
 };
 
-type Load = { kind: "loading" } | { kind: "news"; provenance: string; starters: Starter[] } | { kind: "static" };
+type Load = { kind: "loading" } | { kind: "news"; provenance: string; starters: StarterItem[] } | { kind: "static" };
 
-const MAX_CARDS = 4;
+const SOURCE_LINE = "min-h-[2.75em] min-w-0 break-words px-4 pb-3 font-mono text-[10.5px] leading-snug text-muted [overflow-wrap:anywhere] md:px-5";
 
 export function StarterCards({ onPick, disabled }: { onPick: (prompt: string) => void; disabled: boolean }) {
   const [load, setLoad] = useState<Load>({ kind: "loading" });
   useEffect(() => {
     const ctrl = new AbortController();
-    void getChatStarters(ctrl.signal).then((r) => {
+    void loadStartersWithRetry((r) => {
       if (ctrl.signal.aborted) return;
-      if (!r.ok) return setLoad({ kind: "static" });
-      setLoad({
-        kind: "news",
-        provenance: r.data.provenance,
-        starters: r.data.starters.slice(0, MAX_CARDS).map((s) => ({ tag: s.tag, title: s.question, prompt: s.question, news: s })),
-      });
-    });
+      setLoad(r.ok ? { kind: "news", provenance: r.data.provenance, starters: newsCards(r.data) } : { kind: "static" });
+    }, ctrl.signal);
     return () => ctrl.abort();
   }, []);
 
   const starters = load.kind === "news" ? load.starters : STATIC_STARTERS;
   return (
     <div className="flex min-w-0 flex-col gap-2" data-testid="chat-starters" data-source={load.kind}>
-      {load.kind === "news" ? (
-        <p className="flex min-w-0 flex-wrap items-center gap-2 font-mono text-[10.5px] text-muted">
-          <span>In the news</span>
-          <WireBadge value={load.provenance} />
-        </p>
-      ) : null}
+      <p className="flex min-h-6 min-w-0 flex-wrap items-center gap-2 font-mono text-[10.5px] text-muted">
+        {load.kind === "news" ? (
+          <>
+            <span>In the news</span>
+            <WireBadge value={load.provenance} />
+          </>
+        ) : (
+          <span>{load.kind === "loading" ? "Standard questions · checking the news" : "Standard questions"}</span>
+        )}
+      </p>
       <ul className="grid grid-cols-1 gap-3 md:grid-cols-2" aria-label="Starter questions" aria-busy={load.kind === "loading"}>
         {starters.map((s) => {
           const tone = TONE[s.tag];
@@ -86,7 +69,7 @@ export function StarterCards({ onPick, disabled }: { onPick: (prompt: string) =>
                 <span className="display min-w-0 break-words text-[1.35rem] leading-[1.1] text-text md:text-[1.55rem] 2xl:text-[1.7rem]">{s.title}</span>
               </button>
               {s.news ? (
-                <p className="min-w-0 break-words px-4 pb-3 font-mono text-[10.5px] leading-snug text-muted [overflow-wrap:anywhere] md:px-5" data-testid="starter-news">
+                <p className={SOURCE_LINE} data-testid="starter-news">
                   In the news:{" "}
                   {link ? (
                     <a href={link.href} target="_blank" rel="noopener noreferrer" className="text-text-2 underline decoration-line-strong underline-offset-2 hover:text-link-hover">
@@ -97,7 +80,11 @@ export function StarterCards({ onPick, disabled }: { onPick: (prompt: string) =>
                   )}{" "}
                   · {s.news.domain} · {date ?? "date not available"}
                 </p>
-              ) : null}
+              ) : (
+                <p className={SOURCE_LINE} data-testid="starter-standard">
+                  Standard question · not from the news
+                </p>
+              )}
             </li>
           );
         })}

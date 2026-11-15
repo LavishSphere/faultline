@@ -137,7 +137,10 @@ test("news starters: question, 'In the news' line with an http(s)-only link, and
   await mock(page, []);
   await page.goto("/explore/");
   await expect(page.getByTestId("chat-starters")).toHaveAttribute("data-source", "news");
-  await expect(page.getByTestId("chat-starter")).toHaveCount(2);
+  // Always four cards (#234): two news questions, then two standard ones padded in, each saying it is not from the news.
+  await expect(page.getByTestId("chat-starter")).toHaveCount(4);
+  await expect(page.getByTestId("starter-news")).toHaveCount(2);
+  await expect(page.getByTestId("starter-standard")).toHaveCount(2);
   await expect(page.getByTestId("chat-starters").locator(`[data-provenance="REAL (web, retrieved ${at})"]`)).toBeVisible();
   const news = page.getByTestId("starter-news");
   await expect(news.nth(0)).toContainText("In the news: TEST FIXTURE headline for TEST FIXTURE question one? · example.com · Nov 13, 2026");
@@ -157,6 +160,60 @@ test("starters route down (503): static management questions, no news line", asy
   await page.goto("/explore/");
   await expect(page.getByTestId("chat-starters")).toHaveAttribute("data-source", "static");
   await expect(page.getByTestId("starter-news")).toHaveCount(0);
+});
+
+test("starters still warming (503 + Retry-After): standard cards, then a quiet retry swaps in the news, cards stay put", async ({ page }) => {
+  const at = "2026-11-15T06:00:00Z";
+  let ready = false; // the server is "warming" until the test flips this
+  let afterReady = 0;
+  await page.clock.install();
+  await page.route(STARTERS_URL, (r) => {
+    if (!ready) {
+      return r.fulfill({
+        status: 503,
+        headers: { "Retry-After": "15" },
+        contentType: "application/json",
+        body: JSON.stringify({ code: "STARTERS_UNAVAILABLE", message: "TEST FIXTURE" }),
+      });
+    }
+    afterReady += 1;
+    return r.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify({
+        provenance: `REAL (web, retrieved ${at})`,
+        generated_at: at,
+        label: "TEST FIXTURE",
+        starters: [1, 2, 3, 4].map((i) => ({
+          question: `TEST FIXTURE question ${i}?`,
+          headline: `TEST FIXTURE headline ${i}`,
+          source_title: "TEST FIXTURE source",
+          source_url: `https://example.com/${i}`,
+          domain: "example.com",
+          published_date: "2026-11-14",
+          tag: "Strategy",
+        })),
+      }),
+    });
+  });
+  await mock(page, []);
+  await page.goto("/explore/");
+  const box = page.getByTestId("chat-starters");
+  await expect(box).toHaveAttribute("data-source", "static");
+  await expect(page.getByTestId("chat-starter")).toHaveCount(4);
+  await expect(page.getByTestId("starter-standard")).toHaveCount(4);
+  const before = await page.getByTestId("chat-starter").first().boundingBox();
+  ready = true;
+  expect(afterReady).toBe(0);
+  await page.clock.runFor(15_000); // the retry is 15 s after the 503
+  await expect(box).toHaveAttribute("data-source", "news");
+  expect(afterReady).toBeGreaterThanOrEqual(1);
+  await expect(page.getByTestId("chat-starter")).toHaveCount(4);
+  await expect(page.getByTestId("starter-news")).toHaveCount(4);
+  await expect(page.getByTestId("chat-starter").first()).toContainText("TEST FIXTURE question 1?");
+  // The header row and the source-line slot are reserved, so the cards do not move down when the news arrives.
+  const after = await page.getByTestId("chat-starter").first().boundingBox();
+  expect(Math.abs((after?.y ?? 0) - (before?.y ?? 0))).toBeLessThanOrEqual(1);
 });
 
 test("the Provenance popover closes on an outside click and on Esc", async ({ page }) => {

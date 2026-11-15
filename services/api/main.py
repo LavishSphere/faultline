@@ -344,6 +344,7 @@ def create_app() -> FastAPI:
         title="FAULTLINE API",
         version="0.1.0",
         description="Time-aware decision intelligence: Blind Replay, deterministic simulation, honest scoring.",
+        lifespan=explore_starters.lifespan,  # background warm-up of the news starters cache (#234); never blocks
     )
     install_edge_protection(app, settings)  # edge protection (#13); keep router registrations below
     app.add_exception_handler(FaultlineError, faultline_error_handler)

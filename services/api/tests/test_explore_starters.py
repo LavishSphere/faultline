@@ -260,15 +260,17 @@ def test_single_flight_and_stale_while_refreshing():
             await gate.wait()
             return _fetched(GOOD)
 
-        # 10 concurrent first visitors share one refresh
-        waiters = [asyncio.create_task(state.get(slow_fetch)) for _ in range(10)]
+        # 10 concurrent first visitors share one refresh: the one that started it waits, the rest get None at once
+        # (the route answers them 503 + Retry-After while warming, #234)
+        starter = asyncio.create_task(state.get(slow_fetch))
         for _ in range(5):
             await asyncio.sleep(0)
-        assert calls == 1
+        others = [await state.get(slow_fetch) for _ in range(9)]
+        assert calls == 1 and others == [None] * 9 and state.warming
         gate.set()
-        results = await asyncio.gather(*waiters)
-        assert calls == 1 and all(r is not None and len(r.starters) == 4 for r in results)
-        first = results[0]
+        first = await starter
+        assert calls == 1 and first is not None and len(first.starters) == 4 and not state.warming
+        assert await state.get(slow_fetch) is first
 
         # stale: visitors get the old result at once while one refresh runs
         clock.t += 101
@@ -326,6 +328,87 @@ def test_failed_refresh_keeps_last_good_and_daily_cap():
         assert await state.get(ok) is good
 
     asyncio.run(scenario())
+
+
+# --------------------------------------------------------------------------- startup warm-up (#234)
+
+
+def test_warm_enabled_switch():
+    assert st.warm_enabled("public", {}) is True
+    assert st.warm_enabled("local", {}) is False
+    assert st.warm_enabled("local", {st.WARM_ENV: "1"}) is True
+    assert st.warm_enabled("public", {st.WARM_ENV: "0"}) is False
+    assert st.warm_enabled("public", {st.WARM_ENV: "yes"}) is True  # not 0/1: the mode default
+    # never under pytest, whatever the flag says
+    assert st.warm_enabled("public", {"PYTEST_CURRENT_TEST": "t", st.WARM_ENV: "1"}) is False
+
+
+def test_startup_does_not_warm_under_pytest(env):
+    env.setenv(st.WARM_ENV, "1")
+    fake = FakeAnthropic()
+    with make_client(fake) as client:
+        assert client.get("/api/health").status_code == 200
+        assert getattr(client.app.state, "faultline_starters", None) is None
+    assert fake.calls == []
+
+
+def test_startup_warm_scheduled_when_enabled(env):
+    env.setattr(st, "warm_enabled", lambda _mode, _environ: True)
+    fake = FakeAnthropic()
+    with make_client(fake) as client:
+        state = client.app.state.faultline_starters
+        assert state.task is not None  # scheduled by the lifespan, before any visitor
+        client.portal.call(asyncio.wait_for, asyncio.shield(state.task), 5)
+        assert len(fake.calls) == 1
+        resp = client.get(PATH)  # served from the warm cache: no second provider call
+        assert resp.status_code == 200 and len(resp.json()["starters"]) == 4
+    assert len(fake.calls) == 1
+
+
+def test_startup_warm_needs_key(env):
+    env.delenv("ANTHROPIC_API_KEY")
+    env.setattr(st, "warm_enabled", lambda _mode, _environ: True)
+    fake = FakeAnthropic()
+    with make_client(fake) as client:
+        assert getattr(client.app.state, "faultline_starters", None) is None
+    assert fake.calls == []
+
+
+def test_warming_with_empty_cache_is_503_retry_after(env):
+    """A refresh in flight and nothing cached: 503 at once with Retry-After, not a wait; then the result."""
+    gate = asyncio.Event()
+
+    async def slow_fetch(_today: date) -> st.Fetched:
+        await gate.wait()
+        return _fetched(GOOD)
+
+    fake = FakeAnthropic()
+    with make_client(fake) as client:
+        state = st.StartersState()
+        client.app.state.faultline_starters = state
+        client.portal.call(lambda: _start(state, slow_fetch))
+        assert state.warming
+        resp = client.get(PATH)
+        assert resp.status_code == 503 and resp.json()["code"] == "STARTERS_UNAVAILABLE"
+        assert resp.headers["retry-after"] == "15"
+        assert "being prepared" in resp.json()["message"]
+        client.portal.call(gate.set)
+        client.portal.call(asyncio.wait_for, asyncio.shield(state.task), 5)
+        resp = client.get(PATH)
+        assert resp.status_code == 200 and len(resp.json()["starters"]) == 4
+    assert fake.calls == []  # the in-flight refresh was the only fetch
+
+
+async def _start(state: st.StartersState, fetch: st.Fetcher) -> None:
+    assert state.warm(fetch) is not None
+    assert state.warm(fetch) is None  # single flight: a second warm-up does not start another refresh
+
+
+def test_failed_refresh_503_has_no_retry_after(env):
+    fake = FakeAnthropic(status=500)
+    with make_client(fake) as client:
+        resp = client.get(PATH)
+    assert resp.status_code == 503 and "retry-after" not in resp.headers
 
 
 def test_ttl_env(monkeypatch):
