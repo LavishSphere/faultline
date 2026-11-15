@@ -694,5 +694,6 @@ def test_chat_tools_expose_no_replay_surface(monkeypatch):
     monkeypatch.setenv("TAVILY_API_KEY", FAKE_KEY)
     names = [t.name for t in EngineToolBox(get_settings(), None).specs()]
     assert names == ["simulate", "optimize", "decision", "list_scenarios", "list_judge_challenges",
-                     "list_decision_frames", "vc_lenses", "web_search"]
+                     "list_decision_frames", "vc_lenses", "monte_carlo_decision", "monte_carlo_cash",
+                     "query_internal_data", "web_search"]
     assert not [n for n in names if re.search(r"replay|case|reveal|outcome|predict|benchmark|score|seal", n)]

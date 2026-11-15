@@ -1,0 +1,137 @@
+{
+ "provenance": "SYNTHETIC",
+ "label": "SYNTHETIC (mock internal data)",
+ "table": "ap_schedule",
+ "description": "Open supplier bills with payment terms and due dates (purchases are paid with a 2-week lag in the cash model).",
+ "generator": "scripts/gen_internal_data.py",
+ "seed": 20261115,
+ "snapshot_date": "2026-11-15",
+ "schema": {
+  "bill_id": "str",
+  "supplier_id": "str",
+  "supplier": "str (fictional)",
+  "category": "str",
+  "amount": "USD",
+  "invoiced": "date",
+  "terms_days": "days",
+  "due": "date",
+  "days_until_due": "days from the snapshot date (negative = overdue)"
+ },
+ "anchors": {
+  "weekly_purchases_base": 32500.0,
+  "supplier_lag_weeks": 2,
+  "primary_distributor_dependent_share_of_sales": 0.4
+ },
+ "rows": [
+  {
+   "bill_id": "BILL-8801",
+   "supplier_id": "S01",
+   "supplier": "Northfield Fresh Distributors",
+   "category": "primary distributor: fresh, deli, produce",
+   "amount": 15825.15,
+   "invoiced": "2026-11-09",
+   "terms_days": 14,
+   "due": "2026-11-23",
+   "days_until_due": 8
+  },
+  {
+   "bill_id": "BILL-8802",
+   "supplier_id": "S01",
+   "supplier": "Northfield Fresh Distributors",
+   "category": "primary distributor: fresh, deli, produce",
+   "amount": 15698.91,
+   "invoiced": "2026-11-04",
+   "terms_days": 14,
+   "due": "2026-11-18",
+   "days_until_due": 3
+  },
+  {
+   "bill_id": "BILL-8803",
+   "supplier_id": "S02",
+   "supplier": "Prairie Dry Goods Wholesale",
+   "category": "dry goods and grocery",
+   "amount": 6708.8,
+   "invoiced": "2026-11-10",
+   "terms_days": 21,
+   "due": "2026-12-01",
+   "days_until_due": 16
+  },
+  {
+   "bill_id": "BILL-8804",
+   "supplier_id": "S02",
+   "supplier": "Prairie Dry Goods Wholesale",
+   "category": "dry goods and grocery",
+   "amount": 6708.53,
+   "invoiced": "2026-11-02",
+   "terms_days": 21,
+   "due": "2026-11-23",
+   "days_until_due": 8
+  },
+  {
+   "bill_id": "BILL-8805",
+   "supplier_id": "S03",
+   "supplier": "Valley Dairy Co-op",
+   "category": "dairy and eggs",
+   "amount": 4951.07,
+   "invoiced": "2026-11-11",
+   "terms_days": 14,
+   "due": "2026-11-25",
+   "days_until_due": 10
+  },
+  {
+   "bill_id": "BILL-8806",
+   "supplier_id": "S03",
+   "supplier": "Valley Dairy Co-op",
+   "category": "dairy and eggs",
+   "amount": 4991.34,
+   "invoiced": "2026-11-04",
+   "terms_days": 14,
+   "due": "2026-11-18",
+   "days_until_due": 3
+  },
+  {
+   "bill_id": "BILL-8807",
+   "supplier_id": "S04",
+   "supplier": "Coastline Packaging Supply",
+   "category": "packaging and consumables",
+   "amount": 1522.32,
+   "invoiced": "2026-11-09",
+   "terms_days": 30,
+   "due": "2026-12-09",
+   "days_until_due": 24
+  },
+  {
+   "bill_id": "BILL-8808",
+   "supplier_id": "S04",
+   "supplier": "Coastline Packaging Supply",
+   "category": "packaging and consumables",
+   "amount": 1547.92,
+   "invoiced": "2026-11-01",
+   "terms_days": 30,
+   "due": "2026-12-01",
+   "days_until_due": 16
+  },
+  {
+   "bill_id": "BILL-8809",
+   "supplier_id": "S05",
+   "supplier": "Metro Backup Foods",
+   "category": "backup supplier (12% price premium), on call",
+   "amount": 2766.99,
+   "invoiced": "2026-11-10",
+   "terms_days": 7,
+   "due": "2026-11-17",
+   "days_until_due": 2
+  },
+  {
+   "bill_id": "BILL-8810",
+   "supplier_id": "S05",
+   "supplier": "Metro Backup Foods",
+   "category": "backup supplier (12% price premium), on call",
+   "amount": 2558.78,
+   "invoiced": "2026-11-02",
+   "terms_days": 7,
+   "due": "2026-11-09",
+   "days_until_due": -6
+  }
+ ]
+}

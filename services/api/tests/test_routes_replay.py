@@ -70,6 +70,9 @@ POST_REVEAL = {("post", "/api/replay/{prediction_id}/reveal")}
 # /api/judge-challenges (#123) serves ILLUSTRATIVE shocks for the demo business; no case or outcome data.
 NOT_REPLAY = {
     "/api/health",
+    # routes/internal_data.py (#209): SYNTHETIC mock data room for the demo business; no case or outcome access
+    "/api/internal-data",
+    "/api/internal-data/{table}",
     "/api/simulate",
     "/api/optimize",
     "/api/scenarios",

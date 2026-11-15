@@ -40,7 +40,7 @@ import os
 import re
 import time
 from collections import OrderedDict, deque
-from collections.abc import Callable
+from collections.abc import Callable, Coroutine
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from typing import Annotated, Any, Literal
@@ -58,7 +58,9 @@ from config import CHAT_WINDOW_S, Settings, admin_token_matches, get_settings, p
 from core.financials import ScenarioShock
 from models import ErrorCode
 from routes import CodedRoute, RouteError, RouteErrorBody, issues_from, rate_limit_key
+from routes import chat_montecarlo as mc
 from routes import decision as decision_routes
+from routes import internal_data as internal_routes
 from routes import judge_challenges as challenge_routes
 from routes import optimize as optimize_routes
 from routes import research as research_routes
@@ -416,6 +418,52 @@ WEB_SEARCH_TOOL = chat.ToolSpec(
     _schema({"query": {"type": "string", "description": "Search text, up to 200 characters."}}),
 )
 
+MC_DECISION_TOOL = chat.ToolSpec(mc.MONTE_CARLO_DECISION_TOOL["name"], mc.MONTE_CARLO_DECISION_TOOL["description"],
+                                  mc.MONTE_CARLO_DECISION_TOOL["parameters"])
+
+
+def _mc_cash_tool(scenario_schema: dict[str, Any]) -> chat.ToolSpec:
+    raw = mc.cash_tool(scenario_schema, SHOCK_SCHEMA)
+    return chat.ToolSpec(raw["name"], raw["description"], raw["parameters"])
+
+
+_FILTER_SCHEMA = {
+    "type": "object",
+    "properties": {
+        "field": {"type": "string", "description": "A column of the table."},
+        "op": {"type": "string", "enum": ["eq", "ne", "gt", "gte", "lt", "lte", "contains"]},
+        "value": {"type": ["string", "number", "boolean"]},
+    },
+    "required": ["field", "op", "value"],
+    "additionalProperties": False,
+}
+INTERNAL_DATA_TOOL = chat.ToolSpec(
+    "query_internal_data",
+    "Query the demo business's mock internal data room (SYNTHETIC (mock internal data), fictional company): "
+    "general_ledger (52 weeks of history: week_index, week_ending, store, account revenue|cogs|payroll|opex|"
+    "interest, amount), ar_aging (open invoices: customer, amount, days_outstanding, bucket), ap_schedule (open "
+    "supplier bills: supplier, amount, terms_days, due, days_until_due), payroll (store, department, headcount, "
+    "weekly_cost), inventory (group, supplier, on_hand_value, weekly_usage_value, weeks_of_cover, perishable), "
+    "customers (name, segment, weekly_revenue, annual_revenue, share_of_total_sales, churn_risk, contract_end), "
+    "debt (facilities and covenants: limit, balance, annual_rate, threshold), contracts (counterparty, type, "
+    "weekly_minimum, renewal_date, notice_days). Filters, group_by and the aggregate are computed in Python; "
+    "grouped sums and counts carry share_of_total.",
+    _schema({
+        "table": {"type": "string", "enum": list(internal_routes.TABLES)},
+        "filters": {"type": ["array", "null"], "items": _FILTER_SCHEMA,
+                    "description": "All must hold (AND). Text compares case-insensitively; dates as ISO strings."},
+        "group_by": {"type": ["string", "null"], "description": "A column to group by, or null."},
+        "aggregate": {"anyOf": [{"type": "string", "enum": ["sum", "mean", "count", "min", "max"]},
+                                {"type": "null"}],
+                      "description": "null = return matching rows."},
+        "field": {"type": ["string", "null"], "description": "Numeric column to aggregate (null for count)."},
+        "limit": {"type": ["integer", "null"],
+                  "description": f"Rows or groups returned, 1..{internal_routes.MAX_QUERY_ROWS}; null = "
+                                 f"{internal_routes.MAX_QUERY_ROWS}."},
+    }),
+)
+
+
 def _drop_nulls(value: Any) -> Any:
     if isinstance(value, dict):
         return {k: _drop_nulls(v) for k, v in value.items() if v is not None}
@@ -482,7 +530,8 @@ class EngineToolBox:
             frames = []
         if frames:
             tools = _with_frame_ids(tools, frames)
-        return [*tools, *([WEB_SEARCH_TOOL] if self.web else [])]
+        cash = _mc_cash_tool(_scenario_id_schema(named) if named else _SCENARIO_ID)
+        return [*tools, MC_DECISION_TOOL, cash, INTERNAL_DATA_TOOL, *([WEB_SEARCH_TOOL] if self.web else [])]
 
     # ---- shock resolution: the canonical, validated ScenarioShock JSON the engine runs
 
@@ -677,6 +726,47 @@ class EngineToolBox:
                         "thesis": i.thesis} for i in resp.items]}
         return chat.ToolOutcome("ok", "REAL HISTORICAL", {"as_of": as_of} if as_of else {}, summary)
 
+    async def _tool_monte_carlo_decision(self, args: dict[str, Any]) -> chat.ToolOutcome:
+        request = mc.DecisionRequest.model_validate(_mc_args(args))
+        body = mc.decision_body(request)
+        out = await _run_engine(mc.run_decision(body))
+        return chat.ToolOutcome("ok", "SIMULATED", body, {**mc.decision_summary(out), "monte_carlo": out})
+
+    async def _tool_monte_carlo_cash(self, args: dict[str, Any]) -> chat.ToolOutcome:
+        # The resolved shock always travels (it wins over scenario_id in the engine), so Judge's Challenges work too;
+        # scenario_id is kept as the label.
+        shock = self._shock_body({"scenario_id": args.get("scenario_id"), "shock": args.get("shock")})
+        request = mc.CashRequest.model_validate({
+            "scenario_id": shock.get("scenario_id"), "shock": shock["shock"],
+            **{k: args.get(k) for k in ("protect_payroll", "with_plan", "n_paths", "seed") if k in args}})
+        body = request.model_dump(mode="json")
+        out = await _run_engine(mc.run_cash(body, self.settings))
+        return chat.ToolOutcome("ok", "SIMULATED", body, {**mc.cash_summary(out), "monte_carlo": out})
+
+    async def _tool_query_internal_data(self, args: dict[str, Any]) -> chat.ToolOutcome:
+        table = args.get("table")
+        if not isinstance(table, str) or table not in internal_routes.TABLES:
+            raise _ToolInputError(f"table must be one of {list(internal_routes.TABLES)}")
+        filters = args.get("filters")
+        if filters is not None and not (isinstance(filters, list) and all(isinstance(f, dict) for f in filters)):
+            raise _ToolInputError("filters must be a list of {field, op, value} or null")
+        query = {k: args.get(k) for k in ("group_by", "aggregate", "field", "limit")}
+        for k in ("group_by", "aggregate", "field"):
+            if query[k] is not None and not isinstance(query[k], str):
+                raise _ToolInputError(f"{k} must be a string or null")
+        if query["limit"] is not None and (isinstance(query["limit"], bool) or not isinstance(query["limit"], int)):
+            raise _ToolInputError("limit must be an integer or null")
+        data = internal_routes.load_table(self.settings, table)
+        if data is None:
+            raise _ToolInputError(f"internal data table {table!r} is NOT AVAILABLE on this server")
+        try:
+            result = internal_routes.query_rows(data, filters=filters, **query)
+        except internal_routes.QueryError as err:
+            raise _ToolInputError(str(err)) from None
+        body = {"table": table, "filters": filters, **query}
+        summary = {"label": internal_routes.LABEL, "description": data.get("description"), **result}
+        return chat.ToolOutcome("ok", internal_routes.LABEL, body, summary)
+
     async def _tool_web_search(self, args: dict[str, Any]) -> chat.ToolOutcome:
         if not self.web:
             raise _ToolInputError("web_search is not available on this server")
@@ -712,7 +802,29 @@ class EngineToolBox:
 
 _PROVENANCE = {"simulate": "SIMULATED", "optimize": "SIMULATED", "decision": "SIMULATED",
                "list_scenarios": "SYNTHETIC", "list_judge_challenges": "ILLUSTRATIVE",
-               "list_decision_frames": "ILLUSTRATIVE", "vc_lenses": "REAL HISTORICAL", "web_search": "LIVE EXPLORE"}
+               "list_decision_frames": "ILLUSTRATIVE", "vc_lenses": "REAL HISTORICAL", "web_search": "LIVE EXPLORE",
+               "monte_carlo_decision": "SIMULATED", "monte_carlo_cash": "SIMULATED",
+               "query_internal_data": internal_routes.LABEL}
+
+
+def _mc_args(args: dict[str, Any]) -> dict[str, Any]:
+    """The model's arguments with null n_paths / seed dropped (the contract defaults apply)."""
+    return {k: v for k, v in args.items() if not (k in ("n_paths", "seed") and v is None)}
+
+
+async def _run_engine(call: Coroutine[Any, Any, dict[str, Any]]) -> dict[str, Any]:
+    """Await a Monte Carlo engine call. Engine failures become tool errors (a RouteError passes through to run()),
+    never numbers."""
+    try:
+        return await call
+    except mc.EngineUnavailable:
+        raise _ToolInputError("The Monte Carlo engine is NOT AVAILABLE on this server; give the answer without "
+                              "probabilities and say so.") from None
+    except mc.EngineContractError as err:
+        logger.warning("chat monte carlo: %s", err)
+        raise _ToolInputError("The Monte Carlo engine returned an unexpected result; nothing was computed.") from None
+    except (ValueError, TypeError) as err:  # the engine's own validation
+        raise _ToolInputError(f"The Monte Carlo engine refused the input: {str(err)[:300]}") from None
 
 
 def _safe_args(arguments: dict[str, Any]) -> dict[str, Any]:

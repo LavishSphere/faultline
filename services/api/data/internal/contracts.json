@@ -1,0 +1,110 @@
+{
+ "provenance": "SYNTHETIC",
+ "label": "SYNTHETIC (mock internal data)",
+ "table": "contracts",
+ "description": "Supplier minimums, store leases and their renewal dates.",
+ "generator": "scripts/gen_internal_data.py",
+ "seed": 20261115,
+ "snapshot_date": "2026-11-15",
+ "schema": {
+  "contract_id": "str",
+  "counterparty": "str (fictional)",
+  "type": "supply | lease",
+  "weekly_minimum": "USD",
+  "annual_minimum": "USD (weekly x 52)",
+  "renewal_date": "date",
+  "notice_days": "days",
+  "auto_renew": "bool",
+  "note": "str"
+ },
+ "rows": [
+  {
+   "contract_id": "K01",
+   "counterparty": "Northfield Fresh Distributors",
+   "type": "supply",
+   "weekly_minimum": 9750.0,
+   "annual_minimum": 507000.0,
+   "renewal_date": "2027-06-24",
+   "notice_days": 60,
+   "auto_renew": true,
+   "note": "take-or-pay minimum on the primary distributor's lines"
+  },
+  {
+   "contract_id": "K02",
+   "counterparty": "Prairie Dry Goods Wholesale",
+   "type": "supply",
+   "weekly_minimum": 4290.0,
+   "annual_minimum": 223080.0,
+   "renewal_date": "2027-09-30",
+   "notice_days": 60,
+   "auto_renew": true,
+   "note": "volume minimum, shortfall billed at 10%"
+  },
+  {
+   "contract_id": "K03",
+   "counterparty": "Valley Dairy Co-op",
+   "type": "supply",
+   "weekly_minimum": 2925.0,
+   "annual_minimum": 152100.0,
+   "renewal_date": "2027-02-22",
+   "notice_days": 30,
+   "auto_renew": true,
+   "note": "volume minimum, shortfall billed at 10%"
+  },
+  {
+   "contract_id": "K04",
+   "counterparty": "Coastline Packaging Supply",
+   "type": "supply",
+   "weekly_minimum": 975.0,
+   "annual_minimum": 50700.0,
+   "renewal_date": "2027-08-15",
+   "notice_days": 30,
+   "auto_renew": true,
+   "note": "volume minimum, shortfall billed at 10%"
+  },
+  {
+   "contract_id": "K05",
+   "counterparty": "Metro Backup Foods",
+   "type": "supply",
+   "weekly_minimum": 0.0,
+   "annual_minimum": 0.0,
+   "renewal_date": "2027-04-10",
+   "notice_days": 30,
+   "auto_renew": false,
+   "note": "no minimum; switch fee applies when activated"
+  },
+  {
+   "contract_id": "L01",
+   "counterparty": "Store 1 landlord",
+   "type": "lease",
+   "weekly_minimum": 972.0,
+   "annual_minimum": 50544.0,
+   "renewal_date": "2029-06-07",
+   "notice_days": 180,
+   "auto_renew": false,
+   "note": "store lease (part of weekly opex)"
+  },
+  {
+   "contract_id": "L02",
+   "counterparty": "Store 2 landlord",
+   "type": "lease",
+   "weekly_minimum": 918.0,
+   "annual_minimum": 47736.0,
+   "renewal_date": "2028-11-22",
+   "notice_days": 180,
+   "auto_renew": false,
+   "note": "store lease (part of weekly opex)"
+  },
+  {
+   "contract_id": "L03",
+   "counterparty": "Store 3 landlord",
+   "type": "lease",
+   "weekly_minimum": 810.0,
+   "annual_minimum": 42120.0,
+   "renewal_date": "2028-09-12",
+   "notice_days": 180,
+   "auto_renew": false,
+   "note": "store lease (part of weekly opex)"
+  }
+ ]
+}

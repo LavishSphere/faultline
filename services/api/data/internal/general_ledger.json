@@ -1,0 +1,4757 @@
+{
+ "provenance": "SYNTHETIC",
+ "label": "SYNTHETIC (mock internal data)",
+ "table": "general_ledger",
+ "description": "Weekly P&L lines for the 52 weeks before the forecast horizon, per store and account. Revenue is positive, costs negative.",
+ "generator": "scripts/gen_internal_data.py",
+ "seed": 20261115,
+ "snapshot_date": "2026-11-15",
+ "schema": {
+  "week_index": "int, -52..-1 (week 1 of the forecast horizon follows week -1)",
+  "week_ending": "date (Sunday)",
+  "store": "Store 1 | Store 2 | Store 3 | Head office",
+  "account": "revenue | cogs | payroll | opex | interest",
+  "amount": "USD, signed"
+ },
+ "anchors": {
+  "weekly_sales_base": 50000.0,
+  "gross_margin": 0.35,
+  "weekly_payroll": 12000.0,
+  "weekly_opex": 6000.0,
+  "closing_cash_week_minus_1": 100000.0
+ },
+ "rows": [
+  {
+   "week_index": -52,
+   "week_ending": "2025-11-16",
+   "store": "Store 1",
+   "account": "revenue",
+   "amount": 18515.81
+  },
+  {
+   "week_index": -52,
+   "week_ending": "2025-11-16",
+   "store": "Store 1",
+   "account": "cogs",
+   "amount": -12035.28
+  },
+  {
+   "week_index": -52,
+   "week_ending": "2025-11-16",
+   "store": "Store 1",
+   "account": "payroll",
+   "amount": -4320.0
+  },
+  {
+   "week_index": -52,
+   "week_ending": "2025-11-16",
+   "store": "Store 1",
+   "account": "opex",
+   "amount": -2253.22
+  },
+  {
+   "week_index": -52,
+   "week_ending": "2025-11-16",
+   "store": "Store 2",
+   "account": "revenue",
+   "amount": 17755.92
+  },
+  {
+   "week_index": -52,
+   "week_ending": "2025-11-16",
+   "store": "Store 2",
+   "account": "cogs",
+   "amount": -11541.35
+  },
+  {
+   "week_index": -52,
+   "week_ending": "2025-11-16",
+   "store": "Store 2",
+   "account": "payroll",
+   "amount": -4080.0
+  },
+  {
+   "week_index": -52,
+   "week_ending": "2025-11-16",
+   "store": "Store 2",
+   "account": "opex",
+   "amount": -1920.59
+  },
+  {
+   "week_index": -52,
+   "week_ending": "2025-11-16",
+   "store": "Store 3",
+   "account": "revenue",
+   "amount": 15252.66
+  },
+  {
+   "week_index": -52,
+   "week_ending": "2025-11-16",
+   "store": "Store 3",
+   "account": "cogs",
+   "amount": -9914.23
+  },
+  {
+   "week_index": -52,
+   "week_ending": "2025-11-16",
+   "store": "Store 3",
+   "account": "payroll",
+   "amount": -3600.0
+  },
+  {
+   "week_index": -52,
+   "week_ending": "2025-11-16",
+   "store": "Store 3",
+   "account": "opex",
+   "amount": -1758.92
+  },
+  {
+   "week_index": -52,
+   "week_ending": "2025-11-16",
+   "store": "Head office",
+   "account": "interest",
+   "amount": -923.08
+  },
+  {
+   "week_index": -51,
+   "week_ending": "2025-11-23",
+   "store": "Store 1",
+   "account": "revenue",
+   "amount": 18490.18
+  },
+  {
+   "week_index": -51,
+   "week_ending": "2025-11-23",
+   "store": "Store 1",
+   "account": "cogs",
+   "amount": -12018.62
+  },
+  {
+   "week_index": -51,
+   "week_ending": "2025-11-23",
+   "store": "Store 1",
+   "account": "payroll",
+   "amount": -4320.0
+  },
+  {
+   "week_index": -51,
+   "week_ending": "2025-11-23",
+   "store": "Store 1",
+   "account": "opex",
+   "amount": -2017.9
+  },
+  {
+   "week_index": -51,
+   "week_ending": "2025-11-23",
+   "store": "Store 2",
+   "account": "revenue",
+   "amount": 17430.68
+  },
+  {
+   "week_index": -51,
+   "week_ending": "2025-11-23",
+   "store": "Store 2",
+   "account": "cogs",
+   "amount": -11329.94
+  },
+  {
+   "week_index": -51,
+   "week_ending": "2025-11-23",
+   "store": "Store 2",
+   "account": "payroll",
+   "amount": -4080.0
+  },
+  {
+   "week_index": -51,
+   "week_ending": "2025-11-23",
+   "store": "Store 2",
+   "account": "opex",
+   "amount": -2055.75
+  },
+  {
+   "week_index": -51,
+   "week_ending": "2025-11-23",
+   "store": "Store 3",
+   "account": "revenue",
+   "amount": 17063.16
+  },
+  {
+   "week_index": -51,
+   "week_ending": "2025-11-23",
+   "store": "Store 3",
+   "account": "cogs",
+   "amount": -11091.05
+  },
+  {
+   "week_index": -51,
+   "week_ending": "2025-11-23",
+   "store": "Store 3",
+   "account": "payroll",
+   "amount": -3600.0
+  },
+  {
+   "week_index": -51,
+   "week_ending": "2025-11-23",
+   "store": "Store 3",
+   "account": "opex",
+   "amount": -1728.94
+  },
+  {
+   "week_index": -51,
+   "week_ending": "2025-11-23",
+   "store": "Head office",
+   "account": "interest",
+   "amount": -923.08
+  },
+  {
+   "week_index": -50,
+   "week_ending": "2025-11-30",
+   "store": "Store 1",
+   "account": "revenue",
+   "amount": 19192.31
+  },
+  {
+   "week_index": -50,
+   "week_ending": "2025-11-30",
+   "store": "Store 1",
+   "account": "cogs",
+   "amount": -12475.0
+  },
+  {
+   "week_index": -50,
+   "week_ending": "2025-11-30",
+   "store": "Store 1",
+   "account": "payroll",
+   "amount": -4320.0
+  },
+  {
+   "week_index": -50,
+   "week_ending": "2025-11-30",
+   "store": "Store 1",
+   "account": "opex",
+   "amount": -2115.81
+  },
+  {
+   "week_index": -50,
+   "week_ending": "2025-11-30",
+   "store": "Store 2",
+   "account": "revenue",
+   "amount": 17712.84
+  },
+  {
+   "week_index": -50,
+   "week_ending": "2025-11-30",
+   "store": "Store 2",
+   "account": "cogs",
+   "amount": -11513.35
+  },
+  {
+   "week_index": -50,
+   "week_ending": "2025-11-30",
+   "store": "Store 2",
+   "account": "payroll",
+   "amount": -4080.0
+  },
+  {
+   "week_index": -50,
+   "week_ending": "2025-11-30",
+   "store": "Store 2",
+   "account": "opex",
+   "amount": -1997.66
+  },
+  {
+   "week_index": -50,
+   "week_ending": "2025-11-30",
+   "store": "Store 3",
+   "account": "revenue",
+   "amount": 15209.49
+  },
+  {
+   "week_index": -50,
+   "week_ending": "2025-11-30",
+   "store": "Store 3",
+   "account": "cogs",
+   "amount": -9886.17
+  },
+  {
+   "week_index": -50,
+   "week_ending": "2025-11-30",
+   "store": "Store 3",
+   "account": "payroll",
+   "amount": -3600.0
+  },
+  {
+   "week_index": -50,
+   "week_ending": "2025-11-30",
+   "store": "Store 3",
+   "account": "opex",
+   "amount": -1777.15
+  },
+  {
+   "week_index": -50,
+   "week_ending": "2025-11-30",
+   "store": "Head office",
+   "account": "interest",
+   "amount": -923.08
+  },
+  {
+   "week_index": -49,
+   "week_ending": "2025-12-07",
+   "store": "Store 1",
+   "account": "revenue",
+   "amount": 19686.88
+  },
+  {
+   "week_index": -49,
+   "week_ending": "2025-12-07",
+   "store": "Store 1",
+   "account": "cogs",
+   "amount": -12796.47
+  },
+  {
+   "week_index": -49,
+   "week_ending": "2025-12-07",
+   "store": "Store 1",
+   "account": "payroll",
+   "amount": -4320.0
+  },
+  {
+   "week_index": -49,
+   "week_ending": "2025-12-07",
+   "store": "Store 1",
+   "account": "opex",
+   "amount": -2042.89
+  },
+  {
+   "week_index": -49,
+   "week_ending": "2025-12-07",
+   "store": "Store 2",
+   "account": "revenue",
+   "amount": 17805.92
+  },
+  {
+   "week_index": -49,
+   "week_ending": "2025-12-07",
+   "store": "Store 2",
+   "account": "cogs",
+   "amount": -11573.85
+  },
+  {
+   "week_index": -49,
+   "week_ending": "2025-12-07",
+   "store": "Store 2",
+   "account": "payroll",
+   "amount": -4080.0
+  },
+  {
+   "week_index": -49,
+   "week_ending": "2025-12-07",
+   "store": "Store 2",
+   "account": "opex",
+   "amount": -1967.58
+  },
+  {
+   "week_index": -49,
+   "week_ending": "2025-12-07",
+   "store": "Store 3",
+   "account": "revenue",
+   "amount": 16284.23
+  },
+  {
+   "week_index": -49,
+   "week_ending": "2025-12-07",
+   "store": "Store 3",
+   "account": "cogs",
+   "amount": -10584.75
+  },
+  {
+   "week_index": -49,
+   "week_ending": "2025-12-07",
+   "store": "Store 3",
+   "account": "payroll",
+   "amount": -3600.0
+  },
+  {
+   "week_index": -49,
+   "week_ending": "2025-12-07",
+   "store": "Store 3",
+   "account": "opex",
+   "amount": -1700.46
+  },
+  {
+   "week_index": -49,
+   "week_ending": "2025-12-07",
+   "store": "Head office",
+   "account": "interest",
+   "amount": -923.08
+  },
+  {
+   "week_index": -48,
+   "week_ending": "2025-12-14",
+   "store": "Store 1",
+   "account": "revenue",
+   "amount": 18649.67
+  },
+  {
+   "week_index": -48,
+   "week_ending": "2025-12-14",
+   "store": "Store 1",
+   "account": "cogs",
+   "amount": -12122.29
+  },
+  {
+   "week_index": -48,
+   "week_ending": "2025-12-14",
+   "store": "Store 1",
+   "account": "payroll",
+   "amount": -4320.0
+  },
+  {
+   "week_index": -48,
+   "week_ending": "2025-12-14",
+   "store": "Store 1",
+   "account": "opex",
+   "amount": -2221.97
+  },
+  {
+   "week_index": -48,
+   "week_ending": "2025-12-14",
+   "store": "Store 2",
+   "account": "revenue",
+   "amount": 17487.41
+  },
+  {
+   "week_index": -48,
+   "week_ending": "2025-12-14",
+   "store": "Store 2",
+   "account": "cogs",
+   "amount": -11366.82
+  },
+  {
+   "week_index": -48,
+   "week_ending": "2025-12-14",
+   "store": "Store 2",
+   "account": "payroll",
+   "amount": -4080.0
+  },
+  {
+   "week_index": -48,
+   "week_ending": "2025-12-14",
+   "store": "Store 2",
+   "account": "opex",
+   "amount": -1965.91
+  },
+  {
+   "week_index": -48,
+   "week_ending": "2025-12-14",
+   "store": "Store 3",
+   "account": "revenue",
+   "amount": 15794.63
+  },
+  {
+   "week_index": -48,
+   "week_ending": "2025-12-14",
+   "store": "Store 3",
+   "account": "cogs",
+   "amount": -10266.51
+  },
+  {
+   "week_index": -48,
+   "week_ending": "2025-12-14",
+   "store": "Store 3",
+   "account": "payroll",
+   "amount": -3600.0
+  },
+  {
+   "week_index": -48,
+   "week_ending": "2025-12-14",
+   "store": "Store 3",
+   "account": "opex",
+   "amount": -1794.07
+  },
+  {
+   "week_index": -48,
+   "week_ending": "2025-12-14",
+   "store": "Head office",
+   "account": "interest",
+   "amount": -923.08
+  },
+  {
+   "week_index": -47,
+   "week_ending": "2025-12-21",
+   "store": "Store 1",
+   "account": "revenue",
+   "amount": 19478.77
+  },
+  {
+   "week_index": -47,
+   "week_ending": "2025-12-21",
+   "store": "Store 1",
+   "account": "cogs",
+   "amount": -12661.2
+  },
+  {
+   "week_index": -47,
+   "week_ending": "2025-12-21",
+   "store": "Store 1",
+   "account": "payroll",
+   "amount": -4320.0
+  },
+  {
+   "week_index": -47,
+   "week_ending": "2025-12-21",
+   "store": "Store 1",
+   "account": "opex",
+   "amount": -2127.11
+  },
+  {
+   "week_index": -47,
+   "week_ending": "2025-12-21",
+   "store": "Store 2",
+   "account": "revenue",
+   "amount": 18067.47
+  },
+  {
+   "week_index": -47,
+   "week_ending": "2025-12-21",
+   "store": "Store 2",
+   "account": "cogs",
+   "amount": -11743.86
+  },
+  {
+   "week_index": -47,
+   "week_ending": "2025-12-21",
+   "store": "Store 2",
+   "account": "payroll",
+   "amount": -4080.0
+  },
+  {
+   "week_index": -47,
+   "week_ending": "2025-12-21",
+   "store": "Store 2",
+   "account": "opex",
+   "amount": -1866.92
+  },
+  {
+   "week_index": -47,
+   "week_ending": "2025-12-21",
+   "store": "Store 3",
+   "account": "revenue",
+   "amount": 15184.26
+  },
+  {
+   "week_index": -47,
+   "week_ending": "2025-12-21",
+   "store": "Store 3",
+   "account": "cogs",
+   "amount": -9869.77
+  },
+  {
+   "week_index": -47,
+   "week_ending": "2025-12-21",
+   "store": "Store 3",
+   "account": "payroll",
+   "amount": -3600.0
+  },
+  {
+   "week_index": -47,
+   "week_ending": "2025-12-21",
+   "store": "Store 3",
+   "account": "opex",
+   "amount": -1937.07
+  },
+  {
+   "week_index": -47,
+   "week_ending": "2025-12-21",
+   "store": "Head office",
+   "account": "interest",
+   "amount": -923.08
+  },
+  {
+   "week_index": -46,
+   "week_ending": "2025-12-28",
+   "store": "Store 1",
+   "account": "revenue",
+   "amount": 19160.14
+  },
+  {
+   "week_index": -46,
+   "week_ending": "2025-12-28",
+   "store": "Store 1",
+   "account": "cogs",
+   "amount": -12454.09
+  },
+  {
+   "week_index": -46,
+   "week_ending": "2025-12-28",
+   "store": "Store 1",
+   "account": "payroll",
+   "amount": -4320.0
+  },
+  {
+   "week_index": -46,
+   "week_ending": "2025-12-28",
+   "store": "Store 1",
+   "account": "opex",
+   "amount": -2125.6
+  },
+  {
+   "week_index": -46,
+   "week_ending": "2025-12-28",
+   "store": "Store 2",
+   "account": "revenue",
+   "amount": 18243.06
+  },
+  {
+   "week_index": -46,
+   "week_ending": "2025-12-28",
+   "store": "Store 2",
+   "account": "cogs",
+   "amount": -11857.99
+  },
+  {
+   "week_index": -46,
+   "week_ending": "2025-12-28",
+   "store": "Store 2",
+   "account": "payroll",
+   "amount": -4080.0
+  },
+  {
+   "week_index": -46,
+   "week_ending": "2025-12-28",
+   "store": "Store 2",
+   "account": "opex",
+   "amount": -2175.37
+  },
+  {
+   "week_index": -46,
+   "week_ending": "2025-12-28",
+   "store": "Store 3",
+   "account": "revenue",
+   "amount": 16558.5
+  },
+  {
+   "week_index": -46,
+   "week_ending": "2025-12-28",
+   "store": "Store 3",
+   "account": "cogs",
+   "amount": -10763.02
+  },
+  {
+   "week_index": -46,
+   "week_ending": "2025-12-28",
+   "store": "Store 3",
+   "account": "payroll",
+   "amount": -3600.0
+  },
+  {
+   "week_index": -46,
+   "week_ending": "2025-12-28",
+   "store": "Store 3",
+   "account": "opex",
+   "amount": -1822.04
+  },
+  {
+   "week_index": -46,
+   "week_ending": "2025-12-28",
+   "store": "Head office",
+   "account": "interest",
+   "amount": -923.08
+  },
+  {
+   "week_index": -45,
+   "week_ending": "2026-01-04",
+   "store": "Store 1",
+   "account": "revenue",
+   "amount": 17694.64
+  },
+  {
+   "week_index": -45,
+   "week_ending": "2026-01-04",
+   "store": "Store 1",
+   "account": "cogs",
+   "amount": -11501.52
+  },
+  {
+   "week_index": -45,
+   "week_ending": "2026-01-04",
+   "store": "Store 1",
+   "account": "payroll",
+   "amount": -4320.0
+  },
+  {
+   "week_index": -45,
+   "week_ending": "2026-01-04",
+   "store": "Store 1",
+   "account": "opex",
+   "amount": -2235.5
+  },
+  {
+   "week_index": -45,
+   "week_ending": "2026-01-04",
+   "store": "Store 2",
+   "account": "revenue",
+   "amount": 18888.87
+  },
+  {
+   "week_index": -45,
+   "week_ending": "2026-01-04",
+   "store": "Store 2",
+   "account": "cogs",
+   "amount": -12277.77
+  },
+  {
+   "week_index": -45,
+   "week_ending": "2026-01-04",
+   "store": "Store 2",
+   "account": "payroll",
+   "amount": -4080.0
+  },
+  {
+   "week_index": -45,
+   "week_ending": "2026-01-04",
+   "store": "Store 2",
+   "account": "opex",
+   "amount": -2011.44
+  },
+  {
+   "week_index": -45,
+   "week_ending": "2026-01-04",
+   "store": "Store 3",
+   "account": "revenue",
+   "amount": 16120.74
+  },
+  {
+   "week_index": -45,
+   "week_ending": "2026-01-04",
+   "store": "Store 3",
+   "account": "cogs",
+   "amount": -10478.48
+  },
+  {
+   "week_index": -45,
+   "week_ending": "2026-01-04",
+   "store": "Store 3",
+   "account": "payroll",
+   "amount": -3600.0
+  },
+  {
+   "week_index": -45,
+   "week_ending": "2026-01-04",
+   "store": "Store 3",
+   "account": "opex",
+   "amount": -1759.11
+  },
+  {
+   "week_index": -45,
+   "week_ending": "2026-01-04",
+   "store": "Head office",
+   "account": "interest",
+   "amount": -923.08
+  },
+  {
+   "week_index": -44,
+   "week_ending": "2026-01-11",
+   "store": "Store 1",
+   "account": "revenue",
+   "amount": 19445.58
+  },
+  {
+   "week_index": -44,
+   "week_ending": "2026-01-11",
+   "store": "Store 1",
+   "account": "cogs",
+   "amount": -12639.63
+  },
+  {
+   "week_index": -44,
+   "week_ending": "2026-01-11",
+   "store": "Store 1",
+   "account": "payroll",
+   "amount": -4320.0
+  },
+  {
+   "week_index": -44,
+   "week_ending": "2026-01-11",
+   "store": "Store 1",
+   "account": "opex",
+   "amount": -2208.45
+  },
+  {
+   "week_index": -44,
+   "week_ending": "2026-01-11",
+   "store": "Store 2",
+   "account": "revenue",
+   "amount": 17299.15
+  },
+  {
+   "week_index": -44,
+   "week_ending": "2026-01-11",
+   "store": "Store 2",
+   "account": "cogs",
+   "amount": -11244.45
+  },
+  {
+   "week_index": -44,
+   "week_ending": "2026-01-11",
+   "store": "Store 2",
+   "account": "payroll",
+   "amount": -4080.0
+  },
+  {
+   "week_index": -44,
+   "week_ending": "2026-01-11",
+   "store": "Store 2",
+   "account": "opex",
+   "amount": -1940.3
+  },
+  {
+   "week_index": -44,
+   "week_ending": "2026-01-11",
+   "store": "Store 3",
+   "account": "revenue",
+   "amount": 15880.91
+  },
+  {
+   "week_index": -44,
+   "week_ending": "2026-01-11",
+   "store": "Store 3",
+   "account": "cogs",
+   "amount": -10322.59
+  },
+  {
+   "week_index": -44,
+   "week_ending": "2026-01-11",
+   "store": "Store 3",
+   "account": "payroll",
+   "amount": -3600.0
+  },
+  {
+   "week_index": -44,
+   "week_ending": "2026-01-11",
+   "store": "Store 3",
+   "account": "opex",
+   "amount": -1802.6
+  },
+  {
+   "week_index": -44,
+   "week_ending": "2026-01-11",
+   "store": "Head office",
+   "account": "interest",
+   "amount": -923.08
+  },
+  {
+   "week_index": -43,
+   "week_ending": "2026-01-18",
+   "store": "Store 1",
+   "account": "revenue",
+   "amount": 19008.22
+  },
+  {
+   "week_index": -43,
+   "week_ending": "2026-01-18",
+   "store": "Store 1",
+   "account": "cogs",
+   "amount": -12355.34
+  },
+  {
+   "week_index": -43,
+   "week_ending": "2026-01-18",
+   "store": "Store 1",
+   "account": "payroll",
+   "amount": -4320.0
+  },
+  {
+   "week_index": -43,
+   "week_ending": "2026-01-18",
+   "store": "Store 1",
+   "account": "opex",
+   "amount": -2234.53
+  },
+  {
+   "week_index": -43,
+   "week_ending": "2026-01-18",
+   "store": "Store 2",
+   "account": "revenue",
+   "amount": 17527.37
+  },
+  {
+   "week_index": -43,
+   "week_ending": "2026-01-18",
+   "store": "Store 2",
+   "account": "cogs",
+   "amount": -11392.79
+  },
+  {
+   "week_index": -43,
+   "week_ending": "2026-01-18",
+   "store": "Store 2",
+   "account": "payroll",
+   "amount": -4080.0
+  },
+  {
+   "week_index": -43,
+   "week_ending": "2026-01-18",
+   "store": "Store 2",
+   "account": "opex",
+   "amount": -1900.55
+  },
+  {
+   "week_index": -43,
+   "week_ending": "2026-01-18",
+   "store": "Store 3",
+   "account": "revenue",
+   "amount": 16449.25
+  },
+  {
+   "week_index": -43,
+   "week_ending": "2026-01-18",
+   "store": "Store 3",
+   "account": "cogs",
+   "amount": -10692.01
+  },
+  {
+   "week_index": -43,
+   "week_ending": "2026-01-18",
+   "store": "Store 3",
+   "account": "payroll",
+   "amount": -3600.0
+  },
+  {
+   "week_index": -43,
+   "week_ending": "2026-01-18",
+   "store": "Store 3",
+   "account": "opex",
+   "amount": -1762.77
+  },
+  {
+   "week_index": -43,
+   "week_ending": "2026-01-18",
+   "store": "Head office",
+   "account": "interest",
+   "amount": -923.08
+  },
+  {
+   "week_index": -42,
+   "week_ending": "2026-01-25",
+   "store": "Store 1",
+   "account": "revenue",
+   "amount": 18822.08
+  },
+  {
+   "week_index": -42,
+   "week_ending": "2026-01-25",
+   "store": "Store 1",
+   "account": "cogs",
+   "amount": -12234.35
+  },
+  {
+   "week_index": -42,
+   "week_ending": "2026-01-25",
+   "store": "Store 1",
+   "account": "payroll",
+   "amount": -4320.0
+  },
+  {
+   "week_index": -42,
+   "week_ending": "2026-01-25",
+   "store": "Store 1",
+   "account": "opex",
+   "amount": -2090.45
+  },
+  {
+   "week_index": -42,
+   "week_ending": "2026-01-25",
+   "store": "Store 2",
+   "account": "revenue",
+   "amount": 17494.45
+  },
+  {
+   "week_index": -42,
+   "week_ending": "2026-01-25",
+   "store": "Store 2",
+   "account": "cogs",
+   "amount": -11371.39
+  },
+  {
+   "week_index": -42,
+   "week_ending": "2026-01-25",
+   "store": "Store 2",
+   "account": "payroll",
+   "amount": -4080.0
+  },
+  {
+   "week_index": -42,
+   "week_ending": "2026-01-25",
+   "store": "Store 2",
+   "account": "opex",
+   "amount": -1965.94
+  },
+  {
+   "week_index": -42,
+   "week_ending": "2026-01-25",
+   "store": "Store 3",
+   "account": "revenue",
+   "amount": 16140.67
+  },
+  {
+   "week_index": -42,
+   "week_ending": "2026-01-25",
+   "store": "Store 3",
+   "account": "cogs",
+   "amount": -10491.44
+  },
+  {
+   "week_index": -42,
+   "week_ending": "2026-01-25",
+   "store": "Store 3",
+   "account": "payroll",
+   "amount": -3600.0
+  },
+  {
+   "week_index": -42,
+   "week_ending": "2026-01-25",
+   "store": "Store 3",
+   "account": "opex",
+   "amount": -1875.71
+  },
+  {
+   "week_index": -42,
+   "week_ending": "2026-01-25",
+   "store": "Head office",
+   "account": "interest",
+   "amount": -923.08
+  },
+  {
+   "week_index": -41,
+   "week_ending": "2026-02-01",
+   "store": "Store 1",
+   "account": "revenue",
+   "amount": 19718.12
+  },
+  {
+   "week_index": -41,
+   "week_ending": "2026-02-01",
+   "store": "Store 1",
+   "account": "cogs",
+   "amount": -12816.78
+  },
+  {
+   "week_index": -41,
+   "week_ending": "2026-02-01",
+   "store": "Store 1",
+   "account": "payroll",
+   "amount": -4320.0
+  },
+  {
+   "week_index": -41,
+   "week_ending": "2026-02-01",
+   "store": "Store 1",
+   "account": "opex",
+   "amount": -2272.76
+  },
+  {
+   "week_index": -41,
+   "week_ending": "2026-02-01",
+   "store": "Store 2",
+   "account": "revenue",
+   "amount": 17193.06
+  },
+  {
+   "week_index": -41,
+   "week_ending": "2026-02-01",
+   "store": "Store 2",
+   "account": "cogs",
+   "amount": -11175.49
+  },
+  {
+   "week_index": -41,
+   "week_ending": "2026-02-01",
+   "store": "Store 2",
+   "account": "payroll",
+   "amount": -4080.0
+  },
+  {
+   "week_index": -41,
+   "week_ending": "2026-02-01",
+   "store": "Store 2",
+   "account": "opex",
+   "amount": -2068.22
+  },
+  {
+   "week_index": -41,
+   "week_ending": "2026-02-01",
+   "store": "Store 3",
+   "account": "revenue",
+   "amount": 15638.47
+  },
+  {
+   "week_index": -41,
+   "week_ending": "2026-02-01",
+   "store": "Store 3",
+   "account": "cogs",
+   "amount": -10165.01
+  },
+  {
+   "week_index": -41,
+   "week_ending": "2026-02-01",
+   "store": "Store 3",
+   "account": "payroll",
+   "amount": -3600.0
+  },
+  {
+   "week_index": -41,
+   "week_ending": "2026-02-01",
+   "store": "Store 3",
+   "account": "opex",
+   "amount": -1890.68
+  },
+  {
+   "week_index": -41,
+   "week_ending": "2026-02-01",
+   "store": "Head office",
+   "account": "interest",
+   "amount": -923.08
+  },
+  {
+   "week_index": -40,
+   "week_ending": "2026-02-08",
+   "store": "Store 1",
+   "account": "revenue",
+   "amount": 18234.11
+  },
+  {
+   "week_index": -40,
+   "week_ending": "2026-02-08",
+   "store": "Store 1",
+   "account": "cogs",
+   "amount": -11852.17
+  },
+  {
+   "week_index": -40,
+   "week_ending": "2026-02-08",
+   "store": "Store 1",
+   "account": "payroll",
+   "amount": -4320.0
+  },
+  {
+   "week_index": -40,
+   "week_ending": "2026-02-08",
+   "store": "Store 1",
+   "account": "opex",
+   "amount": -1988.39
+  },
+  {
+   "week_index": -40,
+   "week_ending": "2026-02-08",
+   "store": "Store 2",
+   "account": "revenue",
+   "amount": 18015.83
+  },
+  {
+   "week_index": -40,
+   "week_ending": "2026-02-08",
+   "store": "Store 2",
+   "account": "cogs",
+   "amount": -11710.29
+  },
+  {
+   "week_index": -40,
+   "week_ending": "2026-02-08",
+   "store": "Store 2",
+   "account": "payroll",
+   "amount": -4080.0
+  },
+  {
+   "week_index": -40,
+   "week_ending": "2026-02-08",
+   "store": "Store 2",
+   "account": "opex",
+   "amount": -1913.35
+  },
+  {
+   "week_index": -40,
+   "week_ending": "2026-02-08",
+   "store": "Store 3",
+   "account": "revenue",
+   "amount": 15561.1
+  },
+  {
+   "week_index": -40,
+   "week_ending": "2026-02-08",
+   "store": "Store 3",
+   "account": "cogs",
+   "amount": -10114.72
+  },
+  {
+   "week_index": -40,
+   "week_ending": "2026-02-08",
+   "store": "Store 3",
+   "account": "payroll",
+   "amount": -3600.0
+  },
+  {
+   "week_index": -40,
+   "week_ending": "2026-02-08",
+   "store": "Store 3",
+   "account": "opex",
+   "amount": -1823.71
+  },
+  {
+   "week_index": -40,
+   "week_ending": "2026-02-08",
+   "store": "Head office",
+   "account": "interest",
+   "amount": -923.08
+  },
+  {
+   "week_index": -39,
+   "week_ending": "2026-02-15",
+   "store": "Store 1",
+   "account": "revenue",
+   "amount": 19383.29
+  },
+  {
+   "week_index": -39,
+   "week_ending": "2026-02-15",
+   "store": "Store 1",
+   "account": "cogs",
+   "amount": -12599.14
+  },
+  {
+   "week_index": -39,
+   "week_ending": "2026-02-15",
+   "store": "Store 1",
+   "account": "payroll",
+   "amount": -4320.0
+  },
+  {
+   "week_index": -39,
+   "week_ending": "2026-02-15",
+   "store": "Store 1",
+   "account": "opex",
+   "amount": -2192.16
+  },
+  {
+   "week_index": -39,
+   "week_ending": "2026-02-15",
+   "store": "Store 2",
+   "account": "revenue",
+   "amount": 17972.23
+  },
+  {
+   "week_index": -39,
+   "week_ending": "2026-02-15",
+   "store": "Store 2",
+   "account": "cogs",
+   "amount": -11681.95
+  },
+  {
+   "week_index": -39,
+   "week_ending": "2026-02-15",
+   "store": "Store 2",
+   "account": "payroll",
+   "amount": -4080.0
+  },
+  {
+   "week_index": -39,
+   "week_ending": "2026-02-15",
+   "store": "Store 2",
+   "account": "opex",
+   "amount": -2081.97
+  },
+  {
+   "week_index": -39,
+   "week_ending": "2026-02-15",
+   "store": "Store 3",
+   "account": "revenue",
+   "amount": 16194.89
+  },
+  {
+   "week_index": -39,
+   "week_ending": "2026-02-15",
+   "store": "Store 3",
+   "account": "cogs",
+   "amount": -10526.68
+  },
+  {
+   "week_index": -39,
+   "week_ending": "2026-02-15",
+   "store": "Store 3",
+   "account": "payroll",
+   "amount": -3600.0
+  },
+  {
+   "week_index": -39,
+   "week_ending": "2026-02-15",
+   "store": "Store 3",
+   "account": "opex",
+   "amount": -1702.19
+  },
+  {
+   "week_index": -39,
+   "week_ending": "2026-02-15",
+   "store": "Head office",
+   "account": "interest",
+   "amount": -923.08
+  },
+  {
+   "week_index": -38,
+   "week_ending": "2026-02-22",
+   "store": "Store 1",
+   "account": "revenue",
+   "amount": 18801.36
+  },
+  {
+   "week_index": -38,
+   "week_ending": "2026-02-22",
+   "store": "Store 1",
+   "account": "cogs",
+   "amount": -12220.88
+  },
+  {
+   "week_index": -38,
+   "week_ending": "2026-02-22",
+   "store": "Store 1",
+   "account": "payroll",
+   "amount": -4320.0
+  },
+  {
+   "week_index": -38,
+   "week_ending": "2026-02-22",
+   "store": "Store 1",
+   "account": "opex",
+   "amount": -1981.12
+  },
+  {
+   "week_index": -38,
+   "week_ending": "2026-02-22",
+   "store": "Store 2",
+   "account": "revenue",
+   "amount": 18969.4
+  },
+  {
+   "week_index": -38,
+   "week_ending": "2026-02-22",
+   "store": "Store 2",
+   "account": "cogs",
+   "amount": -12330.11
+  },
+  {
+   "week_index": -38,
+   "week_ending": "2026-02-22",
+   "store": "Store 2",
+   "account": "payroll",
+   "amount": -4080.0
+  },
+  {
+   "week_index": -38,
+   "week_ending": "2026-02-22",
+   "store": "Store 2",
+   "account": "opex",
+   "amount": -2008.64
+  },
+  {
+   "week_index": -38,
+   "week_ending": "2026-02-22",
+   "store": "Store 3",
+   "account": "revenue",
+   "amount": 15539.92
+  },
+  {
+   "week_index": -38,
+   "week_ending": "2026-02-22",
+   "store": "Store 3",
+   "account": "cogs",
+   "amount": -10100.95
+  },
+  {
+   "week_index": -38,
+   "week_ending": "2026-02-22",
+   "store": "Store 3",
+   "account": "payroll",
+   "amount": -3600.0
+  },
+  {
+   "week_index": -38,
+   "week_ending": "2026-02-22",
+   "store": "Store 3",
+   "account": "opex",
+   "amount": -1846.5
+  },
+  {
+   "week_index": -38,
+   "week_ending": "2026-02-22",
+   "store": "Head office",
+   "account": "interest",
+   "amount": -923.08
+  },
+  {
+   "week_index": -37,
+   "week_ending": "2026-03-01",
+   "store": "Store 1",
+   "account": "revenue",
+   "amount": 17903.86
+  },
+  {
+   "week_index": -37,
+   "week_ending": "2026-03-01",
+   "store": "Store 1",
+   "account": "cogs",
+   "amount": -11637.51
+  },
+  {
+   "week_index": -37,
+   "week_ending": "2026-03-01",
+   "store": "Store 1",
+   "account": "payroll",
+   "amount": -4320.0
+  },
+  {
+   "week_index": -37,
+   "week_ending": "2026-03-01",
+   "store": "Store 1",
+   "account": "opex",
+   "amount": -2241.73
+  },
+  {
+   "week_index": -37,
+   "week_ending": "2026-03-01",
+   "store": "Store 2",
+   "account": "revenue",
+   "amount": 17960.4
+  },
+  {
+   "week_index": -37,
+   "week_ending": "2026-03-01",
+   "store": "Store 2",
+   "account": "cogs",
+   "amount": -11674.26
+  },
+  {
+   "week_index": -37,
+   "week_ending": "2026-03-01",
+   "store": "Store 2",
+   "account": "payroll",
+   "amount": -4080.0
+  },
+  {
+   "week_index": -37,
+   "week_ending": "2026-03-01",
+   "store": "Store 2",
+   "account": "opex",
+   "amount": -1953.88
+  },
+  {
+   "week_index": -37,
+   "week_ending": "2026-03-01",
+   "store": "Store 3",
+   "account": "revenue",
+   "amount": 14483.49
+  },
+  {
+   "week_index": -37,
+   "week_ending": "2026-03-01",
+   "store": "Store 3",
+   "account": "cogs",
+   "amount": -9414.27
+  },
+  {
+   "week_index": -37,
+   "week_ending": "2026-03-01",
+   "store": "Store 3",
+   "account": "payroll",
+   "amount": -3600.0
+  },
+  {
+   "week_index": -37,
+   "week_ending": "2026-03-01",
+   "store": "Store 3",
+   "account": "opex",
+   "amount": -1750.8
+  },
+  {
+   "week_index": -37,
+   "week_ending": "2026-03-01",
+   "store": "Head office",
+   "account": "interest",
+   "amount": -923.08
+  },
+  {
+   "week_index": -36,
+   "week_ending": "2026-03-08",
+   "store": "Store 1",
+   "account": "revenue",
+   "amount": 17903.47
+  },
+  {
+   "week_index": -36,
+   "week_ending": "2026-03-08",
+   "store": "Store 1",
+   "account": "cogs",
+   "amount": -11637.26
+  },
+  {
+   "week_index": -36,
+   "week_ending": "2026-03-08",
+   "store": "Store 1",
+   "account": "payroll",
+   "amount": -4320.0
+  },
+  {
+   "week_index": -36,
+   "week_ending": "2026-03-08",
+   "store": "Store 1",
+   "account": "opex",
+   "amount": -2088.16
+  },
+  {
+   "week_index": -36,
+   "week_ending": "2026-03-08",
+   "store": "Store 2",
+   "account": "revenue",
+   "amount": 17468.21
+  },
+  {
+   "week_index": -36,
+   "week_ending": "2026-03-08",
+   "store": "Store 2",
+   "account": "cogs",
+   "amount": -11354.34
+  },
+  {
+   "week_index": -36,
+   "week_ending": "2026-03-08",
+   "store": "Store 2",
+   "account": "payroll",
+   "amount": -4080.0
+  },
+  {
+   "week_index": -36,
+   "week_ending": "2026-03-08",
+   "store": "Store 2",
+   "account": "opex",
+   "amount": -2127.31
+  },
+  {
+   "week_index": -36,
+   "week_ending": "2026-03-08",
+   "store": "Store 3",
+   "account": "revenue",
+   "amount": 15600.83
+  },
+  {
+   "week_index": -36,
+   "week_ending": "2026-03-08",
+   "store": "Store 3",
+   "account": "cogs",
+   "amount": -10140.54
+  },
+  {
+   "week_index": -36,
+   "week_ending": "2026-03-08",
+   "store": "Store 3",
+   "account": "payroll",
+   "amount": -3600.0
+  },
+  {
+   "week_index": -36,
+   "week_ending": "2026-03-08",
+   "store": "Store 3",
+   "account": "opex",
+   "amount": -1728.26
+  },
+  {
+   "week_index": -36,
+   "week_ending": "2026-03-08",
+   "store": "Head office",
+   "account": "interest",
+   "amount": -923.08
+  },
+  {
+   "week_index": -35,
+   "week_ending": "2026-03-15",
+   "store": "Store 1",
+   "account": "revenue",
+   "amount": 18846.03
+  },
+  {
+   "week_index": -35,
+   "week_ending": "2026-03-15",
+   "store": "Store 1",
+   "account": "cogs",
+   "amount": -12249.92
+  },
+  {
+   "week_index": -35,
+   "week_ending": "2026-03-15",
+   "store": "Store 1",
+   "account": "payroll",
+   "amount": -4320.0
+  },
+  {
+   "week_index": -35,
+   "week_ending": "2026-03-15",
+   "store": "Store 1",
+   "account": "opex",
+   "amount": -2209.37
+  },
+  {
+   "week_index": -35,
+   "week_ending": "2026-03-15",
+   "store": "Store 2",
+   "account": "revenue",
+   "amount": 17278.71
+  },
+  {
+   "week_index": -35,
+   "week_ending": "2026-03-15",
+   "store": "Store 2",
+   "account": "cogs",
+   "amount": -11231.16
+  },
+  {
+   "week_index": -35,
+   "week_ending": "2026-03-15",
+   "store": "Store 2",
+   "account": "payroll",
+   "amount": -4080.0
+  },
+  {
+   "week_index": -35,
+   "week_ending": "2026-03-15",
+   "store": "Store 2",
+   "account": "opex",
+   "amount": -2028.44
+  },
+  {
+   "week_index": -35,
+   "week_ending": "2026-03-15",
+   "store": "Store 3",
+   "account": "revenue",
+   "amount": 15380.91
+  },
+  {
+   "week_index": -35,
+   "week_ending": "2026-03-15",
+   "store": "Store 3",
+   "account": "cogs",
+   "amount": -9997.59
+  },
+  {
+   "week_index": -35,
+   "week_ending": "2026-03-15",
+   "store": "Store 3",
+   "account": "payroll",
+   "amount": -3600.0
+  },
+  {
+   "week_index": -35,
+   "week_ending": "2026-03-15",
+   "store": "Store 3",
+   "account": "opex",
+   "amount": -1915.3
+  },
+  {
+   "week_index": -35,
+   "week_ending": "2026-03-15",
+   "store": "Head office",
+   "account": "interest",
+   "amount": -923.08
+  },
+  {
+   "week_index": -34,
+   "week_ending": "2026-03-22",
+   "store": "Store 1",
+   "account": "revenue",
+   "amount": 19713.55
+  },
+  {
+   "week_index": -34,
+   "week_ending": "2026-03-22",
+   "store": "Store 1",
+   "account": "cogs",
+   "amount": -12813.81
+  },
+  {
+   "week_index": -34,
+   "week_ending": "2026-03-22",
+   "store": "Store 1",
+   "account": "payroll",
+   "amount": -4320.0
+  },
+  {
+   "week_index": -34,
+   "week_ending": "2026-03-22",
+   "store": "Store 1",
+   "account": "opex",
+   "amount": -2200.73
+  },
+  {
+   "week_index": -34,
+   "week_ending": "2026-03-22",
+   "store": "Store 2",
+   "account": "revenue",
+   "amount": 16498.5
+  },
+  {
+   "week_index": -34,
+   "week_ending": "2026-03-22",
+   "store": "Store 2",
+   "account": "cogs",
+   "amount": -10724.02
+  },
+  {
+   "week_index": -34,
+   "week_ending": "2026-03-22",
+   "store": "Store 2",
+   "account": "payroll",
+   "amount": -4080.0
+  },
+  {
+   "week_index": -34,
+   "week_ending": "2026-03-22",
+   "store": "Store 2",
+   "account": "opex",
+   "amount": -2043.25
+  },
+  {
+   "week_index": -34,
+   "week_ending": "2026-03-22",
+   "store": "Store 3",
+   "account": "revenue",
+   "amount": 14596.41
+  },
+  {
+   "week_index": -34,
+   "week_ending": "2026-03-22",
+   "store": "Store 3",
+   "account": "cogs",
+   "amount": -9487.67
+  },
+  {
+   "week_index": -34,
+   "week_ending": "2026-03-22",
+   "store": "Store 3",
+   "account": "payroll",
+   "amount": -3600.0
+  },
+  {
+   "week_index": -34,
+   "week_ending": "2026-03-22",
+   "store": "Store 3",
+   "account": "opex",
+   "amount": -1776.95
+  },
+  {
+   "week_index": -34,
+   "week_ending": "2026-03-22",
+   "store": "Head office",
+   "account": "interest",
+   "amount": -923.08
+  },
+  {
+   "week_index": -33,
+   "week_ending": "2026-03-29",
+   "store": "Store 1",
+   "account": "revenue",
+   "amount": 18120.57
+  },
+  {
+   "week_index": -33,
+   "week_ending": "2026-03-29",
+   "store": "Store 1",
+   "account": "cogs",
+   "amount": -11778.37
+  },
+  {
+   "week_index": -33,
+   "week_ending": "2026-03-29",
+   "store": "Store 1",
+   "account": "payroll",
+   "amount": -4320.0
+  },
+  {
+   "week_index": -33,
+   "week_ending": "2026-03-29",
+   "store": "Store 1",
+   "account": "opex",
+   "amount": -2156.49
+  },
+  {
+   "week_index": -33,
+   "week_ending": "2026-03-29",
+   "store": "Store 2",
+   "account": "revenue",
+   "amount": 17773.29
+  },
+  {
+   "week_index": -33,
+   "week_ending": "2026-03-29",
+   "store": "Store 2",
+   "account": "cogs",
+   "amount": -11552.64
+  },
+  {
+   "week_index": -33,
+   "week_ending": "2026-03-29",
+   "store": "Store 2",
+   "account": "payroll",
+   "amount": -4080.0
+  },
+  {
+   "week_index": -33,
+   "week_ending": "2026-03-29",
+   "store": "Store 2",
+   "account": "opex",
+   "amount": -2003.14
+  },
+  {
+   "week_index": -33,
+   "week_ending": "2026-03-29",
+   "store": "Store 3",
+   "account": "revenue",
+   "amount": 14462.28
+  },
+  {
+   "week_index": -33,
+   "week_ending": "2026-03-29",
+   "store": "Store 3",
+   "account": "cogs",
+   "amount": -9400.48
+  },
+  {
+   "week_index": -33,
+   "week_ending": "2026-03-29",
+   "store": "Store 3",
+   "account": "payroll",
+   "amount": -3600.0
+  },
+  {
+   "week_index": -33,
+   "week_ending": "2026-03-29",
+   "store": "Store 3",
+   "account": "opex",
+   "amount": -1867.39
+  },
+  {
+   "week_index": -33,
+   "week_ending": "2026-03-29",
+   "store": "Head office",
+   "account": "interest",
+   "amount": -923.08
+  },
+  {
+   "week_index": -32,
+   "week_ending": "2026-04-05",
+   "store": "Store 1",
+   "account": "revenue",
+   "amount": 17095.64
+  },
+  {
+   "week_index": -32,
+   "week_ending": "2026-04-05",
+   "store": "Store 1",
+   "account": "cogs",
+   "amount": -11112.17
+  },
+  {
+   "week_index": -32,
+   "week_ending": "2026-04-05",
+   "store": "Store 1",
+   "account": "payroll",
+   "amount": -4320.0
+  },
+  {
+   "week_index": -32,
+   "week_ending": "2026-04-05",
+   "store": "Store 1",
+   "account": "opex",
+   "amount": -2166.36
+  },
+  {
+   "week_index": -32,
+   "week_ending": "2026-04-05",
+   "store": "Store 2",
+   "account": "revenue",
+   "amount": 16267.78
+  },
+  {
+   "week_index": -32,
+   "week_ending": "2026-04-05",
+   "store": "Store 2",
+   "account": "cogs",
+   "amount": -10574.06
+  },
+  {
+   "week_index": -32,
+   "week_ending": "2026-04-05",
+   "store": "Store 2",
+   "account": "payroll",
+   "amount": -4080.0
+  },
+  {
+   "week_index": -32,
+   "week_ending": "2026-04-05",
+   "store": "Store 2",
+   "account": "opex",
+   "amount": -2080.26
+  },
+  {
+   "week_index": -32,
+   "week_ending": "2026-04-05",
+   "store": "Store 3",
+   "account": "revenue",
+   "amount": 15317.2
+  },
+  {
+   "week_index": -32,
+   "week_ending": "2026-04-05",
+   "store": "Store 3",
+   "account": "cogs",
+   "amount": -9956.18
+  },
+  {
+   "week_index": -32,
+   "week_ending": "2026-04-05",
+   "store": "Store 3",
+   "account": "payroll",
+   "amount": -3600.0
+  },
+  {
+   "week_index": -32,
+   "week_ending": "2026-04-05",
+   "store": "Store 3",
+   "account": "opex",
+   "amount": -1817.02
+  },
+  {
+   "week_index": -32,
+   "week_ending": "2026-04-05",
+   "store": "Head office",
+   "account": "interest",
+   "amount": -923.08
+  },
+  {
+   "week_index": -31,
+   "week_ending": "2026-04-12",
+   "store": "Store 1",
+   "account": "revenue",
+   "amount": 17780.71
+  },
+  {
+   "week_index": -31,
+   "week_ending": "2026-04-12",
+   "store": "Store 1",
+   "account": "cogs",
+   "amount": -11557.46
+  },
+  {
+   "week_index": -31,
+   "week_ending": "2026-04-12",
+   "store": "Store 1",
+   "account": "payroll",
+   "amount": -4320.0
+  },
+  {
+   "week_index": -31,
+   "week_ending": "2026-04-12",
+   "store": "Store 1",
+   "account": "opex",
+   "amount": -2125.72
+  },
+  {
+   "week_index": -31,
+   "week_ending": "2026-04-12",
+   "store": "Store 2",
+   "account": "revenue",
+   "amount": 16530.17
+  },
+  {
+   "week_index": -31,
+   "week_ending": "2026-04-12",
+   "store": "Store 2",
+   "account": "cogs",
+   "amount": -10744.61
+  },
+  {
+   "week_index": -31,
+   "week_ending": "2026-04-12",
+   "store": "Store 2",
+   "account": "payroll",
+   "amount": -4080.0
+  },
+  {
+   "week_index": -31,
+   "week_ending": "2026-04-12",
+   "store": "Store 2",
+   "account": "opex",
+   "amount": -1878.57
+  },
+  {
+   "week_index": -31,
+   "week_ending": "2026-04-12",
+   "store": "Store 3",
+   "account": "revenue",
+   "amount": 14642.53
+  },
+  {
+   "week_index": -31,
+   "week_ending": "2026-04-12",
+   "store": "Store 3",
+   "account": "cogs",
+   "amount": -9517.64
+  },
+  {
+   "week_index": -31,
+   "week_ending": "2026-04-12",
+   "store": "Store 3",
+   "account": "payroll",
+   "amount": -3600.0
+  },
+  {
+   "week_index": -31,
+   "week_ending": "2026-04-12",
+   "store": "Store 3",
+   "account": "opex",
+   "amount": -1930.18
+  },
+  {
+   "week_index": -31,
+   "week_ending": "2026-04-12",
+   "store": "Head office",
+   "account": "interest",
+   "amount": -923.08
+  },
+  {
+   "week_index": -30,
+   "week_ending": "2026-04-19",
+   "store": "Store 1",
+   "account": "revenue",
+   "amount": 18184.42
+  },
+  {
+   "week_index": -30,
+   "week_ending": "2026-04-19",
+   "store": "Store 1",
+   "account": "cogs",
+   "amount": -11819.87
+  },
+  {
+   "week_index": -30,
+   "week_ending": "2026-04-19",
+   "store": "Store 1",
+   "account": "payroll",
+   "amount": -4320.0
+  },
+  {
+   "week_index": -30,
+   "week_ending": "2026-04-19",
+   "store": "Store 1",
+   "account": "opex",
+   "amount": -2322.3
+  },
+  {
+   "week_index": -30,
+   "week_ending": "2026-04-19",
+   "store": "Store 2",
+   "account": "revenue",
+   "amount": 16849.67
+  },
+  {
+   "week_index": -30,
+   "week_ending": "2026-04-19",
+   "store": "Store 2",
+   "account": "cogs",
+   "amount": -10952.29
+  },
+  {
+   "week_index": -30,
+   "week_ending": "2026-04-19",
+   "store": "Store 2",
+   "account": "payroll",
+   "amount": -4080.0
+  },
+  {
+   "week_index": -30,
+   "week_ending": "2026-04-19",
+   "store": "Store 2",
+   "account": "opex",
+   "amount": -2065.83
+  },
+  {
+   "week_index": -30,
+   "week_ending": "2026-04-19",
+   "store": "Store 3",
+   "account": "revenue",
+   "amount": 14885.42
+  },
+  {
+   "week_index": -30,
+   "week_ending": "2026-04-19",
+   "store": "Store 3",
+   "account": "cogs",
+   "amount": -9675.52
+  },
+  {
+   "week_index": -30,
+   "week_ending": "2026-04-19",
+   "store": "Store 3",
+   "account": "payroll",
+   "amount": -3600.0
+  },
+  {
+   "week_index": -30,
+   "week_ending": "2026-04-19",
+   "store": "Store 3",
+   "account": "opex",
+   "amount": -1880.73
+  },
+  {
+   "week_index": -30,
+   "week_ending": "2026-04-19",
+   "store": "Head office",
+   "account": "interest",
+   "amount": -923.08
+  },
+  {
+   "week_index": -29,
+   "week_ending": "2026-04-26",
+   "store": "Store 1",
+   "account": "revenue",
+   "amount": 18179.78
+  },
+  {
+   "week_index": -29,
+   "week_ending": "2026-04-26",
+   "store": "Store 1",
+   "account": "cogs",
+   "amount": -11816.86
+  },
+  {
+   "week_index": -29,
+   "week_ending": "2026-04-26",
+   "store": "Store 1",
+   "account": "payroll",
+   "amount": -4320.0
+  },
+  {
+   "week_index": -29,
+   "week_ending": "2026-04-26",
+   "store": "Store 1",
+   "account": "opex",
+   "amount": -2103.3
+  },
+  {
+   "week_index": -29,
+   "week_ending": "2026-04-26",
+   "store": "Store 2",
+   "account": "revenue",
+   "amount": 16141.27
+  },
+  {
+   "week_index": -29,
+   "week_ending": "2026-04-26",
+   "store": "Store 2",
+   "account": "cogs",
+   "amount": -10491.83
+  },
+  {
+   "week_index": -29,
+   "week_ending": "2026-04-26",
+   "store": "Store 2",
+   "account": "payroll",
+   "amount": -4080.0
+  },
+  {
+   "week_index": -29,
+   "week_ending": "2026-04-26",
+   "store": "Store 2",
+   "account": "opex",
+   "amount": -2086.33
+  },
+  {
+   "week_index": -29,
+   "week_ending": "2026-04-26",
+   "store": "Store 3",
+   "account": "revenue",
+   "amount": 13857.42
+  },
+  {
+   "week_index": -29,
+   "week_ending": "2026-04-26",
+   "store": "Store 3",
+   "account": "cogs",
+   "amount": -9007.32
+  },
+  {
+   "week_index": -29,
+   "week_ending": "2026-04-26",
+   "store": "Store 3",
+   "account": "payroll",
+   "amount": -3600.0
+  },
+  {
+   "week_index": -29,
+   "week_ending": "2026-04-26",
+   "store": "Store 3",
+   "account": "opex",
+   "amount": -1714.95
+  },
+  {
+   "week_index": -29,
+   "week_ending": "2026-04-26",
+   "store": "Head office",
+   "account": "interest",
+   "amount": -923.08
+  },
+  {
+   "week_index": -28,
+   "week_ending": "2026-05-03",
+   "store": "Store 1",
+   "account": "revenue",
+   "amount": 17199.81
+  },
+  {
+   "week_index": -28,
+   "week_ending": "2026-05-03",
+   "store": "Store 1",
+   "account": "cogs",
+   "amount": -11179.88
+  },
+  {
+   "week_index": -28,
+   "week_ending": "2026-05-03",
+   "store": "Store 1",
+   "account": "payroll",
+   "amount": -4320.0
+  },
+  {
+   "week_index": -28,
+   "week_ending": "2026-05-03",
+   "store": "Store 1",
+   "account": "opex",
+   "amount": -2145.11
+  },
+  {
+   "week_index": -28,
+   "week_ending": "2026-05-03",
+   "store": "Store 2",
+   "account": "revenue",
+   "amount": 16168.86
+  },
+  {
+   "week_index": -28,
+   "week_ending": "2026-05-03",
+   "store": "Store 2",
+   "account": "cogs",
+   "amount": -10509.76
+  },
+  {
+   "week_index": -28,
+   "week_ending": "2026-05-03",
+   "store": "Store 2",
+   "account": "payroll",
+   "amount": -4080.0
+  },
+  {
+   "week_index": -28,
+   "week_ending": "2026-05-03",
+   "store": "Store 2",
+   "account": "opex",
+   "amount": -2128.7
+  },
+  {
+   "week_index": -28,
+   "week_ending": "2026-05-03",
+   "store": "Store 3",
+   "account": "revenue",
+   "amount": 14192.06
+  },
+  {
+   "week_index": -28,
+   "week_ending": "2026-05-03",
+   "store": "Store 3",
+   "account": "cogs",
+   "amount": -9224.84
+  },
+  {
+   "week_index": -28,
+   "week_ending": "2026-05-03",
+   "store": "Store 3",
+   "account": "payroll",
+   "amount": -3600.0
+  },
+  {
+   "week_index": -28,
+   "week_ending": "2026-05-03",
+   "store": "Store 3",
+   "account": "opex",
+   "amount": -1897.31
+  },
+  {
+   "week_index": -28,
+   "week_ending": "2026-05-03",
+   "store": "Head office",
+   "account": "interest",
+   "amount": -923.08
+  },
+  {
+   "week_index": -27,
+   "week_ending": "2026-05-10",
+   "store": "Store 1",
+   "account": "revenue",
+   "amount": 17391.69
+  },
+  {
+   "week_index": -27,
+   "week_ending": "2026-05-10",
+   "store": "Store 1",
+   "account": "cogs",
+   "amount": -11304.6
+  },
+  {
+   "week_index": -27,
+   "week_ending": "2026-05-10",
+   "store": "Store 1",
+   "account": "payroll",
+   "amount": -4320.0
+  },
+  {
+   "week_index": -27,
+   "week_ending": "2026-05-10",
+   "store": "Store 1",
+   "account": "opex",
+   "amount": -2044.1
+  },
+  {
+   "week_index": -27,
+   "week_ending": "2026-05-10",
+   "store": "Store 2",
+   "account": "revenue",
+   "amount": 16227.92
+  },
+  {
+   "week_index": -27,
+   "week_ending": "2026-05-10",
+   "store": "Store 2",
+   "account": "cogs",
+   "amount": -10548.15
+  },
+  {
+   "week_index": -27,
+   "week_ending": "2026-05-10",
+   "store": "Store 2",
+   "account": "payroll",
+   "amount": -4080.0
+  },
+  {
+   "week_index": -27,
+   "week_ending": "2026-05-10",
+   "store": "Store 2",
+   "account": "opex",
+   "amount": -1930.3
+  },
+  {
+   "week_index": -27,
+   "week_ending": "2026-05-10",
+   "store": "Store 3",
+   "account": "revenue",
+   "amount": 14953.64
+  },
+  {
+   "week_index": -27,
+   "week_ending": "2026-05-10",
+   "store": "Store 3",
+   "account": "cogs",
+   "amount": -9719.87
+  },
+  {
+   "week_index": -27,
+   "week_ending": "2026-05-10",
+   "store": "Store 3",
+   "account": "payroll",
+   "amount": -3600.0
+  },
+  {
+   "week_index": -27,
+   "week_ending": "2026-05-10",
+   "store": "Store 3",
+   "account": "opex",
+   "amount": -1911.36
+  },
+  {
+   "week_index": -27,
+   "week_ending": "2026-05-10",
+   "store": "Head office",
+   "account": "interest",
+   "amount": -923.08
+  },
+  {
+   "week_index": -26,
+   "week_ending": "2026-05-17",
+   "store": "Store 1",
+   "account": "revenue",
+   "amount": 16748.97
+  },
+  {
+   "week_index": -26,
+   "week_ending": "2026-05-17",
+   "store": "Store 1",
+   "account": "cogs",
+   "amount": -10886.83
+  },
+  {
+   "week_index": -26,
+   "week_ending": "2026-05-17",
+   "store": "Store 1",
+   "account": "payroll",
+   "amount": -4320.0
+  },
+  {
+   "week_index": -26,
+   "week_ending": "2026-05-17",
+   "store": "Store 1",
+   "account": "opex",
+   "amount": -2401.57
+  },
+  {
+   "week_index": -26,
+   "week_ending": "2026-05-17",
+   "store": "Store 2",
+   "account": "revenue",
+   "amount": 16907.73
+  },
+  {
+   "week_index": -26,
+   "week_ending": "2026-05-17",
+   "store": "Store 2",
+   "account": "cogs",
+   "amount": -10990.02
+  },
+  {
+   "week_index": -26,
+   "week_ending": "2026-05-17",
+   "store": "Store 2",
+   "account": "payroll",
+   "amount": -4080.0
+  },
+  {
+   "week_index": -26,
+   "week_ending": "2026-05-17",
+   "store": "Store 2",
+   "account": "opex",
+   "amount": -2068.35
+  },
+  {
+   "week_index": -26,
+   "week_ending": "2026-05-17",
+   "store": "Store 3",
+   "account": "revenue",
+   "amount": 14253.99
+  },
+  {
+   "week_index": -26,
+   "week_ending": "2026-05-17",
+   "store": "Store 3",
+   "account": "cogs",
+   "amount": -9265.09
+  },
+  {
+   "week_index": -26,
+   "week_ending": "2026-05-17",
+   "store": "Store 3",
+   "account": "payroll",
+   "amount": -3600.0
+  },
+  {
+   "week_index": -26,
+   "week_ending": "2026-05-17",
+   "store": "Store 3",
+   "account": "opex",
+   "amount": -1611.42
+  },
+  {
+   "week_index": -26,
+   "week_ending": "2026-05-17",
+   "store": "Head office",
+   "account": "interest",
+   "amount": -923.08
+  },
+  {
+   "week_index": -25,
+   "week_ending": "2026-05-24",
+   "store": "Store 1",
+   "account": "revenue",
+   "amount": 16390.97
+  },
+  {
+   "week_index": -25,
+   "week_ending": "2026-05-24",
+   "store": "Store 1",
+   "account": "cogs",
+   "amount": -10654.13
+  },
+  {
+   "week_index": -25,
+   "week_ending": "2026-05-24",
+   "store": "Store 1",
+   "account": "payroll",
+   "amount": -4320.0
+  },
+  {
+   "week_index": -25,
+   "week_ending": "2026-05-24",
+   "store": "Store 1",
+   "account": "opex",
+   "amount": -2019.65
+  },
+  {
+   "week_index": -25,
+   "week_ending": "2026-05-24",
+   "store": "Store 2",
+   "account": "revenue",
+   "amount": 15531.61
+  },
+  {
+   "week_index": -25,
+   "week_ending": "2026-05-24",
+   "store": "Store 2",
+   "account": "cogs",
+   "amount": -10095.55
+  },
+  {
+   "week_index": -25,
+   "week_ending": "2026-05-24",
+   "store": "Store 2",
+   "account": "payroll",
+   "amount": -4080.0
+  },
+  {
+   "week_index": -25,
+   "week_ending": "2026-05-24",
+   "store": "Store 2",
+   "account": "opex",
+   "amount": -2087.2
+  },
+  {
+   "week_index": -25,
+   "week_ending": "2026-05-24",
+   "store": "Store 3",
+   "account": "revenue",
+   "amount": 14451.02
+  },
+  {
+   "week_index": -25,
+   "week_ending": "2026-05-24",
+   "store": "Store 3",
+   "account": "cogs",
+   "amount": -9393.16
+  },
+  {
+   "week_index": -25,
+   "week_ending": "2026-05-24",
+   "store": "Store 3",
+   "account": "payroll",
+   "amount": -3600.0
+  },
+  {
+   "week_index": -25,
+   "week_ending": "2026-05-24",
+   "store": "Store 3",
+   "account": "opex",
+   "amount": -1713.94
+  },
+  {
+   "week_index": -25,
+   "week_ending": "2026-05-24",
+   "store": "Head office",
+   "account": "interest",
+   "amount": -923.08
+  },
+  {
+   "week_index": -24,
+   "week_ending": "2026-05-31",
+   "store": "Store 1",
+   "account": "revenue",
+   "amount": 17122.28
+  },
+  {
+   "week_index": -24,
+   "week_ending": "2026-05-31",
+   "store": "Store 1",
+   "account": "cogs",
+   "amount": -11129.48
+  },
+  {
+   "week_index": -24,
+   "week_ending": "2026-05-31",
+   "store": "Store 1",
+   "account": "payroll",
+   "amount": -4320.0
+  },
+  {
+   "week_index": -24,
+   "week_ending": "2026-05-31",
+   "store": "Store 1",
+   "account": "opex",
+   "amount": -2212.61
+  },
+  {
+   "week_index": -24,
+   "week_ending": "2026-05-31",
+   "store": "Store 2",
+   "account": "revenue",
+   "amount": 16843.1
+  },
+  {
+   "week_index": -24,
+   "week_ending": "2026-05-31",
+   "store": "Store 2",
+   "account": "cogs",
+   "amount": -10948.01
+  },
+  {
+   "week_index": -24,
+   "week_ending": "2026-05-31",
+   "store": "Store 2",
+   "account": "payroll",
+   "amount": -4080.0
+  },
+  {
+   "week_index": -24,
+   "week_ending": "2026-05-31",
+   "store": "Store 2",
+   "account": "opex",
+   "amount": -2106.18
+  },
+  {
+   "week_index": -24,
+   "week_ending": "2026-05-31",
+   "store": "Store 3",
+   "account": "revenue",
+   "amount": 15797.27
+  },
+  {
+   "week_index": -24,
+   "week_ending": "2026-05-31",
+   "store": "Store 3",
+   "account": "cogs",
+   "amount": -10268.23
+  },
+  {
+   "week_index": -24,
+   "week_ending": "2026-05-31",
+   "store": "Store 3",
+   "account": "payroll",
+   "amount": -3600.0
+  },
+  {
+   "week_index": -24,
+   "week_ending": "2026-05-31",
+   "store": "Store 3",
+   "account": "opex",
+   "amount": -1866.42
+  },
+  {
+   "week_index": -24,
+   "week_ending": "2026-05-31",
+   "store": "Head office",
+   "account": "interest",
+   "amount": -923.08
+  },
+  {
+   "week_index": -23,
+   "week_ending": "2026-06-07",
+   "store": "Store 1",
+   "account": "revenue",
+   "amount": 17123.03
+  },
+  {
+   "week_index": -23,
+   "week_ending": "2026-06-07",
+   "store": "Store 1",
+   "account": "cogs",
+   "amount": -11129.97
+  },
+  {
+   "week_index": -23,
+   "week_ending": "2026-06-07",
+   "store": "Store 1",
+   "account": "payroll",
+   "amount": -4320.0
+  },
+  {
+   "week_index": -23,
+   "week_ending": "2026-06-07",
+   "store": "Store 1",
+   "account": "opex",
+   "amount": -2182.5
+  },
+  {
+   "week_index": -23,
+   "week_ending": "2026-06-07",
+   "store": "Store 2",
+   "account": "revenue",
+   "amount": 16692.27
+  },
+  {
+   "week_index": -23,
+   "week_ending": "2026-06-07",
+   "store": "Store 2",
+   "account": "cogs",
+   "amount": -10849.98
+  },
+  {
+   "week_index": -23,
+   "week_ending": "2026-06-07",
+   "store": "Store 2",
+   "account": "payroll",
+   "amount": -4080.0
+  },
+  {
+   "week_index": -23,
+   "week_ending": "2026-06-07",
+   "store": "Store 2",
+   "account": "opex",
+   "amount": -1950.85
+  },
+  {
+   "week_index": -23,
+   "week_ending": "2026-06-07",
+   "store": "Store 3",
+   "account": "revenue",
+   "amount": 14146.65
+  },
+  {
+   "week_index": -23,
+   "week_ending": "2026-06-07",
+   "store": "Store 3",
+   "account": "cogs",
+   "amount": -9195.32
+  },
+  {
+   "week_index": -23,
+   "week_ending": "2026-06-07",
+   "store": "Store 3",
+   "account": "payroll",
+   "amount": -3600.0
+  },
+  {
+   "week_index": -23,
+   "week_ending": "2026-06-07",
+   "store": "Store 3",
+   "account": "opex",
+   "amount": -1820.64
+  },
+  {
+   "week_index": -23,
+   "week_ending": "2026-06-07",
+   "store": "Head office",
+   "account": "interest",
+   "amount": -923.08
+  },
+  {
+   "week_index": -22,
+   "week_ending": "2026-06-14",
+   "store": "Store 1",
+   "account": "revenue",
+   "amount": 17231.29
+  },
+  {
+   "week_index": -22,
+   "week_ending": "2026-06-14",
+   "store": "Store 1",
+   "account": "cogs",
+   "amount": -11200.34
+  },
+  {
+   "week_index": -22,
+   "week_ending": "2026-06-14",
+   "store": "Store 1",
+   "account": "payroll",
+   "amount": -4320.0
+  },
+  {
+   "week_index": -22,
+   "week_ending": "2026-06-14",
+   "store": "Store 1",
+   "account": "opex",
+   "amount": -2201.48
+  },
+  {
+   "week_index": -22,
+   "week_ending": "2026-06-14",
+   "store": "Store 2",
+   "account": "revenue",
+   "amount": 16501.87
+  },
+  {
+   "week_index": -22,
+   "week_ending": "2026-06-14",
+   "store": "Store 2",
+   "account": "cogs",
+   "amount": -10726.22
+  },
+  {
+   "week_index": -22,
+   "week_ending": "2026-06-14",
+   "store": "Store 2",
+   "account": "payroll",
+   "amount": -4080.0
+  },
+  {
+   "week_index": -22,
+   "week_ending": "2026-06-14",
+   "store": "Store 2",
+   "account": "opex",
+   "amount": -1992.22
+  },
+  {
+   "week_index": -22,
+   "week_ending": "2026-06-14",
+   "store": "Store 3",
+   "account": "revenue",
+   "amount": 14631.23
+  },
+  {
+   "week_index": -22,
+   "week_ending": "2026-06-14",
+   "store": "Store 3",
+   "account": "cogs",
+   "amount": -9510.3
+  },
+  {
+   "week_index": -22,
+   "week_ending": "2026-06-14",
+   "store": "Store 3",
+   "account": "payroll",
+   "amount": -3600.0
+  },
+  {
+   "week_index": -22,
+   "week_ending": "2026-06-14",
+   "store": "Store 3",
+   "account": "opex",
+   "amount": -1859.78
+  },
+  {
+   "week_index": -22,
+   "week_ending": "2026-06-14",
+   "store": "Head office",
+   "account": "interest",
+   "amount": -923.08
+  },
+  {
+   "week_index": -21,
+   "week_ending": "2026-06-21",
+   "store": "Store 1",
+   "account": "revenue",
+   "amount": 16998.99
+  },
+  {
+   "week_index": -21,
+   "week_ending": "2026-06-21",
+   "store": "Store 1",
+   "account": "cogs",
+   "amount": -11049.34
+  },
+  {
+   "week_index": -21,
+   "week_ending": "2026-06-21",
+   "store": "Store 1",
+   "account": "payroll",
+   "amount": -4320.0
+  },
+  {
+   "week_index": -21,
+   "week_ending": "2026-06-21",
+   "store": "Store 1",
+   "account": "opex",
+   "amount": -2198.56
+  },
+  {
+   "week_index": -21,
+   "week_ending": "2026-06-21",
+   "store": "Store 2",
+   "account": "revenue",
+   "amount": 15916.17
+  },
+  {
+   "week_index": -21,
+   "week_ending": "2026-06-21",
+   "store": "Store 2",
+   "account": "cogs",
+   "amount": -10345.51
+  },
+  {
+   "week_index": -21,
+   "week_ending": "2026-06-21",
+   "store": "Store 2",
+   "account": "payroll",
+   "amount": -4080.0
+  },
+  {
+   "week_index": -21,
+   "week_ending": "2026-06-21",
+   "store": "Store 2",
+   "account": "opex",
+   "amount": -2176.07
+  },
+  {
+   "week_index": -21,
+   "week_ending": "2026-06-21",
+   "store": "Store 3",
+   "account": "revenue",
+   "amount": 13792.01
+  },
+  {
+   "week_index": -21,
+   "week_ending": "2026-06-21",
+   "store": "Store 3",
+   "account": "cogs",
+   "amount": -8964.81
+  },
+  {
+   "week_index": -21,
+   "week_ending": "2026-06-21",
+   "store": "Store 3",
+   "account": "payroll",
+   "amount": -3600.0
+  },
+  {
+   "week_index": -21,
+   "week_ending": "2026-06-21",
+   "store": "Store 3",
+   "account": "opex",
+   "amount": -1840.32
+  },
+  {
+   "week_index": -21,
+   "week_ending": "2026-06-21",
+   "store": "Head office",
+   "account": "interest",
+   "amount": -923.08
+  },
+  {
+   "week_index": -20,
+   "week_ending": "2026-06-28",
+   "store": "Store 1",
+   "account": "revenue",
+   "amount": 17517.72
+  },
+  {
+   "week_index": -20,
+   "week_ending": "2026-06-28",
+   "store": "Store 1",
+   "account": "cogs",
+   "amount": -11386.52
+  },
+  {
+   "week_index": -20,
+   "week_ending": "2026-06-28",
+   "store": "Store 1",
+   "account": "payroll",
+   "amount": -4320.0
+  },
+  {
+   "week_index": -20,
+   "week_ending": "2026-06-28",
+   "store": "Store 1",
+   "account": "opex",
+   "amount": -2153.1
+  },
+  {
+   "week_index": -20,
+   "week_ending": "2026-06-28",
+   "store": "Store 2",
+   "account": "revenue",
+   "amount": 15586.99
+  },
+  {
+   "week_index": -20,
+   "week_ending": "2026-06-28",
+   "store": "Store 2",
+   "account": "cogs",
+   "amount": -10131.54
+  },
+  {
+   "week_index": -20,
+   "week_ending": "2026-06-28",
+   "store": "Store 2",
+   "account": "payroll",
+   "amount": -4080.0
+  },
+  {
+   "week_index": -20,
+   "week_ending": "2026-06-28",
+   "store": "Store 2",
+   "account": "opex",
+   "amount": -2016.11
+  },
+  {
+   "week_index": -20,
+   "week_ending": "2026-06-28",
+   "store": "Store 3",
+   "account": "revenue",
+   "amount": 14324.03
+  },
+  {
+   "week_index": -20,
+   "week_ending": "2026-06-28",
+   "store": "Store 3",
+   "account": "cogs",
+   "amount": -9310.62
+  },
+  {
+   "week_index": -20,
+   "week_ending": "2026-06-28",
+   "store": "Store 3",
+   "account": "payroll",
+   "amount": -3600.0
+  },
+  {
+   "week_index": -20,
+   "week_ending": "2026-06-28",
+   "store": "Store 3",
+   "account": "opex",
+   "amount": -1838.41
+  },
+  {
+   "week_index": -20,
+   "week_ending": "2026-06-28",
+   "store": "Head office",
+   "account": "interest",
+   "amount": -923.08
+  },
+  {
+   "week_index": -19,
+   "week_ending": "2026-07-05",
+   "store": "Store 1",
+   "account": "revenue",
+   "amount": 15943.7
+  },
+  {
+   "week_index": -19,
+   "week_ending": "2026-07-05",
+   "store": "Store 1",
+   "account": "cogs",
+   "amount": -10363.41
+  },
+  {
+   "week_index": -19,
+   "week_ending": "2026-07-05",
+   "store": "Store 1",
+   "account": "payroll",
+   "amount": -4320.0
+  },
+  {
+   "week_index": -19,
+   "week_ending": "2026-07-05",
+   "store": "Store 1",
+   "account": "opex",
+   "amount": -2254.68
+  },
+  {
+   "week_index": -19,
+   "week_ending": "2026-07-05",
+   "store": "Store 2",
+   "account": "revenue",
+   "amount": 15436.87
+  },
+  {
+   "week_index": -19,
+   "week_ending": "2026-07-05",
+   "store": "Store 2",
+   "account": "cogs",
+   "amount": -10033.97
+  },
+  {
+   "week_index": -19,
+   "week_ending": "2026-07-05",
+   "store": "Store 2",
+   "account": "payroll",
+   "amount": -4080.0
+  },
+  {
+   "week_index": -19,
+   "week_ending": "2026-07-05",
+   "store": "Store 2",
+   "account": "opex",
+   "amount": -1931.47
+  },
+  {
+   "week_index": -19,
+   "week_ending": "2026-07-05",
+   "store": "Store 3",
+   "account": "revenue",
+   "amount": 14324.3
+  },
+  {
+   "week_index": -19,
+   "week_ending": "2026-07-05",
+   "store": "Store 3",
+   "account": "cogs",
+   "amount": -9310.8
+  },
+  {
+   "week_index": -19,
+   "week_ending": "2026-07-05",
+   "store": "Store 3",
+   "account": "payroll",
+   "amount": -3600.0
+  },
+  {
+   "week_index": -19,
+   "week_ending": "2026-07-05",
+   "store": "Store 3",
+   "account": "opex",
+   "amount": -1783.15
+  },
+  {
+   "week_index": -19,
+   "week_ending": "2026-07-05",
+   "store": "Head office",
+   "account": "interest",
+   "amount": -923.08
+  },
+  {
+   "week_index": -18,
+   "week_ending": "2026-07-12",
+   "store": "Store 1",
+   "account": "revenue",
+   "amount": 16715.0
+  },
+  {
+   "week_index": -18,
+   "week_ending": "2026-07-12",
+   "store": "Store 1",
+   "account": "cogs",
+   "amount": -10864.75
+  },
+  {
+   "week_index": -18,
+   "week_ending": "2026-07-12",
+   "store": "Store 1",
+   "account": "payroll",
+   "amount": -4320.0
+  },
+  {
+   "week_index": -18,
+   "week_ending": "2026-07-12",
+   "store": "Store 1",
+   "account": "opex",
+   "amount": -2180.54
+  },
+  {
+   "week_index": -18,
+   "week_ending": "2026-07-12",
+   "store": "Store 2",
+   "account": "revenue",
+   "amount": 16338.15
+  },
+  {
+   "week_index": -18,
+   "week_ending": "2026-07-12",
+   "store": "Store 2",
+   "account": "cogs",
+   "amount": -10619.8
+  },
+  {
+   "week_index": -18,
+   "week_ending": "2026-07-12",
+   "store": "Store 2",
+   "account": "payroll",
+   "amount": -4080.0
+  },
+  {
+   "week_index": -18,
+   "week_ending": "2026-07-12",
+   "store": "Store 2",
+   "account": "opex",
+   "amount": -2076.79
+  },
+  {
+   "week_index": -18,
+   "week_ending": "2026-07-12",
+   "store": "Store 3",
+   "account": "revenue",
+   "amount": 13650.25
+  },
+  {
+   "week_index": -18,
+   "week_ending": "2026-07-12",
+   "store": "Store 3",
+   "account": "cogs",
+   "amount": -8872.66
+  },
+  {
+   "week_index": -18,
+   "week_ending": "2026-07-12",
+   "store": "Store 3",
+   "account": "payroll",
+   "amount": -3600.0
+  },
+  {
+   "week_index": -18,
+   "week_ending": "2026-07-12",
+   "store": "Store 3",
+   "account": "opex",
+   "amount": -1827.2
+  },
+  {
+   "week_index": -18,
+   "week_ending": "2026-07-12",
+   "store": "Head office",
+   "account": "interest",
+   "amount": -923.08
+  },
+  {
+   "week_index": -17,
+   "week_ending": "2026-07-19",
+   "store": "Store 1",
+   "account": "revenue",
+   "amount": 16961.79
+  },
+  {
+   "week_index": -17,
+   "week_ending": "2026-07-19",
+   "store": "Store 1",
+   "account": "cogs",
+   "amount": -11025.16
+  },
+  {
+   "week_index": -17,
+   "week_ending": "2026-07-19",
+   "store": "Store 1",
+   "account": "payroll",
+   "amount": -4320.0
+  },
+  {
+   "week_index": -17,
+   "week_ending": "2026-07-19",
+   "store": "Store 1",
+   "account": "opex",
+   "amount": -2329.62
+  },
+  {
+   "week_index": -17,
+   "week_ending": "2026-07-19",
+   "store": "Store 2",
+   "account": "revenue",
+   "amount": 15953.33
+  },
+  {
+   "week_index": -17,
+   "week_ending": "2026-07-19",
+   "store": "Store 2",
+   "account": "cogs",
+   "amount": -10369.66
+  },
+  {
+   "week_index": -17,
+   "week_ending": "2026-07-19",
+   "store": "Store 2",
+   "account": "payroll",
+   "amount": -4080.0
+  },
+  {
+   "week_index": -17,
+   "week_ending": "2026-07-19",
+   "store": "Store 2",
+   "account": "opex",
+   "amount": -2054.15
+  },
+  {
+   "week_index": -17,
+   "week_ending": "2026-07-19",
+   "store": "Store 3",
+   "account": "revenue",
+   "amount": 15543.83
+  },
+  {
+   "week_index": -17,
+   "week_ending": "2026-07-19",
+   "store": "Store 3",
+   "account": "cogs",
+   "amount": -10103.49
+  },
+  {
+   "week_index": -17,
+   "week_ending": "2026-07-19",
+   "store": "Store 3",
+   "account": "payroll",
+   "amount": -3600.0
+  },
+  {
+   "week_index": -17,
+   "week_ending": "2026-07-19",
+   "store": "Store 3",
+   "account": "opex",
+   "amount": -1814.63
+  },
+  {
+   "week_index": -17,
+   "week_ending": "2026-07-19",
+   "store": "Head office",
+   "account": "interest",
+   "amount": -923.08
+  },
+  {
+   "week_index": -16,
+   "week_ending": "2026-07-26",
+   "store": "Store 1",
+   "account": "revenue",
+   "amount": 16483.32
+  },
+  {
+   "week_index": -16,
+   "week_ending": "2026-07-26",
+   "store": "Store 1",
+   "account": "cogs",
+   "amount": -10714.16
+  },
+  {
+   "week_index": -16,
+   "week_ending": "2026-07-26",
+   "store": "Store 1",
+   "account": "payroll",
+   "amount": -4320.0
+  },
+  {
+   "week_index": -16,
+   "week_ending": "2026-07-26",
+   "store": "Store 1",
+   "account": "opex",
+   "amount": -2205.12
+  },
+  {
+   "week_index": -16,
+   "week_ending": "2026-07-26",
+   "store": "Store 2",
+   "account": "revenue",
+   "amount": 16056.29
+  },
+  {
+   "week_index": -16,
+   "week_ending": "2026-07-26",
+   "store": "Store 2",
+   "account": "cogs",
+   "amount": -10436.59
+  },
+  {
+   "week_index": -16,
+   "week_ending": "2026-07-26",
+   "store": "Store 2",
+   "account": "payroll",
+   "amount": -4080.0
+  },
+  {
+   "week_index": -16,
+   "week_ending": "2026-07-26",
+   "store": "Store 2",
+   "account": "opex",
+   "amount": -1929.56
+  },
+  {
+   "week_index": -16,
+   "week_ending": "2026-07-26",
+   "store": "Store 3",
+   "account": "revenue",
+   "amount": 14532.6
+  },
+  {
+   "week_index": -16,
+   "week_ending": "2026-07-26",
+   "store": "Store 3",
+   "account": "cogs",
+   "amount": -9446.19
+  },
+  {
+   "week_index": -16,
+   "week_ending": "2026-07-26",
+   "store": "Store 3",
+   "account": "payroll",
+   "amount": -3600.0
+  },
+  {
+   "week_index": -16,
+   "week_ending": "2026-07-26",
+   "store": "Store 3",
+   "account": "opex",
+   "amount": -1716.75
+  },
+  {
+   "week_index": -16,
+   "week_ending": "2026-07-26",
+   "store": "Head office",
+   "account": "interest",
+   "amount": -923.08
+  },
+  {
+   "week_index": -15,
+   "week_ending": "2026-08-02",
+   "store": "Store 1",
+   "account": "revenue",
+   "amount": 16740.23
+  },
+  {
+   "week_index": -15,
+   "week_ending": "2026-08-02",
+   "store": "Store 1",
+   "account": "cogs",
+   "amount": -10881.15
+  },
+  {
+   "week_index": -15,
+   "week_ending": "2026-08-02",
+   "store": "Store 1",
+   "account": "payroll",
+   "amount": -4320.0
+  },
+  {
+   "week_index": -15,
+   "week_ending": "2026-08-02",
+   "store": "Store 1",
+   "account": "opex",
+   "amount": -2154.23
+  },
+  {
+   "week_index": -15,
+   "week_ending": "2026-08-02",
+   "store": "Store 2",
+   "account": "revenue",
+   "amount": 15653.51
+  },
+  {
+   "week_index": -15,
+   "week_ending": "2026-08-02",
+   "store": "Store 2",
+   "account": "cogs",
+   "amount": -10174.78
+  },
+  {
+   "week_index": -15,
+   "week_ending": "2026-08-02",
+   "store": "Store 2",
+   "account": "payroll",
+   "amount": -4080.0
+  },
+  {
+   "week_index": -15,
+   "week_ending": "2026-08-02",
+   "store": "Store 2",
+   "account": "opex",
+   "amount": -2029.57
+  },
+  {
+   "week_index": -15,
+   "week_ending": "2026-08-02",
+   "store": "Store 3",
+   "account": "revenue",
+   "amount": 14867.54
+  },
+  {
+   "week_index": -15,
+   "week_ending": "2026-08-02",
+   "store": "Store 3",
+   "account": "cogs",
+   "amount": -9663.9
+  },
+  {
+   "week_index": -15,
+   "week_ending": "2026-08-02",
+   "store": "Store 3",
+   "account": "payroll",
+   "amount": -3600.0
+  },
+  {
+   "week_index": -15,
+   "week_ending": "2026-08-02",
+   "store": "Store 3",
+   "account": "opex",
+   "amount": -1948.48
+  },
+  {
+   "week_index": -15,
+   "week_ending": "2026-08-02",
+   "store": "Head office",
+   "account": "interest",
+   "amount": -923.08
+  },
+  {
+   "week_index": -14,
+   "week_ending": "2026-08-09",
+   "store": "Store 1",
+   "account": "revenue",
+   "amount": 18192.38
+  },
+  {
+   "week_index": -14,
+   "week_ending": "2026-08-09",
+   "store": "Store 1",
+   "account": "cogs",
+   "amount": -11825.05
+  },
+  {
+   "week_index": -14,
+   "week_ending": "2026-08-09",
+   "store": "Store 1",
+   "account": "payroll",
+   "amount": -4320.0
+  },
+  {
+   "week_index": -14,
+   "week_ending": "2026-08-09",
+   "store": "Store 1",
+   "account": "opex",
+   "amount": -2208.45
+  },
+  {
+   "week_index": -14,
+   "week_ending": "2026-08-09",
+   "store": "Store 2",
+   "account": "revenue",
+   "amount": 16954.32
+  },
+  {
+   "week_index": -14,
+   "week_ending": "2026-08-09",
+   "store": "Store 2",
+   "account": "cogs",
+   "amount": -11020.31
+  },
+  {
+   "week_index": -14,
+   "week_ending": "2026-08-09",
+   "store": "Store 2",
+   "account": "payroll",
+   "amount": -4080.0
+  },
+  {
+   "week_index": -14,
+   "week_ending": "2026-08-09",
+   "store": "Store 2",
+   "account": "opex",
+   "amount": -1984.46
+  },
+  {
+   "week_index": -14,
+   "week_ending": "2026-08-09",
+   "store": "Store 3",
+   "account": "revenue",
+   "amount": 14250.49
+  },
+  {
+   "week_index": -14,
+   "week_ending": "2026-08-09",
+   "store": "Store 3",
+   "account": "cogs",
+   "amount": -9262.82
+  },
+  {
+   "week_index": -14,
+   "week_ending": "2026-08-09",
+   "store": "Store 3",
+   "account": "payroll",
+   "amount": -3600.0
+  },
+  {
+   "week_index": -14,
+   "week_ending": "2026-08-09",
+   "store": "Store 3",
+   "account": "opex",
+   "amount": -1933.68
+  },
+  {
+   "week_index": -14,
+   "week_ending": "2026-08-09",
+   "store": "Head office",
+   "account": "interest",
+   "amount": -923.08
+  },
+  {
+   "week_index": -13,
+   "week_ending": "2026-08-16",
+   "store": "Store 1",
+   "account": "revenue",
+   "amount": 17201.17
+  },
+  {
+   "week_index": -13,
+   "week_ending": "2026-08-16",
+   "store": "Store 1",
+   "account": "cogs",
+   "amount": -11180.76
+  },
+  {
+   "week_index": -13,
+   "week_ending": "2026-08-16",
+   "store": "Store 1",
+   "account": "payroll",
+   "amount": -4320.0
+  },
+  {
+   "week_index": -13,
+   "week_ending": "2026-08-16",
+   "store": "Store 1",
+   "account": "opex",
+   "amount": -2126.15
+  },
+  {
+   "week_index": -13,
+   "week_ending": "2026-08-16",
+   "store": "Store 2",
+   "account": "revenue",
+   "amount": 15962.8
+  },
+  {
+   "week_index": -13,
+   "week_ending": "2026-08-16",
+   "store": "Store 2",
+   "account": "cogs",
+   "amount": -10375.82
+  },
+  {
+   "week_index": -13,
+   "week_ending": "2026-08-16",
+   "store": "Store 2",
+   "account": "payroll",
+   "amount": -4080.0
+  },
+  {
+   "week_index": -13,
+   "week_ending": "2026-08-16",
+   "store": "Store 2",
+   "account": "opex",
+   "amount": -1952.95
+  },
+  {
+   "week_index": -13,
+   "week_ending": "2026-08-16",
+   "store": "Store 3",
+   "account": "revenue",
+   "amount": 14773.51
+  },
+  {
+   "week_index": -13,
+   "week_ending": "2026-08-16",
+   "store": "Store 3",
+   "account": "cogs",
+   "amount": -9602.78
+  },
+  {
+   "week_index": -13,
+   "week_ending": "2026-08-16",
+   "store": "Store 3",
+   "account": "payroll",
+   "amount": -3600.0
+  },
+  {
+   "week_index": -13,
+   "week_ending": "2026-08-16",
+   "store": "Store 3",
+   "account": "opex",
+   "amount": -1875.21
+  },
+  {
+   "week_index": -13,
+   "week_ending": "2026-08-16",
+   "store": "Head office",
+   "account": "interest",
+   "amount": -923.08
+  },
+  {
+   "week_index": -12,
+   "week_ending": "2026-08-23",
+   "store": "Store 1",
+   "account": "revenue",
+   "amount": 16648.47
+  },
+  {
+   "week_index": -12,
+   "week_ending": "2026-08-23",
+   "store": "Store 1",
+   "account": "cogs",
+   "amount": -10821.51
+  },
+  {
+   "week_index": -12,
+   "week_ending": "2026-08-23",
+   "store": "Store 1",
+   "account": "payroll",
+   "amount": -4320.0
+  },
+  {
+   "week_index": -12,
+   "week_ending": "2026-08-23",
+   "store": "Store 1",
+   "account": "opex",
+   "amount": -2166.69
+  },
+  {
+   "week_index": -12,
+   "week_ending": "2026-08-23",
+   "store": "Store 2",
+   "account": "revenue",
+   "amount": 16327.65
+  },
+  {
+   "week_index": -12,
+   "week_ending": "2026-08-23",
+   "store": "Store 2",
+   "account": "cogs",
+   "amount": -10612.97
+  },
+  {
+   "week_index": -12,
+   "week_ending": "2026-08-23",
+   "store": "Store 2",
+   "account": "payroll",
+   "amount": -4080.0
+  },
+  {
+   "week_index": -12,
+   "week_ending": "2026-08-23",
+   "store": "Store 2",
+   "account": "opex",
+   "amount": -2124.98
+  },
+  {
+   "week_index": -12,
+   "week_ending": "2026-08-23",
+   "store": "Store 3",
+   "account": "revenue",
+   "amount": 14584.53
+  },
+  {
+   "week_index": -12,
+   "week_ending": "2026-08-23",
+   "store": "Store 3",
+   "account": "cogs",
+   "amount": -9479.94
+  },
+  {
+   "week_index": -12,
+   "week_ending": "2026-08-23",
+   "store": "Store 3",
+   "account": "payroll",
+   "amount": -3600.0
+  },
+  {
+   "week_index": -12,
+   "week_ending": "2026-08-23",
+   "store": "Store 3",
+   "account": "opex",
+   "amount": -1825.33
+  },
+  {
+   "week_index": -12,
+   "week_ending": "2026-08-23",
+   "store": "Head office",
+   "account": "interest",
+   "amount": -923.08
+  },
+  {
+   "week_index": -11,
+   "week_ending": "2026-08-30",
+   "store": "Store 1",
+   "account": "revenue",
+   "amount": 17117.98
+  },
+  {
+   "week_index": -11,
+   "week_ending": "2026-08-30",
+   "store": "Store 1",
+   "account": "cogs",
+   "amount": -11126.69
+  },
+  {
+   "week_index": -11,
+   "week_ending": "2026-08-30",
+   "store": "Store 1",
+   "account": "payroll",
+   "amount": -4320.0
+  },
+  {
+   "week_index": -11,
+   "week_ending": "2026-08-30",
+   "store": "Store 1",
+   "account": "opex",
+   "amount": -1989.42
+  },
+  {
+   "week_index": -11,
+   "week_ending": "2026-08-30",
+   "store": "Store 2",
+   "account": "revenue",
+   "amount": 17105.15
+  },
+  {
+   "week_index": -11,
+   "week_ending": "2026-08-30",
+   "store": "Store 2",
+   "account": "cogs",
+   "amount": -11118.35
+  },
+  {
+   "week_index": -11,
+   "week_ending": "2026-08-30",
+   "store": "Store 2",
+   "account": "payroll",
+   "amount": -4080.0
+  },
+  {
+   "week_index": -11,
+   "week_ending": "2026-08-30",
+   "store": "Store 2",
+   "account": "opex",
+   "amount": -2137.81
+  },
+  {
+   "week_index": -11,
+   "week_ending": "2026-08-30",
+   "store": "Store 3",
+   "account": "revenue",
+   "amount": 14312.01
+  },
+  {
+   "week_index": -11,
+   "week_ending": "2026-08-30",
+   "store": "Store 3",
+   "account": "cogs",
+   "amount": -9302.81
+  },
+  {
+   "week_index": -11,
+   "week_ending": "2026-08-30",
+   "store": "Store 3",
+   "account": "payroll",
+   "amount": -3600.0
+  },
+  {
+   "week_index": -11,
+   "week_ending": "2026-08-30",
+   "store": "Store 3",
+   "account": "opex",
+   "amount": -1879.53
+  },
+  {
+   "week_index": -11,
+   "week_ending": "2026-08-30",
+   "store": "Head office",
+   "account": "interest",
+   "amount": -923.08
+  },
+  {
+   "week_index": -10,
+   "week_ending": "2026-09-06",
+   "store": "Store 1",
+   "account": "revenue",
+   "amount": 18421.85
+  },
+  {
+   "week_index": -10,
+   "week_ending": "2026-09-06",
+   "store": "Store 1",
+   "account": "cogs",
+   "amount": -11974.2
+  },
+  {
+   "week_index": -10,
+   "week_ending": "2026-09-06",
+   "store": "Store 1",
+   "account": "payroll",
+   "amount": -4320.0
+  },
+  {
+   "week_index": -10,
+   "week_ending": "2026-09-06",
+   "store": "Store 1",
+   "account": "opex",
+   "amount": -1958.66
+  },
+  {
+   "week_index": -10,
+   "week_ending": "2026-09-06",
+   "store": "Store 2",
+   "account": "revenue",
+   "amount": 16842.2
+  },
+  {
+   "week_index": -10,
+   "week_ending": "2026-09-06",
+   "store": "Store 2",
+   "account": "cogs",
+   "amount": -10947.43
+  },
+  {
+   "week_index": -10,
+   "week_ending": "2026-09-06",
+   "store": "Store 2",
+   "account": "payroll",
+   "amount": -4080.0
+  },
+  {
+   "week_index": -10,
+   "week_ending": "2026-09-06",
+   "store": "Store 2",
+   "account": "opex",
+   "amount": -2000.3
+  },
+  {
+   "week_index": -10,
+   "week_ending": "2026-09-06",
+   "store": "Store 3",
+   "account": "revenue",
+   "amount": 14745.7
+  },
+  {
+   "week_index": -10,
+   "week_ending": "2026-09-06",
+   "store": "Store 3",
+   "account": "cogs",
+   "amount": -9584.7
+  },
+  {
+   "week_index": -10,
+   "week_ending": "2026-09-06",
+   "store": "Store 3",
+   "account": "payroll",
+   "amount": -3600.0
+  },
+  {
+   "week_index": -10,
+   "week_ending": "2026-09-06",
+   "store": "Store 3",
+   "account": "opex",
+   "amount": -1725.97
+  },
+  {
+   "week_index": -10,
+   "week_ending": "2026-09-06",
+   "store": "Head office",
+   "account": "interest",
+   "amount": -923.08
+  },
+  {
+   "week_index": -9,
+   "week_ending": "2026-09-13",
+   "store": "Store 1",
+   "account": "revenue",
+   "amount": 17187.26
+  },
+  {
+   "week_index": -9,
+   "week_ending": "2026-09-13",
+   "store": "Store 1",
+   "account": "cogs",
+   "amount": -11171.72
+  },
+  {
+   "week_index": -9,
+   "week_ending": "2026-09-13",
+   "store": "Store 1",
+   "account": "payroll",
+   "amount": -4320.0
+  },
+  {
+   "week_index": -9,
+   "week_ending": "2026-09-13",
+   "store": "Store 1",
+   "account": "opex",
+   "amount": -2116.43
+  },
+  {
+   "week_index": -9,
+   "week_ending": "2026-09-13",
+   "store": "Store 2",
+   "account": "revenue",
+   "amount": 16240.45
+  },
+  {
+   "week_index": -9,
+   "week_ending": "2026-09-13",
+   "store": "Store 2",
+   "account": "cogs",
+   "amount": -10556.29
+  },
+  {
+   "week_index": -9,
+   "week_ending": "2026-09-13",
+   "store": "Store 2",
+   "account": "payroll",
+   "amount": -4080.0
+  },
+  {
+   "week_index": -9,
+   "week_ending": "2026-09-13",
+   "store": "Store 2",
+   "account": "opex",
+   "amount": -1890.89
+  },
+  {
+   "week_index": -9,
+   "week_ending": "2026-09-13",
+   "store": "Store 3",
+   "account": "revenue",
+   "amount": 15367.46
+  },
+  {
+   "week_index": -9,
+   "week_ending": "2026-09-13",
+   "store": "Store 3",
+   "account": "cogs",
+   "amount": -9988.85
+  },
+  {
+   "week_index": -9,
+   "week_ending": "2026-09-13",
+   "store": "Store 3",
+   "account": "payroll",
+   "amount": -3600.0
+  },
+  {
+   "week_index": -9,
+   "week_ending": "2026-09-13",
+   "store": "Store 3",
+   "account": "opex",
+   "amount": -1679.78
+  },
+  {
+   "week_index": -9,
+   "week_ending": "2026-09-13",
+   "store": "Head office",
+   "account": "interest",
+   "amount": -923.08
+  },
+  {
+   "week_index": -8,
+   "week_ending": "2026-09-20",
+   "store": "Store 1",
+   "account": "revenue",
+   "amount": 17840.66
+  },
+  {
+   "week_index": -8,
+   "week_ending": "2026-09-20",
+   "store": "Store 1",
+   "account": "cogs",
+   "amount": -11596.43
+  },
+  {
+   "week_index": -8,
+   "week_ending": "2026-09-20",
+   "store": "Store 1",
+   "account": "payroll",
+   "amount": -4320.0
+  },
+  {
+   "week_index": -8,
+   "week_ending": "2026-09-20",
+   "store": "Store 1",
+   "account": "opex",
+   "amount": -2202.58
+  },
+  {
+   "week_index": -8,
+   "week_ending": "2026-09-20",
+   "store": "Store 2",
+   "account": "revenue",
+   "amount": 16626.07
+  },
+  {
+   "week_index": -8,
+   "week_ending": "2026-09-20",
+   "store": "Store 2",
+   "account": "cogs",
+   "amount": -10806.95
+  },
+  {
+   "week_index": -8,
+   "week_ending": "2026-09-20",
+   "store": "Store 2",
+   "account": "payroll",
+   "amount": -4080.0
+  },
+  {
+   "week_index": -8,
+   "week_ending": "2026-09-20",
+   "store": "Store 2",
+   "account": "opex",
+   "amount": -2005.26
+  },
+  {
+   "week_index": -8,
+   "week_ending": "2026-09-20",
+   "store": "Store 3",
+   "account": "revenue",
+   "amount": 14763.57
+  },
+  {
+   "week_index": -8,
+   "week_ending": "2026-09-20",
+   "store": "Store 3",
+   "account": "cogs",
+   "amount": -9596.32
+  },
+  {
+   "week_index": -8,
+   "week_ending": "2026-09-20",
+   "store": "Store 3",
+   "account": "payroll",
+   "amount": -3600.0
+  },
+  {
+   "week_index": -8,
+   "week_ending": "2026-09-20",
+   "store": "Store 3",
+   "account": "opex",
+   "amount": -1716.04
+  },
+  {
+   "week_index": -8,
+   "week_ending": "2026-09-20",
+   "store": "Head office",
+   "account": "interest",
+   "amount": -923.08
+  },
+  {
+   "week_index": -7,
+   "week_ending": "2026-09-27",
+   "store": "Store 1",
+   "account": "revenue",
+   "amount": 18516.34
+  },
+  {
+   "week_index": -7,
+   "week_ending": "2026-09-27",
+   "store": "Store 1",
+   "account": "cogs",
+   "amount": -12035.62
+  },
+  {
+   "week_index": -7,
+   "week_ending": "2026-09-27",
+   "store": "Store 1",
+   "account": "payroll",
+   "amount": -4320.0
+  },
+  {
+   "week_index": -7,
+   "week_ending": "2026-09-27",
+   "store": "Store 1",
+   "account": "opex",
+   "amount": -2235.57
+  },
+  {
+   "week_index": -7,
+   "week_ending": "2026-09-27",
+   "store": "Store 2",
+   "account": "revenue",
+   "amount": 16572.62
+  },
+  {
+   "week_index": -7,
+   "week_ending": "2026-09-27",
+   "store": "Store 2",
+   "account": "cogs",
+   "amount": -10772.2
+  },
+  {
+   "week_index": -7,
+   "week_ending": "2026-09-27",
+   "store": "Store 2",
+   "account": "payroll",
+   "amount": -4080.0
+  },
+  {
+   "week_index": -7,
+   "week_ending": "2026-09-27",
+   "store": "Store 2",
+   "account": "opex",
+   "amount": -2073.43
+  },
+  {
+   "week_index": -7,
+   "week_ending": "2026-09-27",
+   "store": "Store 3",
+   "account": "revenue",
+   "amount": 14799.78
+  },
+  {
+   "week_index": -7,
+   "week_ending": "2026-09-27",
+   "store": "Store 3",
+   "account": "cogs",
+   "amount": -9619.86
+  },
+  {
+   "week_index": -7,
+   "week_ending": "2026-09-27",
+   "store": "Store 3",
+   "account": "payroll",
+   "amount": -3600.0
+  },
+  {
+   "week_index": -7,
+   "week_ending": "2026-09-27",
+   "store": "Store 3",
+   "account": "opex",
+   "amount": -1752.79
+  },
+  {
+   "week_index": -7,
+   "week_ending": "2026-09-27",
+   "store": "Head office",
+   "account": "interest",
+   "amount": -923.08
+  },
+  {
+   "week_index": -6,
+   "week_ending": "2026-10-04",
+   "store": "Store 1",
+   "account": "revenue",
+   "amount": 17966.63
+  },
+  {
+   "week_index": -6,
+   "week_ending": "2026-10-04",
+   "store": "Store 1",
+   "account": "cogs",
+   "amount": -11678.31
+  },
+  {
+   "week_index": -6,
+   "week_ending": "2026-10-04",
+   "store": "Store 1",
+   "account": "payroll",
+   "amount": -4320.0
+  },
+  {
+   "week_index": -6,
+   "week_ending": "2026-10-04",
+   "store": "Store 1",
+   "account": "opex",
+   "amount": -2307.34
+  },
+  {
+   "week_index": -6,
+   "week_ending": "2026-10-04",
+   "store": "Store 2",
+   "account": "revenue",
+   "amount": 17219.42
+  },
+  {
+   "week_index": -6,
+   "week_ending": "2026-10-04",
+   "store": "Store 2",
+   "account": "cogs",
+   "amount": -11192.62
+  },
+  {
+   "week_index": -6,
+   "week_ending": "2026-10-04",
+   "store": "Store 2",
+   "account": "payroll",
+   "amount": -4080.0
+  },
+  {
+   "week_index": -6,
+   "week_ending": "2026-10-04",
+   "store": "Store 2",
+   "account": "opex",
+   "amount": -2015.78
+  },
+  {
+   "week_index": -6,
+   "week_ending": "2026-10-04",
+   "store": "Store 3",
+   "account": "revenue",
+   "amount": 14595.81
+  },
+  {
+   "week_index": -6,
+   "week_ending": "2026-10-04",
+   "store": "Store 3",
+   "account": "cogs",
+   "amount": -9487.28
+  },
+  {
+   "week_index": -6,
+   "week_ending": "2026-10-04",
+   "store": "Store 3",
+   "account": "payroll",
+   "amount": -3600.0
+  },
+  {
+   "week_index": -6,
+   "week_ending": "2026-10-04",
+   "store": "Store 3",
+   "account": "opex",
+   "amount": -1814.37
+  },
+  {
+   "week_index": -6,
+   "week_ending": "2026-10-04",
+   "store": "Head office",
+   "account": "interest",
+   "amount": -923.08
+  },
+  {
+   "week_index": -5,
+   "week_ending": "2026-10-11",
+   "store": "Store 1",
+   "account": "revenue",
+   "amount": 18621.87
+  },
+  {
+   "week_index": -5,
+   "week_ending": "2026-10-11",
+   "store": "Store 1",
+   "account": "cogs",
+   "amount": -12104.22
+  },
+  {
+   "week_index": -5,
+   "week_ending": "2026-10-11",
+   "store": "Store 1",
+   "account": "payroll",
+   "amount": -4320.0
+  },
+  {
+   "week_index": -5,
+   "week_ending": "2026-10-11",
+   "store": "Store 1",
+   "account": "opex",
+   "amount": -1984.32
+  },
+  {
+   "week_index": -5,
+   "week_ending": "2026-10-11",
+   "store": "Store 2",
+   "account": "revenue",
+   "amount": 18199.01
+  },
+  {
+   "week_index": -5,
+   "week_ending": "2026-10-11",
+   "store": "Store 2",
+   "account": "cogs",
+   "amount": -11829.36
+  },
+  {
+   "week_index": -5,
+   "week_ending": "2026-10-11",
+   "store": "Store 2",
+   "account": "payroll",
+   "amount": -4080.0
+  },
+  {
+   "week_index": -5,
+   "week_ending": "2026-10-11",
+   "store": "Store 2",
+   "account": "opex",
+   "amount": -1808.75
+  },
+  {
+   "week_index": -5,
+   "week_ending": "2026-10-11",
+   "store": "Store 3",
+   "account": "revenue",
+   "amount": 15311.32
+  },
+  {
+   "week_index": -5,
+   "week_ending": "2026-10-11",
+   "store": "Store 3",
+   "account": "cogs",
+   "amount": -9952.36
+  },
+  {
+   "week_index": -5,
+   "week_ending": "2026-10-11",
+   "store": "Store 3",
+   "account": "payroll",
+   "amount": -3600.0
+  },
+  {
+   "week_index": -5,
+   "week_ending": "2026-10-11",
+   "store": "Store 3",
+   "account": "opex",
+   "amount": -1760.11
+  },
+  {
+   "week_index": -5,
+   "week_ending": "2026-10-11",
+   "store": "Head office",
+   "account": "interest",
+   "amount": -923.08
+  },
+  {
+   "week_index": -4,
+   "week_ending": "2026-10-18",
+   "store": "Store 1",
+   "account": "revenue",
+   "amount": 18231.23
+  },
+  {
+   "week_index": -4,
+   "week_ending": "2026-10-18",
+   "store": "Store 1",
+   "account": "cogs",
+   "amount": -11850.3
+  },
+  {
+   "week_index": -4,
+   "week_ending": "2026-10-18",
+   "store": "Store 1",
+   "account": "payroll",
+   "amount": -4320.0
+  },
+  {
+   "week_index": -4,
+   "week_ending": "2026-10-18",
+   "store": "Store 1",
+   "account": "opex",
+   "amount": -2104.56
+  },
+  {
+   "week_index": -4,
+   "week_ending": "2026-10-18",
+   "store": "Store 2",
+   "account": "revenue",
+   "amount": 18013.34
+  },
+  {
+   "week_index": -4,
+   "week_ending": "2026-10-18",
+   "store": "Store 2",
+   "account": "cogs",
+   "amount": -11708.67
+  },
+  {
+   "week_index": -4,
+   "week_ending": "2026-10-18",
+   "store": "Store 2",
+   "account": "payroll",
+   "amount": -4080.0
+  },
+  {
+   "week_index": -4,
+   "week_ending": "2026-10-18",
+   "store": "Store 2",
+   "account": "opex",
+   "amount": -2122.09
+  },
+  {
+   "week_index": -4,
+   "week_ending": "2026-10-18",
+   "store": "Store 3",
+   "account": "revenue",
+   "amount": 16078.56
+  },
+  {
+   "week_index": -4,
+   "week_ending": "2026-10-18",
+   "store": "Store 3",
+   "account": "cogs",
+   "amount": -10451.06
+  },
+  {
+   "week_index": -4,
+   "week_ending": "2026-10-18",
+   "store": "Store 3",
+   "account": "payroll",
+   "amount": -3600.0
+  },
+  {
+   "week_index": -4,
+   "week_ending": "2026-10-18",
+   "store": "Store 3",
+   "account": "opex",
+   "amount": -1834.11
+  },
+  {
+   "week_index": -4,
+   "week_ending": "2026-10-18",
+   "store": "Head office",
+   "account": "interest",
+   "amount": -923.08
+  },
+  {
+   "week_index": -3,
+   "week_ending": "2026-10-25",
+   "store": "Store 1",
+   "account": "revenue",
+   "amount": 17367.68
+  },
+  {
+   "week_index": -3,
+   "week_ending": "2026-10-25",
+   "store": "Store 1",
+   "account": "cogs",
+   "amount": -11288.99
+  },
+  {
+   "week_index": -3,
+   "week_ending": "2026-10-25",
+   "store": "Store 1",
+   "account": "payroll",
+   "amount": -4320.0
+  },
+  {
+   "week_index": -3,
+   "week_ending": "2026-10-25",
+   "store": "Store 1",
+   "account": "opex",
+   "amount": -2093.69
+  },
+  {
+   "week_index": -3,
+   "week_ending": "2026-10-25",
+   "store": "Store 2",
+   "account": "revenue",
+   "amount": 16969.13
+  },
+  {
+   "week_index": -3,
+   "week_ending": "2026-10-25",
+   "store": "Store 2",
+   "account": "cogs",
+   "amount": -11029.93
+  },
+  {
+   "week_index": -3,
+   "week_ending": "2026-10-25",
+   "store": "Store 2",
+   "account": "payroll",
+   "amount": -4080.0
+  },
+  {
+   "week_index": -3,
+   "week_ending": "2026-10-25",
+   "store": "Store 2",
+   "account": "opex",
+   "amount": -2023.21
+  },
+  {
+   "week_index": -3,
+   "week_ending": "2026-10-25",
+   "store": "Store 3",
+   "account": "revenue",
+   "amount": 15760.45
+  },
+  {
+   "week_index": -3,
+   "week_ending": "2026-10-25",
+   "store": "Store 3",
+   "account": "cogs",
+   "amount": -10244.29
+  },
+  {
+   "week_index": -3,
+   "week_ending": "2026-10-25",
+   "store": "Store 3",
+   "account": "payroll",
+   "amount": -3600.0
+  },
+  {
+   "week_index": -3,
+   "week_ending": "2026-10-25",
+   "store": "Store 3",
+   "account": "opex",
+   "amount": -1838.64
+  },
+  {
+   "week_index": -3,
+   "week_ending": "2026-10-25",
+   "store": "Head office",
+   "account": "interest",
+   "amount": -923.08
+  },
+  {
+   "week_index": -2,
+   "week_ending": "2026-11-01",
+   "store": "Store 1",
+   "account": "revenue",
+   "amount": 18957.64
+  },
+  {
+   "week_index": -2,
+   "week_ending": "2026-11-01",
+   "store": "Store 1",
+   "account": "cogs",
+   "amount": -12322.47
+  },
+  {
+   "week_index": -2,
+   "week_ending": "2026-11-01",
+   "store": "Store 1",
+   "account": "payroll",
+   "amount": -4320.0
+  },
+  {
+   "week_index": -2,
+   "week_ending": "2026-11-01",
+   "store": "Store 1",
+   "account": "opex",
+   "amount": -1982.48
+  },
+  {
+   "week_index": -2,
+   "week_ending": "2026-11-01",
+   "store": "Store 2",
+   "account": "revenue",
+   "amount": 17074.63
+  },
+  {
+   "week_index": -2,
+   "week_ending": "2026-11-01",
+   "store": "Store 2",
+   "account": "cogs",
+   "amount": -11098.51
+  },
+  {
+   "week_index": -2,
+   "week_ending": "2026-11-01",
+   "store": "Store 2",
+   "account": "payroll",
+   "amount": -4080.0
+  },
+  {
+   "week_index": -2,
+   "week_ending": "2026-11-01",
+   "store": "Store 2",
+   "account": "opex",
+   "amount": -1981.76
+  },
+  {
+   "week_index": -2,
+   "week_ending": "2026-11-01",
+   "store": "Store 3",
+   "account": "revenue",
+   "amount": 14131.09
+  },
+  {
+   "week_index": -2,
+   "week_ending": "2026-11-01",
+   "store": "Store 3",
+   "account": "cogs",
+   "amount": -9185.21
+  },
+  {
+   "week_index": -2,
+   "week_ending": "2026-11-01",
+   "store": "Store 3",
+   "account": "payroll",
+   "amount": -3600.0
+  },
+  {
+   "week_index": -2,
+   "week_ending": "2026-11-01",
+   "store": "Store 3",
+   "account": "opex",
+   "amount": -1741.65
+  },
+  {
+   "week_index": -2,
+   "week_ending": "2026-11-01",
+   "store": "Head office",
+   "account": "interest",
+   "amount": -923.08
+  },
+  {
+   "week_index": -1,
+   "week_ending": "2026-11-08",
+   "store": "Store 1",
+   "account": "revenue",
+   "amount": 18465.82
+  },
+  {
+   "week_index": -1,
+   "week_ending": "2026-11-08",
+   "store": "Store 1",
+   "account": "cogs",
+   "amount": -12002.78
+  },
+  {
+   "week_index": -1,
+   "week_ending": "2026-11-08",
+   "store": "Store 1",
+   "account": "payroll",
+   "amount": -4320.0
+  },
+  {
+   "week_index": -1,
+   "week_ending": "2026-11-08",
+   "store": "Store 1",
+   "account": "opex",
+   "amount": -2120.73
+  },
+  {
+   "week_index": -1,
+   "week_ending": "2026-11-08",
+   "store": "Store 2",
+   "account": "revenue",
+   "amount": 18093.13
+  },
+  {
+   "week_index": -1,
+   "week_ending": "2026-11-08",
+   "store": "Store 2",
+   "account": "cogs",
+   "amount": -11760.53
+  },
+  {
+   "week_index": -1,
+   "week_ending": "2026-11-08",
+   "store": "Store 2",
+   "account": "payroll",
+   "amount": -4080.0
+  },
+  {
+   "week_index": -1,
+   "week_ending": "2026-11-08",
+   "store": "Store 2",
+   "account": "opex",
+   "amount": -2059.78
+  },
+  {
+   "week_index": -1,
+   "week_ending": "2026-11-08",
+   "store": "Store 3",
+   "account": "revenue",
+   "amount": 15378.51
+  },
+  {
+   "week_index": -1,
+   "week_ending": "2026-11-08",
+   "store": "Store 3",
+   "account": "cogs",
+   "amount": -9996.03
+  },
+  {
+   "week_index": -1,
+   "week_ending": "2026-11-08",
+   "store": "Store 3",
+   "account": "payroll",
+   "amount": -3600.0
+  },
+  {
+   "week_index": -1,
+   "week_ending": "2026-11-08",
+   "store": "Store 3",
+   "account": "opex",
+   "amount": -1752.78
+  },
+  {
+   "week_index": -1,
+   "week_ending": "2026-11-08",
+   "store": "Head office",
+   "account": "interest",
+   "amount": -923.08
+  }
+ ]
+}

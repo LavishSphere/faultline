@@ -1,0 +1,205 @@
+{
+ "provenance": "SYNTHETIC",
+ "label": "SYNTHETIC (mock internal data)",
+ "table": "inventory",
+ "description": "Inventory on hand by SKU group at cost, weekly usage at cost and weeks of cover (on hand / weekly usage).",
+ "generator": "scripts/gen_internal_data.py",
+ "seed": 20261115,
+ "snapshot_date": "2026-11-15",
+ "schema": {
+  "sku": "str",
+  "group": "str",
+  "supplier_id": "str",
+  "supplier": "str",
+  "perishable": "bool",
+  "on_hand_value": "USD at cost",
+  "weekly_usage_value": "USD at cost",
+  "weeks_of_cover": "weeks"
+ },
+ "anchors": {
+  "inventory_0": 65000.0,
+  "min_inventory": 40000.0
+ },
+ "rows": [
+  {
+   "sku": "SKU-100",
+   "group": "Fresh produce",
+   "supplier_id": "S01",
+   "supplier": "Northfield Fresh Distributors",
+   "perishable": true,
+   "on_hand_value": 2819.07,
+   "weekly_usage_value": 2724.42,
+   "weeks_of_cover": 1.03
+  },
+  {
+   "sku": "SKU-101",
+   "group": "Deli meats",
+   "supplier_id": "S01",
+   "supplier": "Northfield Fresh Distributors",
+   "perishable": true,
+   "on_hand_value": 2279.5,
+   "weekly_usage_value": 2538.56,
+   "weeks_of_cover": 0.9
+  },
+  {
+   "sku": "SKU-102",
+   "group": "Prepared meals",
+   "supplier_id": "S01",
+   "supplier": "Northfield Fresh Distributors",
+   "perishable": true,
+   "on_hand_value": 1438.84,
+   "weekly_usage_value": 1655.62,
+   "weeks_of_cover": 0.87
+  },
+  {
+   "sku": "SKU-103",
+   "group": "Bakery",
+   "supplier_id": "S01",
+   "supplier": "Northfield Fresh Distributors",
+   "perishable": true,
+   "on_hand_value": 2637.56,
+   "weekly_usage_value": 1917.73,
+   "weeks_of_cover": 1.38
+  },
+  {
+   "sku": "SKU-104",
+   "group": "Fresh seafood",
+   "supplier_id": "S01",
+   "supplier": "Northfield Fresh Distributors",
+   "perishable": true,
+   "on_hand_value": 2897.14,
+   "weekly_usage_value": 2382.42,
+   "weeks_of_cover": 1.22
+  },
+  {
+   "sku": "SKU-105",
+   "group": "Cheese counter",
+   "supplier_id": "S03",
+   "supplier": "Valley Dairy Co-op",
+   "perishable": true,
+   "on_hand_value": 2368.98,
+   "weekly_usage_value": 2758.7,
+   "weeks_of_cover": 0.86
+  },
+  {
+   "sku": "SKU-106",
+   "group": "Milk and cream",
+   "supplier_id": "S03",
+   "supplier": "Valley Dairy Co-op",
+   "perishable": true,
+   "on_hand_value": 2150.09,
+   "weekly_usage_value": 2268.5,
+   "weeks_of_cover": 0.95
+  },
+  {
+   "sku": "SKU-107",
+   "group": "Eggs",
+   "supplier_id": "S03",
+   "supplier": "Valley Dairy Co-op",
+   "perishable": true,
+   "on_hand_value": 4126.52,
+   "weekly_usage_value": 3001.47,
+   "weeks_of_cover": 1.37
+  },
+  {
+   "sku": "SKU-108",
+   "group": "Yogurt",
+   "supplier_id": "S03",
+   "supplier": "Valley Dairy Co-op",
+   "perishable": true,
+   "on_hand_value": 1947.26,
+   "weekly_usage_value": 1418.06,
+   "weeks_of_cover": 1.37
+  },
+  {
+   "sku": "SKU-109",
+   "group": "Canned goods",
+   "supplier_id": "S02",
+   "supplier": "Prairie Dry Goods Wholesale",
+   "perishable": false,
+   "on_hand_value": 3658.96,
+   "weekly_usage_value": 958.85,
+   "weeks_of_cover": 3.82
+  },
+  {
+   "sku": "SKU-110",
+   "group": "Pasta and rice",
+   "supplier_id": "S02",
+   "supplier": "Prairie Dry Goods Wholesale",
+   "perishable": false,
+   "on_hand_value": 5086.34,
+   "weekly_usage_value": 1458.46,
+   "weeks_of_cover": 3.49
+  },
+  {
+   "sku": "SKU-111",
+   "group": "Snacks",
+   "supplier_id": "S02",
+   "supplier": "Prairie Dry Goods Wholesale",
+   "perishable": false,
+   "on_hand_value": 7271.74,
+   "weekly_usage_value": 1739.13,
+   "weeks_of_cover": 4.18
+  },
+  {
+   "sku": "SKU-112",
+   "group": "Beverages",
+   "supplier_id": "S02",
+   "supplier": "Prairie Dry Goods Wholesale",
+   "perishable": false,
+   "on_hand_value": 2396.65,
+   "weekly_usage_value": 930.77,
+   "weeks_of_cover": 2.57
+  },
+  {
+   "sku": "SKU-113",
+   "group": "Frozen foods",
+   "supplier_id": "S02",
+   "supplier": "Prairie Dry Goods Wholesale",
+   "perishable": false,
+   "on_hand_value": 4356.75,
+   "weekly_usage_value": 1412.44,
+   "weeks_of_cover": 3.08
+  },
+  {
+   "sku": "SKU-114",
+   "group": "Spices and sauces",
+   "supplier_id": "S02",
+   "supplier": "Prairie Dry Goods Wholesale",
+   "perishable": false,
+   "on_hand_value": 5425.65,
+   "weekly_usage_value": 1172.6,
+   "weeks_of_cover": 4.63
+  },
+  {
+   "sku": "SKU-115",
+   "group": "Coffee and tea",
+   "supplier_id": "S02",
+   "supplier": "Prairie Dry Goods Wholesale",
+   "perishable": false,
+   "on_hand_value": 5935.8,
+   "weekly_usage_value": 1862.02,
+   "weeks_of_cover": 3.19
+  },
+  {
+   "sku": "SKU-116",
+   "group": "Paper goods",
+   "supplier_id": "S04",
+   "supplier": "Coastline Packaging Supply",
+   "perishable": false,
+   "on_hand_value": 4391.36,
+   "weekly_usage_value": 1293.96,
+   "weeks_of_cover": 3.39
+  },
+  {
+   "sku": "SKU-117",
+   "group": "Containers and wrap",
+   "supplier_id": "S04",
+   "supplier": "Coastline Packaging Supply",
+   "perishable": false,
+   "on_hand_value": 3811.79,
+   "weekly_usage_value": 1006.29,
+   "weeks_of_cover": 3.79
+  }
+ ]
+}

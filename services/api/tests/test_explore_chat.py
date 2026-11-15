@@ -311,7 +311,8 @@ def test_tool_list_has_engine_tools_only(env):
     h.turn("hi")
     names = [t["function"]["name"] for t in h.openrouter.chat_requests[0]["json"]["tools"]]
     assert names == ["simulate", "optimize", "decision", "list_scenarios", "list_judge_challenges",
-                     "list_decision_frames", "vc_lenses"]  # no web_search without TAVILY_API_KEY
+                     "list_decision_frames", "vc_lenses", "monte_carlo_decision", "monte_carlo_cash",
+                     "query_internal_data"]  # no web_search without TAVILY_API_KEY
     system = h.openrouter.chat_requests[0]["json"]["messages"][0]["content"]
     for rule in ("I don't have that number", "SYNTHETIC", "better than the markets", "protect_payroll=true",
                  "Keep answers short"):
