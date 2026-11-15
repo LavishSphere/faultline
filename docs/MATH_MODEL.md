@@ -821,6 +821,26 @@ $\hat p = 0.5$ exactly, not 0.
 **Best option.** On each path, the $m$ options tied for best get $1/m$ each, and $\hat p_k^{best}$ is the average over
 paths. `best` is the option with the largest $\hat p^{best}$; on an exact tie, the first in request order wins.
 
+**Per-option chance of being best** (`options[k].prob_best`, issue #240, `[assumed]` tie rule as above). With
+$B_i = \{j : M_{j,i} \text{ is the best value on path } i\}$ (highest when `higher_is_better`, else lowest):
+$$\hat p_k^{best} = \frac1N \sum_i \frac{\mathbb 1[k \in B_i]}{|B_i|},\qquad \sum_k \hat p_k^{best} = 1 \text{ exactly}$$
+`prob_best_ci95` is its Wilson interval (below) with $n = N$, and `best.prob_best` equals the winner's
+`options[k].prob_best`. Worked checks (in the tests): an option better on every path gets 1, the others 0; $K$
+identical options (same driver names, so the same draws) tie on every path and get exactly $1/K$ each; with $K = 2$,
+$\hat p_a^{best} = \hat p_{a \succ b}$. **Read with care:** with 3–4 options, "best in 40%" can still mean the option
+loses to one rival head-to-head more often than not; the pairwise table answers that question.
+
+**Downside: worst-5% average** (`options[k].expected_shortfall_5`, issue #240, `[assumed]` tail of 5%). This is the
+expected shortfall (CVaR) at 5%: the mean of the option's metric over its own worst $k = \lceil 0.05\,N \rceil$ paths,
+computed with integer arithmetic. Sort option $k$'s values as $M_{(1)} \le \dots \le M_{(N)}$:
+$$\mathrm{ES}_{5\%} = \begin{cases} \frac1k \sum_{j=1}^{k} M_{(j)} & \text{higher\_is\_better (worst = lowest)}\\[2pt]
+\frac1k \sum_{j=N-k+1}^{N} M_{(j)} & \text{lower is better (worst = highest)}\end{cases}$$
+Each option's tail is taken on its own paths, not on the paths where some other option does badly. For
+$N \ge 1000$, $\mathrm{ES}_{5\%} \le$ P5 when higher is better, and $\ge$ P95 otherwise. Worked checks: the values
+$0, 1, \dots, 99$ ($N = 100$, $k = 5$) give $(0+1+2+3+4)/5 = 2$, or $(95+\dots+99)/5 = 97$ when lower is better;
+$U(0, 100)$ gives $\approx 2.5$; $N(0,1)$ gives $-\varphi(1.6449)/0.05 = -2.063$. The UI shows it next to
+$\Pr(M_k < 0)$ as the option's DOWNSIDE row. **Question for Yaseen:** is 5% the right tail, or should it be 10%?
+
 **Wilson 95% interval** for any of these proportions, with $z = 1.959964$ and $n = N$:
 $$\frac{\hat p + \frac{z^2}{2n}}{1+\frac{z^2}{n}} \pm \frac{z}{1+\frac{z^2}{n}}\sqrt{\frac{\hat p(1-\hat p)}{n} + \frac{z^2}{4n^2}}$$
 The interval is clipped to $[0,1]$, and its end is exactly 0 or 1 when $\hat p$ is 0 or 1. Worked checks:
