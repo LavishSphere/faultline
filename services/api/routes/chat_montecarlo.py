@@ -264,8 +264,23 @@ MONTE_CARLO_DECISION_TOOL: dict[str, Any] = {
                     "description": f"Simulated paths, {MIN_PATHS}..{MAX_DECISION_PATHS}; null = "
                                    f"{DEFAULT_DECISION_PATHS}."},
         "seed": {"type": ["integer", "null"], "description": f"null = {DEFAULT_SEED} (reproducible)."},
+        "premise": {"type": "string", "description": (
+            "A user-supplied hypothetical about a real person or company that no search result confirms, restated "
+            "briefly in the user's words (e.g. 'the CEO had an affair'); the model is conditional on it. Empty "
+            "string when there is none. It labels the run; it is not an engine input.")},
     }),
 }
+
+MAX_PREMISE_CHARS = 300
+
+
+def premise_note(raw: Any) -> dict[str, str] | None:
+    """The hypothetical premise as a labelled note (#221), or None when there is none."""
+    text = " ".join(str(raw).split())[:MAX_PREMISE_CHARS] if isinstance(raw, str) else ""
+    if not text:
+        return None
+    return {"text": text, "label": "USER-SUPPLIED HYPOTHETICAL, NOT VERIFIED",
+            "note": "Taken from the user's message as an assumption; not checked against any source."}
 
 
 def cash_tool(scenario_schema: dict[str, Any], shock_schema: dict[str, Any]) -> dict[str, Any]:
@@ -353,4 +368,5 @@ def _headroom(plan: Any, floor: Any) -> float | None:
 
 
 __all__ = ["CashRequest", "DecisionRequest", "EngineContractError", "EngineUnavailable", "MONTE_CARLO_DECISION_TOOL",
+           "premise_note",
            "cash_summary", "cash_tool", "decision_body", "decision_summary", "run_cash", "run_decision"]

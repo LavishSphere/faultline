@@ -52,7 +52,7 @@ MAX_OUTPUT_TOKENS = 4000
 PROVIDER_TIMEOUT_S = 60.0
 CATALOG_TTL_S = 600.0
 CATALOG_FAILURE_TTL_S = 60.0  # a failed provider list is retried sooner
-MAX_FEATURED = 8
+MAX_FEATURED = 12  # two groups: open-weight, then closed (FEATURED_PREFERENCE)
 
 CHAT_PROVENANCE = "LIVE EXPLORE"
 CHAT_LABEL = "MODEL-WRITTEN, numbers from engine tools"
@@ -67,40 +67,69 @@ ANTHROPIC_MODELS: tuple[tuple[str, str, float, float, str], ...] = (
 ANTHROPIC_PRICE_NOTE = "list price from Anthropic's published table"
 ANTHROPIC_CONTEXT = 1_000_000
 
-# OpenAI's models API returns ids only (no tool-support or price metadata), so the catalogue offers this vetted list
-# of current chat models that support function calling, each kept only if OpenAI's model list contains it.
-OPENAI_VETTED: tuple[tuple[str, str], ...] = (
-    ("gpt-5.1", "GPT-5.1"),
-    ("gpt-5", "GPT-5"),
-    ("gpt-5-mini", "GPT-5 mini"),
-    ("gpt-5-nano", "GPT-5 nano"),
-    ("gpt-4.1", "GPT-4.1"),
-    ("gpt-4.1-mini", "GPT-4.1 mini"),
-    ("gpt-4o", "GPT-4o"),
-    ("gpt-4o-mini", "GPT-4o mini"),
-    ("o4-mini", "o4-mini"),
+# OpenAI's models API returns ids only (no tool-support or price metadata), so the catalogue offers this vetted list,
+# each kept only if OpenAI's model list contains it. Checked live on 2026-11-15 (#221) with one strict function tool
+# on /v1/chat/completions: all three need max_completion_tokens (max_tokens is a 400). gpt-6.1-sol and gpt-6.1-terra
+# are listed for our key but refuse function tools on Chat Completions ("use /v1/responses"), so they are left out.
+# The third field is the reasoning_effort to send (None = omit it): gpt-6-sol calls tools only with "none", gpt-5.5
+# with "none" or no value (never "low"), gpt-5.4-mini with no value. gpt-5.5 rejects temperature 0; none is sent.
+OPENAI_VETTED: tuple[tuple[str, str, str | None], ...] = (
+    ("gpt-6-sol", "GPT-6 Sol", "none"),
+    ("gpt-5.5", "GPT-5.5", "none"),
+    ("gpt-5.4-mini", "GPT-5.4 mini", None),
 )
+OPENAI_REASONING_EFFORT: dict[str, str | None] = {mid: effort for mid, _, effort in OPENAI_VETTED}
 
-# Shown first in the UI (when present in the live catalogue and affordable): OpenRouter, then OpenAI, then Claude.
-# Picked by the chat QA bank (docs/CHAT_QA.md, #195): within each provider, by the share of turns that passed every
-# check, then latency, then cost. llama-4-maverick, kimi-k2 and deepseek-v3.2 were dropped (they skipped the
-# tools, or their replies were withheld for unsupported figures, most often). OpenAI models were not measured (no
-# key on the test server) and keep their earlier order.
+# Featured in the UI (when present in the live catalogue and affordable), in two groups: open-weight models first,
+# then closed ones. Order from the lead's live run of two CEO-decision questions per model through the public API
+# (2026-11-15, #221): within each group, the models that ran web_search + monte_carlo_decision most often first.
+# No pass rates are shown in the UI. Closed: Claude Sonnet (the default), Opus, GPT-6 Sol (the GPT-6.1 models do not
+# call tools on Chat Completions, see OPENAI_VETTED), Grok 4.6 (4.7 was withheld on both), Haiku. Gemini is not
+# featured (it stays in Cmd-K).
 FEATURED_PREFERENCE: tuple[str, ...] = (
-    "openrouter:google/gemini-3.1-flash-lite",
-    "openrouter:x-ai/grok-4.3",
-    "openrouter:qwen/qwen3-235b-a22b-2507",
-    "openai:gpt-5.1",
-    "openai:gpt-5",
-    "openai:gpt-4.1",
-    "anthropic:claude-opus-5-5",
+    "openrouter:z-ai/glm-5.3",
+    "openrouter:z-ai/glm-5.1",
+    "openrouter:deepseek/deepseek-v4-pro",
+    "openrouter:qwen/qwen3.6-27b",
+    "openrouter:nvidia/nemotron-3-super-120b-a12b",
+    "openrouter:google/gemma-4-31b-it",
+    "openrouter:meta-llama/llama-3.3-70b-instruct",
     "anthropic:claude-sonnet-5-5",
+    "anthropic:claude-opus-5-5",
+    "openai:gpt-6-sol",
+    "openrouter:x-ai/grok-4.6",
     "anthropic:claude-haiku-5-5",
 )
 
-# Vendors whose OpenRouter models are open-weight (for the honest per-model note).
-OPEN_WEIGHT_VENDORS = ("meta-llama/", "qwen/", "deepseek/", "mistralai/", "google/gemma", "nvidia/", "microsoft/phi",
-                       "moonshotai/", "z-ai/", "nousresearch/", "allenai/", "ibm-granite/")
+# Open-weight models, by explicit id pattern (#221), not by vendor: Qwen max/plus, Gemini and Grok are closed even
+# where the vendor publishes other open models. Anything not matched is reported as not open-weight (uncertain ->
+# false). Only OpenRouter models qualify: the native OpenAI and Anthropic models are closed.
+_QWEN_SIZE = re.compile(r"-\d+(?:\.\d+)?b(?=$|[-:])")
+OPEN_WEIGHT_PATTERNS: tuple[re.Pattern[str], ...] = tuple(re.compile(p) for p in (
+    r"^z-ai/glm-(?:4\.[567]|5)",
+    r"^meta-llama/",
+    r"^google/gemma",
+    r"^qwen/qwen3(?:\.[5-8])?-",  # and a parameter size in the id: see is_open_weight
+    r"^deepseek/",
+    r"^moonshotai/kimi-k2",
+    r"^nvidia/nemotron",
+    r"^mistralai/(?:mistral-small|ministral|mixtral|mistral-nemo|devstral)",
+))
+
+
+OPEN_WEIGHT_NOTE = "open weights \u00b7 self-hostable; hosted here via OpenRouter"
+
+
+def is_open_weight(provider: str, model: str) -> bool:
+    """True only for an OpenRouter model id on the open-weight allow-list."""
+    if provider != "openrouter":
+        return False
+    mid = model.lower()
+    if not any(p.match(mid) for p in OPEN_WEIGHT_PATTERNS):
+        return False
+    if mid.startswith("qwen/"):
+        return bool(_QWEN_SIZE.search(mid))  # qwen3-max, -plus, -flash, -coder-plus: hosted-only, no size in id
+    return True
 
 
 # --------------------------------------------------------------------------- catalogue
@@ -120,6 +149,10 @@ class CatalogModel:
     @property
     def id(self) -> str:
         return f"{self.provider}:{self.model}"
+
+    @property
+    def open_weights(self) -> bool:
+        return is_open_weight(self.provider, self.model)
 
 
 @dataclass
@@ -189,12 +222,12 @@ def openrouter_entry(raw: dict[str, Any]) -> CatalogModel | None:
         return None
     pricing = raw.get("pricing") if isinstance(raw.get("pricing"), dict) else {}
     ctx = raw.get("context_length")
-    open_weight = model_id.startswith(OPEN_WEIGHT_VENDORS)
+    open_weight = is_open_weight("openrouter", model_id)
     return CatalogModel(
         provider="openrouter",
         model=model_id,
         label=str(raw.get("name") or model_id),
-        note=("open-weight model, hosted via OpenRouter" if open_weight else "hosted via OpenRouter"),
+        note=(OPEN_WEIGHT_NOTE if open_weight else "hosted via OpenRouter"),
         context_length=int(ctx) if isinstance(ctx, int | float) and ctx > 0 else None,
         input_per_mtok=_per_mtok(pricing.get("prompt")),
         output_per_mtok=_per_mtok(pricing.get("completion")),
@@ -294,17 +327,17 @@ async def build_catalog(settings: Settings, factory: ClientFactory) -> Catalog:
             rejected.add("openai")
             failed = True
             models.extend(CatalogModel("openai", mid, label, "unavailable: OpenAI refused this server's key",
-                                       vetted=True) for mid, label in OPENAI_VETTED[:3])
+                                       vetted=True) for mid, label, _ in OPENAI_VETTED[:3])
         except openai.OpenAIError as err:
             logger.warning("chat catalogue: OpenAI model list failed (%s)", type(err).__name__)
             notes.append("OpenAI model list NOT AVAILABLE right now; OpenAI models are not listed.")
             failed = True
         else:
             models.extend(CatalogModel("openai", mid, label, "OpenAI native API; price not provided by the API",
-                                       vetted=True) for mid, label in OPENAI_VETTED if mid in present)
+                                       vetted=True) for mid, label, _ in OPENAI_VETTED if mid in present)
     else:
         models.extend(CatalogModel("openai", mid, label, "OPENAI_API_KEY is not set on this server", vetted=True)
-                      for mid, label in OPENAI_VETTED[:3])
+                      for mid, label, _ in OPENAI_VETTED[:3])
 
     anthropic_listed: set[str] | None = None
     if settings.anthropic_api_key_set:
@@ -380,55 +413,95 @@ class ToolCallRecord:
 # --------------------------------------------------------------------------- system prompt
 
 
-DECISION_BRIEF_HEADINGS = ("Decision", "Monte Carlo (SIMULATED, on my assumptions)", "Evidence",
-                           "Case for and against", "What would change the answer",
-                           "Verdict (MODEL-WRITTEN judgment, not advice)")
+DECISION_BRIEF_HEADINGS = ("Decision", "Monte Carlo (SIMULATED, on my assumptions)", "Evidence and precedents",
+                           "Stakeholders, governance and risk", "Case for and against",
+                           "What would change the answer", "Verdict (MODEL-WRITTEN judgment, not advice)")
+
+# The opening line for a premise about a real person or company that the user supplied and nobody has verified
+# (#221). The prompt asks for it verbatim; tests pin it.
+HYPOTHETICAL_LINE = ("Hypothetical: you said <premise>. I have not verified it, and I treat it as an assumption, "
+                     "not a fact.")
+HYPOTHETICAL_PREMISE_LABEL = "USER-SUPPLIED HYPOTHETICAL, NOT VERIFIED"
 
 
 def system_prompt(web_search: bool) -> str:
-    """The chat's rules. Two kinds of question: the SYNTHETIC demo business (engine tools) and real-world business
-    decisions (a sourced decision brief). The figure check in run_chat backs the number rules up in code."""
+    """The chat's rules. Management and strategy decisions about real companies come first (a sourced decision
+    brief with a Monte Carlo); the SYNTHETIC demo business's engine tools only answer questions about its cash. The
+    figure check in run_chat backs the number rules up in code."""
     brief = "\n".join(f"   **{h}:**" for h in DECISION_BRIEF_HEADINGS)
     if web_search:
-        evidence = ("Step 1: Call web_search first (one to three focused queries) and build the Evidence from its "
-                    "results only: each point names the source, its date (published_date) and its url, exactly as "
-                    "the result gives them. Never cite a url that no tool returned. If the results are thin, say "
-                    "so.")
-        anchor = ("anchor each range on a web_search result where you can (source = that result's url and title, "
-                  "exactly as returned) and set source null where the range is your own estimate")
+        evidence = ("Step 1: Call web_search first (two to four focused queries, in one step) and build the "
+                    "Evidence from its results only: one query for the real context (the company, the person's "
+                    "current role, the board and its control structure) and at least one for PRECEDENTS and base "
+                    "rates (e.g. CEOs who faced misconduct scandals: who was ousted and who was retained, and what "
+                    "the stock and the company did next). Each point names the source, its date (published_date) "
+                    "and its url, exactly as the result gives them. Never cite a url that no tool returned. If the "
+                    "results are thin, say so.")
+        pipeline = ("(1) call web_search, (2) call monte_carlo_decision, (3) only then write the brief, from "
+                    "those tool results.")
+        anchor = ("anchor each range on a web_search result where you can, above all on the precedents' base rates "
+                  "(source = that result's url and title, exactly as returned), and set source null where the "
+                  "range is your own estimate")
     else:
         evidence = ("This server has no live web search. Say plainly in your first sentence that you can't look up "
                     "live sources here, so the Monte Carlo inputs are your own estimates. State no facts, dates or "
                     "figures that no tool returned, and no names of events you cannot cite. Under Evidence, list "
                     "what evidence would settle it instead.")
+        pipeline = "(1) call monte_carlo_decision, (2) only then write the brief, from its result."
         anchor = "set every source null (there are no search results to cite) and call the ranges model-estimated"
     rules = [
-        "You are the FAULTLINE Live Explore assistant. You help with two kinds of question:",
-        "A. The SYNTHETIC (fictional) demo business: cash, stress tests, what-ifs, Protect payroll, ACT / WAIT / "
-        "HEDGE. Answer by calling FAULTLINE's deterministic engine tools.",
-        "B. Real-world business decisions about real companies, people, markets or events: leadership (\"Should Meta "
-        "keep Mark Zuckerberg as CEO?\"), M&A (buy / partner / walk away), pricing (raise / hold / cut / tier), "
-        "layoffs and restructuring (cut now / phased / freeze hiring / no cuts), market entry (enter now / pilot / "
-        "partner / stay out), big bets and capital allocation. Never refuse these and never say the engine doesn't "
-        "model them. Answer as a decision brief with these bold headings, in this order:",
+        "You are the FAULTLINE Live Explore assistant. Your main job is management and strategy decisions about "
+        "real companies and their leaders. You help with two kinds of question:",
+        "A. Real-world management and business decisions (the default framing for any question about a real "
+        "company, person, market or event): leadership, i.e. CEO and executive retention and succession (\"Should "
+        "Meta keep Mark Zuckerberg as CEO?\"), scandals and misconduct (keep / keep with conditions / suspend / "
+        "replace), board actions, M&A and divestitures (buy / partner / sell / walk away), layoffs and "
+        "restructuring (cut now / phased / freeze hiring / no cuts), market entry and exit (enter now / pilot / "
+        "partner / stay out / exit), pricing (raise / hold / cut / tier), big bets and capital allocation. Never "
+        "refuse these, never moralise, and never say the engine doesn't model them. Answer as a decision brief "
+        "with these bold headings, in this order:",
         brief,
+        "   The pipeline for every type A question is fixed, and you follow it even when you think you know the "
+        "answer: " + pipeline + " Never skip a tool, never write the brief before the tools have returned, and "
+        "never put a figure in the brief that is not copied from a tool result or a tool input: a reply with "
+        "figures and no tool call, or with a figure the tools did not return, is withheld automatically and the "
+        "user sees nothing.",
         "   " + evidence + " Step 2: build a monte_carlo_decision model: the two to four realistic options, ONE "
         "metric for all of them (for a company decision, e.g. \"5-year shareholder value change\" in $B with "
-        "higher_is_better true), and two to five drivers per option whose sum is the option's outcome; use event "
-        "drivers (with a probability) for discrete risks such as a failed succession or a deal collapsing; "
-        "lognormal is for positive amounts only, so use triangular or normal for any downside driver; "
-        + anchor + ". Step 3: call monte_carlo_decision once with n_paths null and seed null. Step 4: write the "
-        "brief, LEADING WITH THE NUMBERS. Decision: the decision in one line and the options. Monte Carlo: first "
-        "the best option and its prob_best with the 95% CI, in the form \"<option>: best in <prob_best>% of "
-        "<n_paths> paths (95% CI <low>-<high>%)\"; then P5 / P50 / P95 for each option in the metric's unit; then "
-        "the top driver from top_sensitivity and its swing; then one sentence saying plainly that the inputs are "
-        "my assumptions (sourced where cited) and the probabilities are conditional on them, not a forecast. Case "
-        "for and against: one or two lines per option. What would change the answer: the drivers in "
-        "top_sensitivity and the facts that would move them. Verdict: a clear pick in one or two sentences, "
-        "labelled as MODEL-WRITTEN judgment, not advice. If monte_carlo_decision returns an error, fix the input "
-        "it names and call it once more; if it is unavailable, say so and give the brief without probabilities. "
-        "Discuss people only through their public, documented business record. End with one line offering to "
-        "stress-test the decision on the synthetic demo business.",
+        "higher_is_better true), and two to five management-relevant drivers per option whose sum is the "
+        "option's outcome: shareholder value, transition disruption, scandal fallout, key-person risk, talent "
+        "attrition, regulatory or legal cost, customer and partner reaction. Use event drivers (with a "
+        "probability) for discrete risks such as a failed succession, a lawsuit or a deal collapsing, and take "
+        "their probabilities from the precedents' base rates where the search gives them; lognormal is for "
+        "positive amounts only, so use triangular or normal for any downside driver; " + anchor + ". Step 3: "
+        "call monte_carlo_decision once with n_paths null and seed null (premise as in the hypothetical rule "
+        "below, else an empty string). Step 4: write the brief, LEADING WITH THE NUMBERS. Decision: the decision "
+        "in one line and the options. Monte Carlo: first the best option and its prob_best with the 95% CI, in "
+        "the form \"<option>: best in <prob_best>% of <n_paths> paths (95% CI <low>-<high>%)\"; then P5 / P50 / "
+        "P95 for each option in the metric's unit; then the top driver from top_sensitivity and its swing; then "
+        "one sentence saying plainly that the inputs are my assumptions (sourced where cited) and the "
+        "probabilities are conditional on them, not a forecast. Evidence and precedents: the cited context, then "
+        "the precedents and what happened to each (ousted or retained, and the outcome), cited. Stakeholders, "
+        "governance and risk: the board, shareholders, employees, customers and regulators in a few words each; "
+        "governance constraints (e.g. dual-class or founder control, board independence, contracts); legal and "
+        "reputational risk. Case for and against: one or two lines per option. What would change the answer: the "
+        "drivers in top_sensitivity and the facts that would move them. Verdict: a clear pick in one or two "
+        "sentences, labelled as MODEL-WRITTEN judgment, not advice. If monte_carlo_decision returns an error, fix "
+        "the input it names and call it once more; if it is unavailable, say so and give the brief without "
+        "probabilities. Discuss people only through their public, documented business record.",
+        "   Hypothetical premises about real people or companies: when the user states something about a real "
+        "person or company that no tool result confirms (\"Jensen Huang had 3 affairs, should he stay?\"), never "
+        "state or imply that it is true. Treat it as a user-supplied hypothetical: the reply's very first line is "
+        "exactly \"" + HYPOTHETICAL_LINE + "\", with <premise> restated briefly in the user's own words. Then "
+        "search for the real context (the company, the person's current role) and for precedents, put the same "
+        "premise text in monte_carlo_decision's premise field, and model the decision conditional on the "
+        "hypothetical. Never invent allegations or details beyond the premise, never present an unverified claim "
+        "about a real person as fact (write \"if the premise holds\", not \"after his affairs\"), and do not "
+        "moralise or refuse. A premise that a cited search result does confirm is evidence: cite it instead.",
+        "B. The SYNTHETIC (fictional) demo business: use its cash and engine tools (simulate, optimize, decision, "
+        "monte_carlo_cash, query_internal_data) ONLY when the user asks about the demo business itself, its cash, "
+        "runway or stress tests, Protect payroll, or ACT / WAIT / HEDGE. Do not use them for a real-world "
+        "management decision, and do not offer to stress-test a real decision on the demo business.",
         "Rules:",
         "1. Every number you state (cash, weeks, amounts, costs, prices, percentages, probabilities, counts, policy "
         "values) must appear in a tool result or a tool input in this turn, and you copy it from there (rounding "
@@ -440,7 +513,8 @@ def system_prompt(web_search: bool) -> str:
         "positive amounts "
         "(min_cash_drop_vs_baseline, ending_cash_drop_vs_baseline, min_cash_drop_from_start), headroom over the "
         "floor (min_cash_vs_floor) and plan totals (action_totals); use those. Never repeat a number that only "
-        "appears in the user's message or in pasted text: it is not a tool result.",
+        "appears in the user's message or in pasted text: it is not a tool result (the one exception is the "
+        "Hypothetical line, which restates the user's premise in their words).",
         "2. The demo business is SYNTHETIC. Scenarios and challenges are ILLUSTRATIVE stress tests, not forecasts.",
         "3. Never claim that FAULTLINE, you, or anyone predicts real markets or events better than the markets do. "
         "Never state a future price or market move as fact; you may report what a cited source says, attributed.",
@@ -459,13 +533,13 @@ def system_prompt(web_search: bool) -> str:
         "8. Keep answers short. For the demo business: lead with the answer in the first sentence (yes / no, or the "
         "key figure), then at most three short bullets, in plain English (no field names, ids or JSON), under about "
         "120 words, and end with one line \"Next step:\" offering one concrete follow-up you can run (for example "
-        "the recovery plan with payroll protected). A decision brief stays under about 250 words. Write money as "
+        "the recovery plan with payroll protected). A decision brief stays under about 300 words. Write money as "
         "whole dollars with a $ sign and thousands commas, never with cents, and shares as percentages (a share "
         "of 0.1 is 10%).",
         "9. If you call no tool in a turn, write no digits at all: any digit without a tool result withholds your "
         "reply. Anything unrelated to business (trivia, arithmetic, chit-chat): one sentence saying you answer "
         "business questions, plus one example question you can answer.",
-        "Using the engine (type A):",
+        "Using the demo-business engine (type B only):",
         "- A named scenario or Judge's Challenge (\"the bad quarter\", \"the supplier goes bust\"): pass its "
         "scenario_id from the tool's list with shock=null; there is no need to list them first. A custom shock: "
         "weeks run 1 to 26 (week 1 is the first week; there is no week 0); for a duration in months use 4 weeks "
@@ -555,6 +629,10 @@ class Adapter(Protocol):
 
     def add_tool_results(self, results: list[tuple[str, str, bool]]) -> None: ...
 
+    def add_user_note(self, previous_reply: str, note: str) -> None:
+        """Keep the model's final text reply in the conversation and add a user-role note after it (repair)."""
+        ...
+
 
 def _parse_args(raw: Any) -> dict[str, Any] | None:
     if isinstance(raw, dict):
@@ -591,8 +669,11 @@ class OpenAICompatibleAdapter:
         if self.provider == "openrouter":
             return {"max_tokens": MAX_OUTPUT_TOKENS}
         kwargs: dict[str, Any] = {"max_completion_tokens": MAX_OUTPUT_TOKENS}
-        if self.model.startswith(("gpt-5", "o3", "o4")):
-            kwargs["reasoning_effort"] = "low"  # reasoning tokens count against the cap; keep room for the answer
+        # Per model, as checked live (OPENAI_VETTED): "low" makes Chat Completions refuse function tools on the
+        # current generation, so it is never sent; unlisted (pinned) models get no reasoning_effort.
+        effort = OPENAI_REASONING_EFFORT.get(self.model)
+        if effort is not None:
+            kwargs["reasoning_effort"] = effort
         return kwargs
 
     async def step(self) -> Step:
@@ -637,6 +718,11 @@ class OpenAICompatibleAdapter:
     def add_tool_results(self, results: list[tuple[str, str, bool]]) -> None:
         self.messages.extend({"role": "tool", "tool_call_id": call_id, "content": content}
                              for call_id, content, _is_error in results)
+
+    def add_user_note(self, previous_reply: str, note: str) -> None:
+        # step() keeps only tool-calling assistant turns, so the text reply is added here
+        self.messages.append({"role": "assistant", "content": previous_reply})
+        self.messages.append({"role": "user", "content": note})
 
 
 ANTHROPIC_BETAS = ["server-side-fallback-2026-07-01"]
@@ -735,6 +821,10 @@ class AnthropicAdapter:
             {"type": "tool_result", "tool_use_id": call_id, "content": content, "is_error": is_error}
             for call_id, content, is_error in results
         ]})
+
+    def add_user_note(self, previous_reply: str, note: str) -> None:
+        del previous_reply  # step() already appended the whole assistant content
+        self.messages.append({"role": "user", "content": note})
 
 
 def adapter_for(m: CatalogModel, factory: ClientFactory) -> Adapter:
@@ -892,6 +982,16 @@ def _urls_in(value: Any, out: set[str]) -> None:
 TOOLS_FAILED_NOTE = "This model didn't call the engine tools correctly; try another model. No numbers were made up."
 UNSUPPORTED_FIGURES_NOTE = ("The model stated figures the engine didn't produce, so its reply is withheld; try again "
                             "or another model.")
+REPAIRED_NOTE = "1 reply revised to remove unsupported figures."
+
+
+def repair_message(flagged: list[str]) -> str:
+    """The one repair round's instruction (#221): the exact figures the check could not find in any tool result."""
+    return (f"These figures are not in any tool result: {', '.join(flagged)}. Rewrite the answer using only figures "
+            "that appear in the tool results (or cited snippets), or drop those figures. Do not compute new "
+            "numbers.")
+
+
 NO_TOOL_NUMBERS_NOTE = ("This model answered with figures without calling the engine tools, so its reply is withheld; "
                         "try another model.")
 
@@ -932,14 +1032,16 @@ class ChatEvent:
     - ``round``: a new round of tool execution starts (``round`` = 1..MAX_TOOL_ROUNDS).
     - ``tool_call``: the model asked for ``name`` with ``arguments`` (None: not a JSON object); about to run.
     - ``tool_result``: that call finished; ``outcome`` is exactly what the model is shown next.
+    - ``repair``: the reply failed the figure check and the model is asked to rewrite it once (#221).
     """
 
-    type: Literal["round", "tool_call", "tool_result"]
+    type: Literal["round", "tool_call", "tool_result", "repair"]
     round: int
     id: str = ""  # "<round>.<index>", the same for a call and its result
     name: str = ""
     arguments: dict[str, Any] | None = None
     outcome: ToolOutcome | None = None
+    detail: dict[str, Any] | None = None  # repair: {"unsupported": [figures]} (never sent on the stream)
 
 
 EventSink = Callable[[ChatEvent], Awaitable[None]]
@@ -950,7 +1052,14 @@ async def run_chat(adapter: Adapter, toolbox: ToolBox, history: list[dict[str, s
                    on_event: EventSink | None = None) -> ChatOutcome:
     """At most MAX_TOOL_ROUNDS rounds of tool execution, then the model must answer in text.
 
-    ``on_event`` (optional) is awaited at each round, tool call and tool result (ChatEvent); it never sees reply text.
+    A reply whose figures fail the figure check gets ONE repair round (#221): the model is told exactly which
+    figures no tool result contains and asked to rewrite without them; the rewrite is checked again and withheld if
+    it still fails. Both rounds' tokens count.
+
+    ``on_event`` (optional) is awaited at each round, tool call and tool result, and when a repair starts
+    (ChatEvent, #222). It never sees reply text; a repair event's ``detail`` names the flagged figures for the
+    caller, and the stream sends only their count.
+
     Raises ChatUpstreamError for provider failures; everything else is a ChatOutcome.
     """
     specs = toolbox.specs()
@@ -960,6 +1069,7 @@ async def run_chat(adapter: Adapter, toolbox: ToolBox, history: list[dict[str, s
     usage = _Usage()
     rounds = 0
     malformed = 0
+    repaired = False
 
     def done(status: Literal["ok", "unavailable", "error"], reply: str, notes: list[str]) -> ChatOutcome:
         return ChatOutcome(status=status, reply=reply, tool_calls=records,
@@ -1027,8 +1137,16 @@ async def run_chat(adapter: Adapter, toolbox: ToolBox, history: list[dict[str, s
         if no_ok_tool and (flagged or re.search(r"\d", _URL.sub(" ", reply))):
             return done("error", "", [NO_TOOL_NUMBERS_NOTE])
         # A figure the engine did not produce is never shown under the "numbers from engine tools" label.
+        if flagged and not repaired:
+            repaired = True
+            adapter.add_user_note(step.text, repair_message(flagged))
+            if on_event is not None:
+                await on_event(ChatEvent("repair", rounds, detail={"unsupported": flagged}))
+            continue
         if flagged:
             return done("error", "", [UNSUPPORTED_FIGURES_NOTE + " Unsupported: " + ", ".join(flagged[:10]) + "."])
+        if repaired:
+            notes.append(REPAIRED_NOTE)
         allowed: set[str] = set()
         _urls_in(payloads, allowed)
         stray = uncited_urls(reply, allowed)

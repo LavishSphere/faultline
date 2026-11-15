@@ -95,7 +95,14 @@ test.describe("Ask the engine: models", () => {
   test("models load grouped by provider, the default is selected, and an unavailable model cannot be selected", async ({ page }) => {
     await mockModels(page);
     await page.goto("/explore/");
+    // The picker starts collapsed to one line naming the default; a click opens the galaxy.
+    const toggle = page.getByTestId("chat-model-toggle");
+    await expect(page.getByTestId("chat-model-current")).toHaveText("TEST FIXTURE claude-fixture");
+    await expect(toggle).toHaveAttribute("aria-expanded", "false");
     const picker = page.getByTestId("chat-model-picker");
+    await expect(picker).toBeHidden();
+    await toggle.click();
+    await expect(toggle).toHaveAttribute("aria-expanded", "true");
     await expect(picker).toBeVisible();
     // Provider order: open models via OpenRouter, OpenAI (direct), Anthropic Claude (direct).
     const groups = picker.locator('[data-testid^="chat-provider-"]');
@@ -105,7 +112,7 @@ test.describe("Ask the engine: models", () => {
       "chat-provider-openai",
       "chat-provider-anthropic",
     ]);
-    await expect(groups.nth(0).locator(".kicker")).toHaveText("Open models via OpenRouter");
+    await expect(groups.nth(0).locator(".kicker")).toHaveText("Via OpenRouter");
     await expect(groups.nth(1).locator(".kicker")).toHaveText("OpenAI (direct)");
     await expect(groups.nth(2).locator(".kicker")).toHaveText("Anthropic Claude (direct)");
 
@@ -137,7 +144,7 @@ test.describe("Ask the engine: conversation", () => {
     ];
     const bodies = await mockChat(page, () => ({ body: chatReply({ tool_calls: calls }), delayMs: 1500 }));
     await page.goto("/explore/");
-    await expect(page.getByRole("radio", { name: /TEST FIXTURE claude-fixture/ })).toBeChecked();
+    await expect(page.getByTestId("chat-model-current")).toHaveText("TEST FIXTURE claude-fixture");
 
     const enginePosts: string[] = [];
     page.on("request", (r) => {
@@ -188,7 +195,7 @@ test.describe("Ask the engine: conversation", () => {
     let n = 0;
     const bodies = await mockChat(page, () => ({ body: chatReply({ reply: `TEST FIXTURE reply ${++n}` }) }));
     await page.goto("/explore/");
-    await expect(page.getByRole("radio", { name: /TEST FIXTURE claude-fixture/ })).toBeChecked();
+    await expect(page.getByTestId("chat-model-current")).toHaveText("TEST FIXTURE claude-fixture");
     await ask(page, "first question");
     await expect(page.getByTestId("chat-answer")).toHaveCount(1);
     // Shift+Enter inserts a newline instead of sending.
@@ -224,7 +231,7 @@ test.describe("Ask the engine: honest failures", () => {
       await mockModels(page);
       await mockChat(page, () => ({ status: c.status, body: { code: c.code, message: "TEST FIXTURE server message" } }));
       await page.goto("/explore/");
-      await expect(page.getByRole("radio", { name: /TEST FIXTURE claude-fixture/ })).toBeChecked();
+      await expect(page.getByTestId("chat-model-current")).toHaveText("TEST FIXTURE claude-fixture");
       await ask(page, "hello");
       const failure = page.getByTestId("chat-failure");
       await expect(failure).toContainText(c.text);
@@ -241,7 +248,7 @@ test.describe("Ask the engine: honest failures", () => {
         : { body: chatReply({ model_id: req.model_id, provider: "openai", reply: "TEST FIXTURE second model reply" }) },
     );
     await page.goto("/explore/");
-    await expect(page.getByRole("radio", { name: /TEST FIXTURE claude-fixture/ })).toBeChecked();
+    await expect(page.getByTestId("chat-model-current")).toHaveText("TEST FIXTURE claude-fixture");
     await ask(page, "hello");
     const answer = page.getByTestId("chat-answer");
     await expect(answer).toHaveAttribute("data-status", "error");
@@ -253,14 +260,14 @@ test.describe("Ask the engine: honest failures", () => {
     await expect(page.getByTestId("chat-answer")).toHaveAttribute("data-status", "ok");
     await expect(page.getByTestId("chat-reply")).toContainText("TEST FIXTURE second model reply");
     expect(bodies[1]).toEqual({ model_id: "gpt-fixture", messages: [{ role: "user", content: "hello" }] });
-    await expect(page.getByRole("radio", { name: /TEST FIXTURE gpt-fixture$/ })).toBeChecked();
+    await expect(page.getByTestId("chat-model-current")).toHaveText("TEST FIXTURE gpt-fixture");
   });
 
   test("a reply with an unknown status is refused, not shown", async ({ page }) => {
     await mockModels(page);
     await mockChat(page, () => ({ body: chatReply({ status: "streaming" }) }));
     await page.goto("/explore/");
-    await expect(page.getByRole("radio", { name: /TEST FIXTURE claude-fixture/ })).toBeChecked();
+    await expect(page.getByTestId("chat-model-current")).toHaveText("TEST FIXTURE claude-fixture");
     await ask(page, "hello");
     await expect(page.getByTestId("chat-failure")).toHaveAttribute("data-kind", "malformed");
     await expect(page.getByTestId("chat-reply")).toHaveCount(0);
@@ -269,6 +276,7 @@ test.describe("Ask the engine: honest failures", () => {
   test("the real API with no provider keys: every model is shown unavailable and nothing can be sent", async ({ page }) => {
     // Since #193 the e2e API serves the chat catalogue; CI configures no provider key, so no model is available.
     await page.goto("/explore/");
+    await page.getByTestId("chat-model-toggle").click();
     const pills = page.getByTestId("chat-model-pill");
     await expect(pills.first()).toBeVisible();
     expect(await pills.evaluateAll((els) => els.map((e) => e.getAttribute("data-available")))).not.toContain("true");
@@ -296,7 +304,7 @@ test.describe("Ask the engine: phone width", () => {
       }),
     }));
     await page.goto("/explore/");
-    await expect(page.getByRole("radio", { name: /TEST FIXTURE claude-fixture/ })).toBeChecked();
+    await expect(page.getByTestId("chat-model-current")).toHaveText("TEST FIXTURE claude-fixture");
     await ask(page, "x".repeat(300));
     await expect(page.getByTestId("chat-reply")).toBeVisible();
     await page.getByTestId("chat-tool-chip").click();

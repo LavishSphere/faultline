@@ -38,6 +38,7 @@ const STEPS = [
   { type: "tool_call", id: "1.2", name: "monte_carlo_decision", input_preview: "Running Monte Carlo · 20,000 paths · Keep vs Sell" },
   { type: "tool_result", id: "1.1", name: "web_search", result_status: "ok", preview: "TEST FIXTURE 8 sources: sec.gov, cnbc.com, …", provenance: "LIVE EXPLORE" },
   { type: "tool_result", id: "1.2", name: "monte_carlo_decision", result_status: "error", preview: "error: TEST FIXTURE refused", provenance: "SIMULATED" },
+  { type: "repair", n: 1, preview: "TEST FIXTURE Checking figures: 1 figure not in any tool result; asking the model to rewrite once" },
 ];
 
 /** In the page: fetch to the stream route returns a chunked SSE body; `__release(n)` sends the next n events. */
@@ -84,7 +85,7 @@ async function ask(page: Page, text: string) {
 test("tool steps appear live, before the reply, which arrives only with final", async ({ page }) => {
   await mockStream(page);
   await page.goto("/explore/");
-  await expect(page.getByRole("radio", { name: /TEST FIXTURE claude-fixture/ })).toBeChecked();
+  await expect(page.getByTestId("chat-model-current")).toHaveText("TEST FIXTURE claude-fixture");
   await ask(page, "TEST FIXTURE question");
 
   const waiting = page.getByTestId("chat-waiting");
@@ -108,6 +109,12 @@ test("tool steps appear live, before the reply, which arrives only with final", 
   await expect(steps.nth(1)).toContainText("error: TEST FIXTURE refused");
   await expect(page.getByText("TEST FIXTURE streamed reply.")).toHaveCount(0);
 
+  await release(page, 1); // the #221 repair note: a count, never the failed draft
+  await expect(steps).toHaveCount(3);
+  await expect(steps.nth(2)).toHaveAttribute("data-status", "note");
+  await expect(steps.nth(2)).toContainText("asking the model to rewrite once");
+  await expect(page.getByTestId("chat-answer")).toHaveCount(0);
+
   await release(page, 1); // final
   const answer = page.getByTestId("chat-answer");
   await expect(answer).toBeVisible();
@@ -117,7 +124,7 @@ test("tool steps appear live, before the reply, which arrives only with final", 
 
 test("presenter mode: the token is sent as Authorization, never shown, and exit removes it", async ({ page }) => {
   await mockStream(page);
-  await page.goto("/explore/#presenter");
+  await page.goto("/#presenter"); // "/" renders Explore, so the home-page hash works too
   await expect(page.getByTestId("presenter-prompt")).toBeVisible();
   expect(page.url()).not.toContain("#presenter");
   await page.getByTestId("presenter-input").fill(TOKEN);
@@ -127,14 +134,14 @@ test("presenter mode: the token is sent as Authorization, never shown, and exit 
   expect(page.url()).not.toContain(TOKEN);
 
   await ask(page, "TEST FIXTURE second");
-  await release(page, 7);
+  await release(page, 8);
   await expect(page.getByTestId("chat-answer")).toHaveCount(1);
   expect(await page.content()).not.toContain(TOKEN);
 
   await page.getByTestId("presenter-exit").click();
   await expect(page.getByTestId("presenter-chip")).toHaveCount(0);
   await ask(page, "TEST FIXTURE third");
-  await release(page, 7);
+  await release(page, 8);
   await expect(page.getByTestId("chat-answer")).toHaveCount(2);
 
   const sent = await page.evaluate(() => (window as unknown as { __streamAuth: (string | null)[] }).__streamAuth);

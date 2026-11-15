@@ -85,6 +85,7 @@ disagree with it, or if this table and the code differ. A new route therefore ca
 | `POST /api/explore/chat/stream` | public-if-flag | the same chat turn as server-sent events (live tool steps, then the same final body); same gates and per-IP limit (#222) |
 | `GET /api/explore/chat/models` | public | chat model catalogue; key presence as booleans only |
 | `GET /api/explore/chat/status` | public | presenter pause state |
+| `GET /api/explore/chat/starters` | public | chat starter questions written by Claude from current news (Anthropic web search); cached in process 6 h (`FAULTLINE_STARTERS_TTL_S`), one refresh at a time, at most 4 refreshes a day, spend counted in the chat daily budget; every `source_url` verified against the search results; 503 `STARTERS_UNAVAILABLE` when fewer than 2 pass (#223) |
 | `POST /api/explore/chat/pause` | admin | presenter pause switch |
 | `GET /api/health` | public | readiness booleans only |
 | `POST /api/simulate` | public | deterministic cash recurrence |

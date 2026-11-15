@@ -6,7 +6,7 @@ import {
   PROVIDER_SHORT,
   contextLabel,
   featuredModels,
-  groupModels,
+  pickerGroups,
   priceLabel,
   type ChatModel,
   type ChatModelsResponse,
@@ -113,7 +113,8 @@ export function ModelGalaxy({
     const def = data.models.find((m) => m.id === data.default);
     return def && !shown.some((m) => m.id === def.id) ? [...shown, def] : shown;
   }, [data]);
-  const groups = groupModels(stars);
+  const groups = pickerGroups(stars);
+  const byOpenness = groups.some((g) => g.key === "open" || g.key === "closed");
   const current = data.models.find((m) => m.id === selected) ?? null;
   const total = data.models.length;
   let starIndex = 0;
@@ -128,13 +129,13 @@ export function ModelGalaxy({
         {groups.map((g) => {
           const live = g.models.filter((m) => m.available).length;
           return (
-            <div key={g.provider} className="galaxy-cluster flex min-w-0 flex-col gap-2" data-testid={`chat-provider-${g.provider}`}>
+            <div key={g.key} className="galaxy-cluster flex min-w-0 flex-col gap-2" data-testid={byOpenness ? `chat-group-${g.key}` : `chat-provider-${g.key}`}>
               <div className="flex min-w-0 items-center gap-2">
                 <span
                   aria-hidden="true"
                   className={`galaxy-core size-2.5 shrink-0 rounded-full ${live ? "bg-accent" : "border border-dashed border-muted bg-transparent"}`}
                 />
-                <p className="kicker min-w-0 truncate">{PROVIDER_LABEL[g.provider]}</p>
+                <p className="kicker min-w-0 truncate">{g.label}</p>
                 <span className="num ml-auto shrink-0 font-mono text-[10px] text-muted">
                   {live}/{g.models.length} available
                 </span>

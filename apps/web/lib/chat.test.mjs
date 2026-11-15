@@ -14,6 +14,7 @@ import {
   describeChatFailure,
   featuredModels,
   groupModels,
+  pickerGroups,
   initialModel,
   messageProblem,
   priceLabel,
@@ -62,6 +63,24 @@ test("models are grouped OpenRouter, OpenAI, Anthropic regardless of server orde
   assert.deepEqual(groups.map((g) => g.provider), ["openrouter", "openai", "anthropic"]);
   assert.deepEqual(groups[2].models.map((m) => m.id), ["a1", "a2"]);
   assert.deepEqual(groupModels([model("o1", "openai")]).map((g) => g.provider), ["openai"]);
+});
+
+test("picker groups: open weights vs closed APIs only from the served field; provider grouping otherwise", () => {
+  const open = { ...model("llama", "openrouter"), open_weights: true };
+  const gemini = { ...model("gemini", "openrouter"), open_weights: false };
+  const grok = { ...model("grok", "openrouter"), open_weights: false };
+  const claude = { ...model("claude", "anthropic"), open_weights: false };
+  const groups = pickerGroups([gemini, open, claude, grok]);
+  assert.deepEqual(groups.map((g) => g.label), ["Open weights · self-hostable", "Closed APIs"]);
+  assert.deepEqual(groups[0].models.map((m) => m.id), ["llama"]);
+  assert.deepEqual(groups[1].models.map((m) => m.id), ["gemini", "claude", "grok"]);
+  // A model without the field is never put under the open heading.
+  assert.deepEqual(pickerGroups([open, model("x", "openrouter")]).map((g) => g.key), ["open", "unknown"]);
+  // No field anywhere: provider grouping, and the OpenRouter label does not claim the models are open.
+  const fallback = pickerGroups([model("r1", "openrouter"), model("a1", "anthropic")]);
+  assert.deepEqual(fallback.map((g) => g.key), ["openrouter", "anthropic"]);
+  assert.ok(!/open/i.test(fallback[0].label.replace(/openrouter/i, "")));
+  assert.match(checkModelsResponse({ models: [{ ...model("x", "openai"), open_weights: "yes" }], default: null }), /open_weights/);
 });
 
 test("the server default is preselected only when it is available", () => {
@@ -176,6 +195,9 @@ test("live steps: a call runs, then ticks to ok or error with the server's previ
   steps = applyStreamEvent(steps, { type: "tool_result", id: "1.1", name: "web_search", result_status: "ok", preview: "8 sources: sec.gov", provenance: "LIVE EXPLORE" });
   steps = applyStreamEvent(steps, { type: "tool_result", id: "1.2", name: "simulate", result_status: "error", preview: "error: bad", provenance: "SIMULATED" });
   assert.deepEqual(steps.map((s) => [s.status, s.preview]), [["ok", "8 sources: sec.gov"], ["error", "error: bad"]]);
+  const repair = readStreamEvent('{"type":"repair","n":2,"preview":"Checking figures: 2 figures not in any tool result"}');
+  steps = applyStreamEvent(steps, repair);
+  assert.deepEqual(steps.at(-1), { id: "repair-2", name: "repair", input: "Checking figures: 2 figures not in any tool result", status: "note", preview: null });
 });
 
 function sseResponse(lines, status = 200) {

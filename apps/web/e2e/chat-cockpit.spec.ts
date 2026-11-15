@@ -96,7 +96,7 @@ function recordEngine(page: Page) {
 
 async function open(page: Page) {
   await page.goto("/explore/");
-  await expect(page.getByRole("radio", { name: /TEST FIXTURE claude-fixture/ })).toBeChecked();
+  await expect(page.getByTestId("chat-model-current")).toHaveText("TEST FIXTURE claude-fixture");
 }
 
 async function ask(page: Page, text: string) {
@@ -209,7 +209,7 @@ test.describe("Cockpit: evidence the model fetched", () => {
         result_summary: {
           provenance: "REAL (web, retrieved 2026-11-14T18:00:00Z)",
           label: "LIVE EXPLORE: current, not point-in-time",
-          attribution: "Search powered by Tavily",
+          attribution: "Search by Anthropic Claude web search",
           note: "TEST FIXTURE note: current web pages, not point-in-time evidence",
           retrieved_at: "2026-11-14T18:00:00Z",
           query: "TEST FIXTURE meta ceo",
@@ -244,10 +244,10 @@ test.describe("Cockpit: evidence the model fetched", () => {
     await expect(sources.nth(0).getByTestId("source-domain")).toHaveText("example.com");
     await expect(sources.nth(0).getByTestId("source-date")).toHaveText("Nov 10, 2026");
     await expect(sources.nth(0).getByTestId("source-link")).toHaveAttribute("href", "https://www.example.com/a");
-    // The server's provenance string is shown as-is; the label, Tavily credit and note sit with the cards.
+    // The server's provenance string is shown as-is; the label, search credit and note sit with the cards.
     await expect(sources.nth(0).locator('[data-provenance="REAL (web, retrieved 2026-11-14T18:00:00Z)"]')).toBeVisible();
     await expect(answer.getByTestId("source-label")).toHaveText("LIVE EXPLORE: current, not point-in-time");
-    await expect(answer.getByTestId("source-credit")).toContainText("Search powered by Tavily");
+    await expect(answer.getByTestId("source-credit")).toContainText("Search by Anthropic Claude web search");
     await expect(answer.getByTestId("source-credit")).toContainText("TEST FIXTURE note");
     // A non-http(s) URL never becomes a link; missing fields say so.
     await expect(sources.nth(1).getByTestId("source-link")).toHaveCount(0);

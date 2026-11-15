@@ -39,7 +39,8 @@ export const CHAT_PROVIDERS = ["openrouter", "openai", "anthropic"] as const;
 export type ChatProvider = (typeof CHAT_PROVIDERS)[number];
 /** OpenAI and Claude models are served through their native APIs; OpenRouter carries the open-weight models. */
 export const PROVIDER_LABEL: Record<ChatProvider, string> = {
-  openrouter: "Open models via OpenRouter",
+  // OpenRouter serves open-weight and closed models alike (e.g. Gemini, Grok), so the label never says "open".
+  openrouter: "Via OpenRouter",
   openai: "OpenAI (direct)",
   anthropic: "Anthropic Claude (direct)",
 };
@@ -64,6 +65,8 @@ export interface ChatModel {
   /** Context window in tokens, when the server reports it. */
   context_length?: number | null;
   pricing?: ChatModelPricing | null;
+  /** True for open-weight (self-hostable) models, false for closed APIs; absent when the server does not say. */
+  open_weights?: boolean | null;
 }
 
 export interface ChatModelsResponse {
@@ -132,6 +135,9 @@ export function checkModelsResponse(v: unknown): string | null {
       return `models[${i}] context_length`;
     }
     if (!(m.pricing === undefined || m.pricing === null || isObj(m.pricing))) return `models[${i}] pricing`;
+    if (!(m.open_weights === undefined || m.open_weights === null || typeof m.open_weights === "boolean")) {
+      return `models[${i}] open_weights`;
+    }
     if (isObj(m.pricing)) {
       for (const k of ["input_per_mtok", "output_per_mtok"]) {
         const x = m.pricing[k];
@@ -176,6 +182,28 @@ export function checkChatResponse(v: unknown): string | null {
   }
   if (!Array.isArray(v.notes) || !v.notes.every((n) => typeof n === "string")) return "notes malformed";
   return null;
+}
+
+export interface ModelGroup {
+  key: string;
+  label: string;
+  models: ChatModel[];
+}
+
+/**
+ * Picker groups. When the server reports `open_weights` for any model: "Open weights · self-hostable" (true), then
+ * "Closed APIs" (false), then "Openness not reported" for models without the field. Otherwise by provider. A model
+ * is only ever listed as open when the server says `open_weights: true`; nothing is inferred from the provider.
+ */
+export function pickerGroups(models: readonly ChatModel[]): ModelGroup[] {
+  if (models.some((m) => typeof m.open_weights === "boolean")) {
+    return [
+      { key: "open", label: "Open weights · self-hostable", models: models.filter((m) => m.open_weights === true) },
+      { key: "closed", label: "Closed APIs", models: models.filter((m) => m.open_weights === false) },
+      { key: "unknown", label: "Openness not reported", models: models.filter((m) => typeof m.open_weights !== "boolean") },
+    ].filter((g) => g.models.length > 0);
+  }
+  return groupModels(models).map((g) => ({ key: g.provider, label: PROVIDER_LABEL[g.provider], models: g.models }));
 }
 
 /** Models grouped by provider in the fixed order OpenRouter, OpenAI, Anthropic; empty groups are dropped. */
@@ -337,6 +365,7 @@ export type ChatStreamEvent =
   | { type: "round"; n: number }
   | { type: "tool_call"; id: string; name: string; input_preview: string }
   | { type: "tool_result"; id: string; name: string; result_status: string; preview: string; provenance: string | null }
+  | { type: "repair"; n: number; preview: string }
   | { type: "final"; response: ChatResponse }
   | { type: "error"; code: string | null; message: string; status: number | null };
 
@@ -397,6 +426,8 @@ export function readStreamEvent(raw: string): ChatStreamEvent | null {
       return typeof v.id === "string" && typeof v.name === "string" && typeof v.result_status === "string" && typeof v.preview === "string"
         ? { type: "tool_result", id: v.id, name: v.name, result_status: v.result_status, preview: v.preview, provenance: strOr(v.provenance) }
         : null;
+    case "repair":
+      return isCount(v.n) && typeof v.preview === "string" ? { type: "repair", n: v.n, preview: v.preview } : null;
     case "final":
       return isObj(v.response) && checkChatResponse(v.response) === null
         ? { type: "final", response: v.response as unknown as ChatResponse }
@@ -415,7 +446,8 @@ export interface LiveStep {
   id: string;
   name: string;
   input: string;
-  status: "running" | "ok" | "error";
+  /** `note`: not a tool call, e.g. the server asking the model to rewrite a reply whose figures failed (#221). */
+  status: "running" | "ok" | "error" | "note";
   preview: string | null;
 }
 
@@ -429,6 +461,9 @@ export function applyStreamEvent(steps: readonly LiveStep[], ev: ChatStreamEvent
     const status = ev.result_status === "ok" ? "ok" : "error";
     if (!steps.some((s) => s.id === ev.id)) return [...steps, { id: ev.id, name: ev.name, input: ev.name, status, preview: ev.preview }];
     return steps.map((s) => (s.id === ev.id ? { ...s, status, preview: ev.preview } : s));
+  }
+  if (ev.type === "repair") {
+    return [...steps, { id: `repair-${steps.length}`, name: "repair", input: ev.preview, status: "note", preview: null }];
   }
   return [...steps];
 }

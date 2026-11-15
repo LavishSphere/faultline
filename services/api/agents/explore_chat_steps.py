@@ -149,6 +149,12 @@ def event_payload(ev: ChatEvent) -> dict[str, Any]:
     """The SSE `data:` object for one ChatEvent (type round / tool_call / tool_result)."""
     if ev.type == "round":
         return {"type": "round", "n": ev.round}
+    if ev.type == "repair":
+        # Only the count: the flagged figures are fragments of a reply that failed the check, never streamed.
+        n = len((ev.detail or {}).get("unsupported") or [])
+        noun = "figure" if n == 1 else "figures"
+        return {"type": "repair", "n": n,
+                "preview": f"Checking figures: {n} {noun} not in any tool result; asking the model to rewrite once"}
     if ev.type == "tool_call":
         return {"type": "tool_call", "id": ev.id, "name": ev.name, "input_preview": call_preview(ev.name, ev.arguments)}
     outcome = ev.outcome or ToolOutcome("error", "LIVE EXPLORE", {}, {"error": "no result"})

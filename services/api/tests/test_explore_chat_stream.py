@@ -136,6 +136,7 @@ def test_a_withheld_reply_never_reaches_the_stream(env):
     h = Harness(openrouter=FakeProvider(models=OPENROUTER_MODELS, replies=[
         oa_tool_calls(("simulate", {"scenario_id": "bad-quarter", "shock": None})),
         oa_text(f"{canary}: lowest cash is $987,654 (SIMULATED)."),
+        oa_text(f"{canary} again: lowest cash is $987,654 (SIMULATED)."),  # the #221 repair round fails too
     ]))
     resp = stream(h)
     assert canary not in resp.text  # not before final, not in final
@@ -301,3 +302,26 @@ def test_previews_for_web_search_and_monte_carlo():
     err = chat.ToolOutcome("error", "SIMULATED", {}, {"error": "shock failed validation"})
     assert steps.result_preview("simulate", err) == "error: shock failed validation"
     assert steps.call_preview("simulate", None) == "simulate: arguments were not a JSON object"
+
+
+def test_a_repair_round_streams_only_a_count_and_tool_steps_keep_flowing(env):
+    """#221 repair inside run_chat: the stream says a rewrite was asked for (a count, never the failed figures), and
+    a tool call the model makes after the repair still streams."""
+    canary = "CANARY-FIRST-DRAFT-91b2"
+    h = Harness(openrouter=FakeProvider(models=OPENROUTER_MODELS, replies=[
+        oa_tool_calls(("simulate", {"scenario_id": "bad-quarter", "shock": None})),
+        oa_text(f"{canary}: lowest cash is $987,654 (SIMULATED)."),
+        oa_tool_calls(("list_scenarios", {})),
+        oa_text("The bad quarter is the hardest case (SIMULATED)."),
+    ]))
+    resp = stream(h)
+    events, _ = parse_sse(resp.text)
+    types = [e["type"] for e in events]
+    assert types == ["start", "round", "tool_call", "tool_result", "repair", "round", "tool_call", "tool_result",
+                     "final"]
+    repair = events[4]
+    assert repair["n"] == 1 and "rewrite" in repair["preview"]
+    assert canary not in resp.text
+    assert all("987,654" not in json.dumps(e) for e in events[:-1])
+    assert events[6]["name"] == "list_scenarios" and events[6]["id"] == "2.1"
+    assert events[-1]["response"]["status"] == "ok"

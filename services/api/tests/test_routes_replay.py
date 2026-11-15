@@ -90,6 +90,8 @@ NOT_REPLAY = {
     "/api/explore/chat/models",
     "/api/explore/chat/status",
     "/api/explore/chat/pause",
+    # routes/explore_starters.py (#223): news starter questions; web search only, no case, outcome or store access.
+    "/api/explore/chat/starters",
     # routes/montecarlo.py (#208): seeded Monte Carlo on request inputs or the SYNTHETIC business; no case or outcome.
     "/api/montecarlo/decision",
     "/api/montecarlo/cash",

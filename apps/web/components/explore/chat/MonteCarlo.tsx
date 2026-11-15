@@ -454,37 +454,37 @@ function Tornado({ d }: { d: McDecision }) {
 function OptionStats({ d }: { d: McDecision }) {
   const unit = d.metric.unit;
   return (
-    <ul className="grid min-w-0 grid-cols-1 gap-2 @lg:grid-cols-2 @xl:grid-cols-3" data-testid="mc-option-stats">
+    <ul className="grid min-w-0 grid-cols-1 gap-2 @lg:grid-cols-2 @5xl:grid-cols-3" data-testid="mc-option-stats">
       {d.options.map((o, i) => (
         <li key={o.id} className={`min-w-0 rounded-md border p-3 ${d.best?.id === o.id ? "border-accent/70 bg-accent-soft" : "border-line bg-bg/40"}`}>
           <p className="flex items-center gap-1.5 text-[13px] font-medium text-text">
             <span className="inline-block h-2 w-2 rounded-full" style={{ background: colorAt(i) }} aria-hidden="true" />
             {o.label ?? o.id}
           </p>
-          <dl className="mt-1.5 grid grid-cols-3 gap-2 font-mono text-[10px] uppercase tracking-[0.08em] text-muted">
+          <dl className="mt-1.5 grid grid-cols-3 gap-x-3 gap-y-2 font-mono text-[10px] uppercase tracking-[0.08em] text-muted">
             <div>
               <dt>P5</dt>
-              <dd className="num mt-0.5 text-[12.5px] normal-case tracking-normal text-text-2">{na(metricValue(o.p5, unit))}</dd>
+              <dd className="num mt-0.5 whitespace-nowrap text-[12.5px] normal-case tracking-normal text-text-2">{na(metricValue(o.p5, unit))}</dd>
             </div>
             <div>
               <dt>P50</dt>
-              <dd className="num mt-0.5 text-[15px] normal-case tracking-normal text-text">{na(metricValue(o.p50, unit))}</dd>
+              <dd className="num mt-0.5 whitespace-nowrap text-[15px] normal-case tracking-normal text-text">{na(metricValue(o.p50, unit))}</dd>
             </div>
             <div>
               <dt>P95</dt>
-              <dd className="num mt-0.5 text-[12.5px] normal-case tracking-normal text-text-2">{na(metricValue(o.p95, unit))}</dd>
+              <dd className="num mt-0.5 whitespace-nowrap text-[12.5px] normal-case tracking-normal text-text-2">{na(metricValue(o.p95, unit))}</dd>
             </div>
             <div>
               <dt>Mean</dt>
-              <dd className="num mt-0.5 text-[12px] normal-case tracking-normal text-text-2">{na(metricValue(o.mean, unit))}</dd>
+              <dd className="num mt-0.5 whitespace-nowrap text-[12px] normal-case tracking-normal text-text-2">{na(metricValue(o.mean, unit))}</dd>
             </div>
             <div>
               <dt>SD</dt>
-              <dd className="num mt-0.5 text-[12px] normal-case tracking-normal text-text-2">{na(metricValue(o.sd, unit))}</dd>
+              <dd className="num mt-0.5 whitespace-nowrap text-[12px] normal-case tracking-normal text-text-2">{na(metricValue(o.sd, unit))}</dd>
             </div>
             <div>
               <dt>P(&lt;0)</dt>
-              <dd className="num mt-0.5 text-[12px] normal-case tracking-normal text-text-2">{na(pct(o.probBelowZero))}</dd>
+              <dd className="num mt-0.5 whitespace-nowrap text-[12px] normal-case tracking-normal text-text-2">{na(pct(o.probBelowZero))}</dd>
             </div>
           </dl>
         </li>
@@ -516,10 +516,10 @@ function DecisionPanel({ call, d, reduce }: { call: ChatToolCall; d: McDecision;
       <div className="flex min-w-0 flex-col gap-2" data-testid="mc-headline">
         <p className="font-mono text-[10.5px] uppercase tracking-[0.16em] text-text-2">Most often the best option</p>
         <p className="flex min-w-0 flex-wrap items-baseline gap-x-4 gap-y-2">
-          <span className="display text-[2.6rem] leading-none text-text md:text-[4rem]" data-testid="mc-best-label">
+          <span className="display text-[clamp(1.9rem,6.5cqi,3.75rem)] leading-none text-text" data-testid="mc-best-label">
             {na(bestLabel)}
           </span>
-          <span className="mc-headline-num text-[4.2rem] font-semibold md:text-[7.5rem]" data-testid="mc-headline-prob">
+          <span className="mc-headline-num text-[clamp(3rem,13cqi,7rem)] font-semibold" data-testid="mc-headline-prob">
             {na(pct(d.best?.probBest ?? null))}
           </span>
         </p>

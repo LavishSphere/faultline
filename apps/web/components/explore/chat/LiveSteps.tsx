@@ -52,6 +52,13 @@ function StepIcon({ status, reduce }: { status: LiveStep["status"]; reduce: bool
       />
     );
   }
+  if (status === "note") {
+    return (
+      <span role="img" aria-label="note" className="mt-px w-3.5 shrink-0 text-center font-mono text-[13px] text-info">
+        ↻
+      </span>
+    );
+  }
   return (
     <span role="img" aria-label={status === "ok" ? "done" : "failed"} className={`mt-px w-3.5 shrink-0 text-center font-mono text-[13px] ${status === "ok" ? "text-accent" : "text-fail"}`}>
       {status === "ok" ? "✓" : "✗"}
