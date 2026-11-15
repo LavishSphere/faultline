@@ -72,6 +72,9 @@ ALLOWED_REFS = {
                 "import:routes.explore_chat", "const:/api/explore/chat", "const:/api/explore/chat/models",
                 "const:/api/explore/chat/status", "const:/api/explore/chat/pause"},
     "ci/content_scan.py": {"const:Tavily API key"},
+    # #214: /api/health reports which backend the chat's web_search uses (a name, never a key). It imports only the
+    # env resolver; health is not a replay module (the replay import test below still runs in a clean interpreter).
+    "routes/health.py": {"import:agents.explore_web_search", "import:agents.explore_web_search.provider_from_env"},
 }
 
 # Replay-side modules named in the issue and SPEC §8. Existing ones are also imported in a clean interpreter.

@@ -146,6 +146,7 @@ def env(monkeypatch):
         monkeypatch.delenv(name, raising=False)
     monkeypatch.setenv("OPENROUTER_API_KEY", OPENROUTER_KEY)
     monkeypatch.setenv("ANTHROPIC_API_KEY", ANTHROPIC_KEY)
+    monkeypatch.setenv("FAULTLINE_WEB_SEARCH_PROVIDER", "tavily")  # #214: these tests pin the Tavily web_search path
     return monkeypatch
 
 
