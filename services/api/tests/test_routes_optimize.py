@@ -74,9 +74,10 @@ def test_severe_drop_with_protect_payroll_is_no_feasible_plan_with_smallest_floo
     body = protected.json()
     assert body["status"] == "NO FEASIBLE PLAN"
     assert body["provenance"] == "SIMULATED"
-    # Hand-checked in test_optimizer.py: -2,625 + 25,000 of purchase cuts = 22,375.
-    assert body["max_feasible_cash_floor"] == pytest.approx(22_375.0, abs=1e-4)
-    assert "22,375" in body["diagnostic"]
+    # test_optimizer.py: purchase cuts net of their stock-out cost (issue #103) lift C_26 to at most 10,225; the engine
+    # finds 10,070.50 after revolver interest (it was -2,625 + 25,000 = 22,375 before the stock-out cost).
+    assert body["max_feasible_cash_floor"] == pytest.approx(10_070.50, abs=0.01)
+    assert "10,070.5" in body["diagnostic"]
     for field in ("plan", "actions", "cash", "min_cash", "binding_constraints", "objective"):
         assert body[field] is None  # nothing invented for an infeasible problem
 

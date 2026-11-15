@@ -314,7 +314,7 @@ that are not on `main` yet.
 - **On screen:** `Break-even p*`
 - **Short:** The probability at which the top two strategies have equal expected value.
 - **Long:** p-star = (V(b,0) − V(a,0)) / ((V(a,1) − V(a,0)) − (V(b,1) − V(b,0))) for the top two feasible strategies a and b (MATH_MODEL §8). On either side of it the recommendation flips. NOT AVAILABLE when the two lines are parallel, fewer than two are feasible, or it falls outside 0 to 1.
-- **Example:** Supply-disruption frame: 0.1225 between ACT and WAIT. The FOMC and CPI frames read NOT AVAILABLE: ACT and HEDGE differ by the same amount in both states.
+- **Example:** FOMC frame: 0.4924 (WAIT below, ACT above; HEDGE lies exactly between). CPI frame: 0.857 between WAIT and HEDGE, 0.918 between HEDGE and ACT. Supply-disruption frame: 0.1225 between ACT and WAIT.
 - **Source:** Engine run computed for this glossary: POST /api/decision on all 3 frames in decision_frames.json.
 - **Screens:** DECISION
 - **MATH_MODEL:** §8
@@ -682,7 +682,7 @@ that are not on `main` yet.
 - **On screen:** `Protect payroll`, `On: the optimizer may not cut payroll (z_t = 0)`, `Off: payroll may be cut by up to`
 - **Short:** A switch that forbids the optimizer from cutting payroll at all.
 - **Long:** When on, the payroll-cut share z_t is fixed at 0 in every week, enforced inside the solver, not by a prompt (MATH_MODEL §4, constraint 5). When off, a cut of up to 10% may be chosen, but only as an explicit, labelled action. Layoffs are never modelled.
-- **Example:** Judge's Challenge 'Local plant closes': on gives NO FEASIBLE PLAN; off gives a plan with payroll cuts of at most 10%, such as 1,200 in week 24.
+- **Example:** Judge's Challenge 'Local plant closes': on gives NO FEASIBLE PLAN; off gives a plan with payroll cuts of at most 10%, such as 1,200 in week 11.
 - **Source:** Engine run computed for this glossary: POST /api/optimize on judge_challenges.json judge-plant-closure, protect payroll on and off, SYNTHETIC demo business.
 - **Screens:** CASCADE
 - **MATH_MODEL:** §4
@@ -702,7 +702,7 @@ that are not on `main` yet.
 - **On screen:** `Recovery plan`, `Recovery plan · deterministic optimizer`, `Chosen actions`
 - **Short:** The least harmful set of actions that keeps every hard limit.
 - **Long:** A deterministic optimizer (MILP, MATH_MODEL §4) picks from: backup supplier, defer capex, delay expansion, purchase cuts, revolver draws and, only if allowed, a payroll cut. It minimizes weighted disruption cost while holding the cash floor, revolver limit and inventory floor. No LLM can override it.
-- **Example:** Bad quarter, payroll protected: purchase cuts in weeks 18 to 24 keep minimum cash at exactly 25,000, for a disruption cost of 552.50.
+- **Example:** Bad quarter, payroll protected: purchase cuts in weeks 22 to 24 plus revolver draws in weeks 20 to 24 keep minimum cash at exactly 25,000, for a disruption cost of 1,924.71.
 - **Source:** Engine run computed for this glossary: POST /api/optimize on scenarios.json bad-quarter, protect payroll on, SYNTHETIC demo business.
 - **Screens:** CASCADE, EXPLORE
 - **MATH_MODEL:** §4, §10
@@ -712,7 +712,7 @@ that are not on `main` yet.
 - **On screen:** `Purchase cut`
 - **Short:** Buying less stock in a week, drawing down inventory to save cash.
 - **Long:** v_t lowers that week's purchases, paid L_p weeks later, and lowers inventory I_t by the same amount (MATH_MODEL §3). It is capped at 10,000 a week, and the inventory floor caps total cuts at 25,000 (§10). Disruption weight: 0.05 per dollar cut.
-- **Example:** The Bad quarter plan cuts 1,653.85 in week 19, one of six weeks at 1,653.85 (seven weeks of cuts from week 18).
+- **Example:** The Bad quarter plan cuts 10,000 in week 23 (the weekly cap), one of its three weeks with cuts (weeks 22 to 24).
 - **Source:** Engine run computed for this glossary: POST /api/optimize on scenarios.json bad-quarter, protect payroll on, SYNTHETIC demo business.
 - **Screens:** CASCADE, EXPLORE
 - **MATH_MODEL:** §3, §4, §10
@@ -732,7 +732,7 @@ that are not on `main` yet.
 - **On screen:** `Objective`, `disruption cost`
 - **Short:** The optimizer's score for how harmful a plan is; lower is better.
 - **Long:** Objective = weighted disruption cost of the chosen actions, minus a tiny tie-break for more cash: 0.0001 × minimum cash (MATH_MODEL §4). The weights are the finance owner's non-cash harm per action (§10), from 0.01 per dollar drawn on the revolver to 5.00 per dollar of payroll cut.
-- **Example:** Bad quarter plan: disruption cost 552.50; objective 552.50 − 0.0001 × 25,000 = 550.00.
+- **Example:** Bad quarter plan: disruption cost 1,924.71; objective 1,924.71 − 0.0001 × 25,000 = 1,922.21.
 - **Source:** Engine run computed for this glossary: POST /api/optimize on scenarios.json bad-quarter, protect payroll on, SYNTHETIC demo business.
 - **Screens:** CASCADE, EXPLORE
 - **MATH_MODEL:** §4, §10
@@ -742,7 +742,7 @@ that are not on `main` yet.
 - **On screen:** `Binding constraints`
 - **Short:** A limit the chosen plan is pressed right up against.
 - **Long:** A constraint with slack of about zero at the optimum (MATH_MODEL §4), for example cash exactly at the floor in some week. Loosening it would allow a better plan, so it is the limit that matters most.
-- **Example:** Bad quarter plan, payroll protected: 'liquidity floor, week 20' and five later weeks are binding.
+- **Example:** Bad quarter plan, payroll protected: 'liquidity floor, week 20' and six later weeks are binding.
 - **Source:** Engine run computed for this glossary: POST /api/optimize on scenarios.json bad-quarter, protect payroll on, SYNTHETIC demo business.
 - **Screens:** CASCADE, EXPLORE
 - **MATH_MODEL:** §4
@@ -752,7 +752,7 @@ that are not on `main` yet.
 - **On screen:** `NO FEASIBLE PLAN`
 - **Short:** No allowed mix of actions keeps all the hard limits.
 - **Long:** The optimizer's honest failure result (MATH_MODEL §4). It is shown as it is, with the API's diagnostic, and no LLM may override it. The screen also shows the highest floor a plan can hold, found by re-solving with the cash floor relaxed.
-- **Example:** Judge's Challenge 'Local plant closes' with payroll protected: no plan keeps 25,000; the highest floor any plan can hold is 20,187.50.
+- **Example:** Judge's Challenge 'Local plant closes' with payroll protected: no plan keeps 25,000; the highest floor any plan can hold is 7,922.88.
 - **Source:** Engine run computed for this glossary: POST /api/optimize on judge_challenges.json judge-plant-closure, protect payroll on, SYNTHETIC demo business.
 - **Screens:** CASCADE, EXPLORE
 - **MATH_MODEL:** §4
@@ -762,7 +762,7 @@ that are not on `main` yet.
 - **On screen:** `Highest floor a plan can hold`
 - **Short:** The highest cash floor any plan could hold, shown when none holds 25,000.
 - **Long:** A MATH_MODEL §4 diagnostic. When there is NO FEASIBLE PLAN, the optimizer re-solves with the cash floor C_min relaxed and reports the highest minimum cash any allowed plan can reach. The floor would have to be lowered to that value for a plan to exist.
-- **Example:** 20,187.50 for the Judge's Challenge 'Local plant closes' with payroll protected, against the 25,000 floor.
+- **Example:** 7,922.88 for the Judge's Challenge 'Local plant closes' with payroll protected, against the 25,000 floor.
 - **Source:** Engine run computed for this glossary: POST /api/optimize on judge_challenges.json judge-plant-closure, protect payroll on, SYNTHETIC demo business.
 - **Screens:** CASCADE, EXPLORE
 - **MATH_MODEL:** §4

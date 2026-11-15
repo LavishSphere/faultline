@@ -84,6 +84,11 @@ class BusinessParams(_Model):
     backup_premium: NonNeg  # pi
     backup_switch_fee: NonNeg  # F_b
 
+    # Stock-out cost (§3, issue #103). Service level I^svc_t = σ I_0 m_t; each $ of inventory below it loses
+    # θ $ of sales per week. Both default to 0 (no stock-out cost); the fixtures set them explicitly.
+    service_level_share: NonNeg = 0.0  # σ, service-level stock as a share of I_0 at planned demand (m_t = 1)
+    stockout_lost_sales_rate: NonNeg = 0.0  # θ, $ of sales lost per week per $ of inventory shortfall
+
     # Optimizer floors (§4.1, §4.3). Carried here for the optimizer; simulate() does not enforce them.
     min_cash: float | None = None  # C_min
     min_inventory: float | None = None  # I_min
@@ -174,12 +179,15 @@ class SimulationResult(_Model):
     core_demand: list[float]  # S^core_t = m_t Σ_ℓ S^base_{ℓ,t}, base-store demand (the outage and premium base)
     demand: list[float]  # S^dem_t = S^core_t + (1-x_e) X_t, total demand
     sales: list[float]  # S_t
-    lost_sales: list[float]  # S^dem_t - S_t = S^core_t λ_t (1-x_b)
+    lost_sales: list[float]  # S^dem_t - S_t = S^core_t λ_t (1-x_b) + ℓ_t (outage plus stock-out lost sales)
     receipts: list[float]  # R_t
     backup_premium: list[float]  # π (1-g) S^core_t λ_t x_b
     purchases: list[float]  # P_t
     payables_paid: list[float]  # P_{t-L_p}
     inventory: list[float]  # I_t
+    service_level_inventory: list[float]  # I^svc_t = σ I_0 m_t
+    inventory_shortfall: list[float]  # u_t = max(0, I^svc_t - I_t)
+    stockout_lost_sales: list[float]  # ℓ_t = θ u_t
 
     # Financing
     term_loan_principal: list[float]  # D_t (start of week)
@@ -257,7 +265,11 @@ def simulate(params: BusinessParams, shock: ScenarioShock, plan: ActionPlan) -> 
     C_t = C_{t-1} + R_t - P_{t-L_p} - (1-z_t)W_t - O_t - J_t - A_t - J^R_t
           - (1-x_c)K_t - (1-x_e)E_t - F_b x_b 1[t=1] + y_t - q_t
 
-    Raises ValueError, naming the week, for plans that cannot happen (§3): negative purchases (P_t < 0),
+    Stock-out cost (§3): u_t = max(0, I^svc_t - I_t) with I^svc_t = σ I_0 m_t, and ℓ_t = θ u_t is
+    subtracted from sales S_t, so it flows through receipts and purchases like any other lost sale.
+
+    Raises ValueError, naming the week, for plans that cannot happen (§3): negative sales (S_t < 0),
+    negative purchases (P_t < 0),
     negative inventory (I_t < 0), a revolver repayment above the balance (B_t < 0) or amortization above the
     remaining principal (D_{t+1} < 0). Within one week, purchases are checked first, then inventory, then
     financing. I_min is an optimizer constraint (§4.3) and is not enforced here.
@@ -287,7 +299,8 @@ def simulate(params: BusinessParams, shock: ScenarioShock, plan: ActionPlan) -> 
 
     cols: dict[str, list[float]] = {k: [] for k in (
         "core_demand", "demand", "sales", "lost_sales", "receipts", "backup_premium", "purchases", "payables_paid",
-        "inventory", "term_loan_principal", "interest", "revolver_interest", "total_interest",
+        "inventory", "service_level_inventory", "inventory_shortfall", "stockout_lost_sales", "term_loan_principal",
+        "interest", "revolver_interest", "total_interest",
         "revolver_balance", "payroll", "capex", "expansion_outflow", "backup_fee", "cash",
     )}
 
@@ -298,13 +311,23 @@ def simulate(params: BusinessParams, shock: ScenarioShock, plan: ActionPlan) -> 
         # §2 demand and sales: the outage hits base-store demand S^core only, never the new store's X_t
         S_core = m[i] * base_sales[i]
         S_dem = S_core + (1.0 - xe) * X[i]
-        S = S_core * (1.0 - lam[i] * (1.0 - xb)) + (1.0 - xe) * X[i]
-        # §3 receipts, purchases, inventory
+        # §3 inventory: I_t = I_{t-1} + P_t - (1-g)S_t - premium = I_{t-1} - v_t (does not depend on S_t)
+        inv = inv_prev - v[i]
+        # §3 stock-out cost: inventory below the service level loses sales ℓ_t = θ u_t this week
+        svc = params.service_level_share * params.inventory_0 * m[i]  # I^svc_t = σ I_0 m_t
+        short = max(0.0, svc - inv)  # u_t
+        lost_stockout = params.stockout_lost_sales_rate * short  # ℓ_t
+        S = S_core * (1.0 - lam[i] * (1.0 - xb)) + (1.0 - xe) * X[i] - lost_stockout
+        # §3 receipts, purchases
         R = a * S + (1.0 - a) * S_prev
         premium = params.backup_premium * (1.0 - g) * S_core * lam[i] * xb  # same base-store outage share as §2
         P = (1.0 - g) * S - v[i] + premium
-        inv = inv_prev - v[i]  # I_t = I_{t-1} + P_t - (1-g)S_t - premium = I_{t-1} - v_t
-        # §3 physical limits: the business cannot buy a negative amount of stock or hold negative stock.
+        # §3 physical limits: the business cannot sell, buy or hold a negative amount.
+        if S < -FINANCING_TOL:
+            raise ValueError(
+                f"week {t}: stock-out lost sales {lost_stockout:.2f} exceed the week's sales before them "
+                f"({S + lost_stockout:.2f}), so S_t would be {S:.2f} < 0; sales cannot be negative"
+            )
         if P < -FINANCING_TOL:
             raise ValueError(
                 f"week {t}: purchase cut v_t = {v[i]:.2f} exceeds that week's purchases before the cut "
@@ -343,6 +366,7 @@ def simulate(params: BusinessParams, shock: ScenarioShock, plan: ActionPlan) -> 
         for key, val in (
             ("core_demand", S_core), ("demand", S_dem), ("sales", S), ("lost_sales", S_dem - S), ("receipts", R),
             ("backup_premium", premium), ("payables_paid", paid), ("inventory", inv),
+            ("service_level_inventory", svc), ("inventory_shortfall", short), ("stockout_lost_sales", lost_stockout),
             ("term_loan_principal", D), ("interest", J), ("revolver_interest", JR),
             ("total_interest", J + JR), ("revolver_balance", B), ("payroll", payroll_paid),
             ("capex", capex_paid), ("expansion_outflow", expansion_paid), ("backup_fee", fee), ("cash", C),

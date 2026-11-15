@@ -97,6 +97,7 @@ def test_optimizer_parameters_record_section_10_caps_and_disruption_costs():
         "backup_supplier_per_decision": 2_500.0,  # c_b
         "delay_expansion_per_decision": 5_000.0,  # c_e
         "payroll_cut_per_dollar": 5.00,  # c_z
+        "stock_shortfall_per_dollar_week": 0.01,  # c_u (issue #103, proposal for finance-owner review)
     }
 
 

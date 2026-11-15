@@ -1,7 +1,7 @@
-# Judge question bank: 30 hard questions with honest answers
+# Judge question bank: 31 hard questions with honest answers
 
 For practice demos (Sat Nov 14, 1pm) and Demo Day (Sun Nov 15, 1pm); see `docs/HACKATHON.md`. Six questions per
-judging criterion: Demo and pitch, Investability, Product, Societal impact, and the +2 AI-alignment bonus.
+judging criterion (seven for Product): Demo and pitch, Investability, Product, Societal impact, and the +2 AI-alignment bonus.
 
 How to use it:
 - Each **Say** answer is at most 40 spoken words. Say it, then stop. If a judge wants more, open the file in **Backed by**.
@@ -143,48 +143,59 @@ replay model gets only the gated evidence: no web, no tools."
 `services/api/tests/test_agents_local_ollama.py::test_request_carries_only_the_given_prompt_no_system_no_tools_no_date`.
 
 ### 18. "Does ACT/WAIT/HEDGE actually depend on the forecast?"
-**Say:** "In the supply frame, yes: there's a break-even probability. In the rate and inflation frames, not yet, and
-the screen says so. A fix is being built."
-**Backed by:** `services/api/data/decision_frames.json` (#71: `forecast_sensitive` and `caveat`);
-`services/api/tests/test_decision_frames.py::test_supply_disruption_break_even_probability` (p* = 2,000 / 16,320 =
-0.1225), `::test_rate_and_cpi_frames_have_no_break_even`; the caveat is shown by
-`apps/web/components/decision/SplitView.tsx`. Fix: **PENDING: #103**.
+**Say:** "Yes. Cutting stock now costs lost sales, so each frame has a break-even probability. Fed: about 49%; supplier
+outage: 12%; wait below, act above. Inflation has three zones: wait below 86%, hedge from 86% to 92%, act above."
+**Backed by:** `services/api/data/decision_frames.json` (#103: `forecast_sensitive` is true for all three frames);
+MATH_MODEL §3 (stock-out cost) and §8; `services/api/tests/test_decision_frames.py::test_fomc_break_even_probability`
+(p* = 630.50 / 1,280.50 = 0.4924), `::test_cpi_break_even_probabilities` (WAIT below 6/7 = 0.857, HEDGE up to
+45/49 = 0.918, ACT above), `::test_supply_disruption_break_even_probability` (p* = 2,000 / 16,320 = 0.1225);
+`services/api/tests/test_routes_decision.py::test_every_frame_is_forecast_sensitive`; shown by
+`apps/web/components/decision/SplitView.tsx`. The Fed frame's YES state includes a 1% demand drop (ILLUSTRATIVE).
+
+### 19. "Why does the dock strike in weeks 2–5 get a purchase cut in week 24?"
+**Say:** "Lost sales after week 26 aren't in the model, so the optimizer times cuts late. A terminal shortfall charge is
+the next refinement."
+**Backed by:** Judge's Challenge "Key distributor's dock strike" (`judge-distributor-strike` in
+`services/api/data/judge_challenges.json`): `POST /api/optimize`, Protect payroll on or off, draws 7,115.38 on the
+revolver in week 5 and makes its only purchase cut, 7,409.81, in week 24. `docs/MATH_MODEL.md` §10, stock-out cost,
+*Known limits* (2); `services/api/tests/test_optimizer.py::test_bad_quarter_is_fixed_by_late_purchase_cuts_in_both_modes`
+(a dollar cut in week 22, 23 or 24 nets 0.43, 0.50 or 0.57 of week-26 cash).
 
 ---
 
 ## 4. Societal impact
 
-### 19. "What stops the AI from cutting payroll?"
+### 20. "What stops the AI from cutting payroll?"
 **Say:** "The AI never chooses actions. With Protect payroll on, any plan that cuts payroll is rejected by a hard
 check. And payroll is our costliest lever, at 5 per dollar cut. Protecting jobs is a hard limit in the maths."
 **Backed by:** `services/api/tests/test_decision.py::test_protect_payroll_mode`; `docs/MATH_MODEL.md` §10 (`c_z` = 5.00
 per $). In the optimizer: `services/api/tests/test_optimizer.py::test_protect_payroll_sets_every_payroll_cut_to_zero`.
 
-### 20. "Does FAULTLINE trade, lend, or fire anyone?"
+### 21. "Does FAULTLINE trade, lend, or fire anyone?"
 **Say:** "No. It never moves money, places orders or changes employment. The market adapters use public read-only
 endpoints, with no accounts, wallets or orders. It proposes; people decide."
 **Backed by:** `services/api/markets/README.md` ("Public, unauthenticated GET endpoints only. No credentials, wallets,
 orders or trading code"); `docs/HACKATHON.md` (alignment).
 
-### 21. "Who is actually helped?"
+### 22. "Who is actually helped?"
 **Say:** "Small businesses without a full-time CFO, and their staff: seeing a cash crunch weeks ahead leaves time to
 act without layoffs. We make no claim about measured impact yet."
 **Backed by:** `docs/HACKATHON.md` (Societal impact). Cited impact brief: `docs/IMPACT.md` (#96).
 
-### 22. "What if the owner follows your advice and the forecast is wrong?"
+### 23. "What if the owner follows your advice and the forecast is wrong?"
 **Say:** "We show that up front. Each option is costed in both outcomes, so you see the cost of being wrong before
 choosing. Regret after the reveal is computed in the engine but not shown on screen yet."
 **Backed by:** `services/api/core/decision.py` (`evaluate_policies`, `regret`); `docs/MATH_MODEL.md` §8. On the
 DECISION screen, `apps/web/components/decision/SplitView.tsx` (#134) shows V(a, YES) and V(a, NO) for each option, not
 regret: no route returns regret yet.
 
-### 23. "Could this push owners into harmful cuts?"
+### 24. "Could this push owners into harmful cuts?"
 **Say:** "Every action has a stated harm cost, and cutting payroll is the costliest. The tool never executes anything.
 It shows the trade-off and keeps cash above a stated floor."
 **Backed by:** `docs/MATH_MODEL.md` §10 (disruption costs `c_y` … `c_z`); `services/api/core/financials.py` (`ActionPlan`
 defaults are all "no action").
 
-### 24. "Isn't using prediction markets just gambling?"
+### 25. "Isn't using prediction markets just gambling?"
 **Say:** "We only read public prices, as one input, labeled market-implied. We never place bets, and we use a price only
 if it was recorded within 24 hours before the cutoff; otherwise it says NOT AVAILABLE."
 **Backed by:** `services/api/markets/README.md`; `services/api/markets/normalize.py` (`select_quote`);
@@ -194,20 +205,20 @@ if it was recorded within 24 hours before the cutoff; otherwise it says NOT AVAI
 
 ## 5. AI alignment (+2)
 
-### 25. "n is tiny, so what does this prove?"
+### 26. "n is tiny, so what does this prove?"
 **Say:** "On its own, almost nothing, and we say so. Under five cases: INSUFFICIENT DATA. Under thirty: a small-sample
 warning. The rule was fixed before any outcome was seen."
 **Backed by:** `docs/MATH_MODEL.md` §6; `services/api/core/evaluator.py` (small-sample caveat);
 `services/api/tests/test_scoring.py` (n = 10 and n = 29 caveats,
 `::test_bootstrap_defaults_are_pre_specified`). What n ≈ 15 can detect: `docs/MATH_MODEL.md` §6, "What n ≈ 15 can and can't tell us" (#100).
 
-### 26. "Couldn't the model have memorised 2026?"
+### 27. "Couldn't the model have memorised 2026?"
 **Say:** "Every run carries a contamination flag from the model's published card. Llama 3.1's data ends December 2023,
 so 2026 events are flagged unlikely, never 'none': going offline doesn't erase training."
 **Backed by:** `services/api/agents/model_cards.py` (`contamination_flag`, Llama card);
 `services/api/tests/test_agents_model_cards.py::test_llama_cutoff_is_december_2023`.
 
-### 27. "Can the real answer leak into the model's input?"
+### 28. "Can the real answer leak into the model's input?"
 **Say:** "We test for it. A planted 'future fact' sits in the sealed data, and a test checks it never reaches any
 prompt. On screen, the INTEGRITY panel re-checks live that the sealed folder wasn't touched."
 **Backed by:** `services/api/tests/test_replay_seal.py::test_canary_never_reaches_any_prompt_or_snapshot`;
@@ -216,7 +227,7 @@ prompt. On screen, the INTEGRITY panel re-checks live that the sealed folder was
 `services/api/tests/test_routes_integrity.py::test_a_sealed_folder_read_during_the_report_flips_the_sealed_check`;
 `docs/ALIGNMENT.md` §1.
 
-### 28. "Could someone peek at the answer, then forecast?"
+### 29. "Could someone peek at the answer, then forecast?"
 **Say:** "The store refuses to reveal any answer before the forecast is saved, and every forecast freezes a hash of the
 exact case it saw. A reveal before the save raises an error."
 **Backed by:** `services/api/tests/test_replay_seal.py::test_reveal_before_persist_raises_and_does_not_touch_sealed_dir`;
@@ -225,7 +236,7 @@ panel shows these checks per run (#93):
 `services/api/tests/test_routes_integrity.py::test_forecast_saved_after_a_reveal_flips_the_order_check`,
 `::test_tampered_record_flips_the_hash_check`; `docs/ALIGNMENT.md` §1.
 
-### 29. "Who checks the model's reasoning?"
+### 30. "Who checks the model's reasoning?"
 **Say:** "A separate checker rejects any citation of evidence the model wasn't shown, and flags every sentence that
 cites nothing for a human to look at. It lists problems; it never edits the answer."
 **Backed by:** `services/api/agents/skeptic.py` (module docstring: error vs warning);
@@ -233,7 +244,7 @@ cites nothing for a human to look at. It lists problems; it never edits the answ
 (scalable oversight). What the model could not see, per case and run: the INTEGRITY panel,
 `apps/web/components/integrity/IntegrityPanel.tsx` (#93).
 
-### 30. "What if the model just copies the market?"
+### 31. "What if the model just copies the market?"
 **Say:** "The model can run two ways, with and without the market price, and each way is scored separately against the
 market, so copying shows up. Synthetic test cases are never pooled with real ones."
 **Backed by:** `services/api/core/store.py` (variants `agent_only` / `agent_plus_market`); `services/api/core/evaluator.py`

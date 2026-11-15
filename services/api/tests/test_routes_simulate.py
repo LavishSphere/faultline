@@ -221,11 +221,13 @@ def test_purchase_cut_larger_than_purchases_is_infeasible(client):
 
 
 def test_cumulative_purchase_cuts_cannot_make_inventory_negative(client):
-    # Demo business: purchases 32,500/week before cuts, I_0 = 65,000, I_t = I_(t-1) - v_t.
-    # A 30,000 weekly cut keeps purchases >= 0 but inventory reaches 65,000 - 3 * 30,000 < 0 in week 3.
-    resp = client.post("/api/simulate", json={"shock": {}, "plan": {"purchase_cut": 30000.0}})
+    # Demo business: I_0 = 65,000, I_t = I_(t-1) - v_t; purchases P_t = 0.65 S_t - v_t, where S_t = 50,000 minus the
+    # stock-out lost sales 0.20 x (65,000 - I_t) (issue #103). A 20,000 cut in weeks 1-4 keeps purchases >= 0
+    # (P_1..P_4 = 9,900, 7,300, 4,700, 2,100) but inventory reaches 65,000 - 4 x 20,000 = -15,000 < 0 in week 4.
+    cuts = [20000.0] * 4 + [0.0] * 22
+    resp = client.post("/api/simulate", json={"shock": {}, "plan": {"purchase_cut": cuts}})
     body = _assert_coded(resp, 422, "INFEASIBLE_INPUT")
-    assert "week 3" in body["message"] and "inventory cannot be negative" in body["message"]
+    assert "week 4" in body["message"] and "inventory cannot be negative" in body["message"]
 
 
 def test_feasible_purchase_cut_is_accepted(client):

@@ -28,6 +28,8 @@
       "backup_switch_fee",
       "min_cash",
       "min_inventory",
+      "service_level_share",
+      "stockout_lost_sales_rate",
       "scenario_parameters.supplier_outage_dependent_share",
       "optimizer_parameters.purchase_cut_cap_per_week",
       "optimizer_parameters.payroll_cut_cap",
@@ -66,7 +68,9 @@
     "backup_premium": 0.15,
     "backup_switch_fee": 500.0,
     "min_cash": 15000.0,
-    "min_inventory": 4000.0
+    "min_inventory": 4000.0,
+    "service_level_share": 0.5,
+    "stockout_lost_sales_rate": 0.2
   },
   "scenario_parameters": {
     "supplier_outage_dependent_share": 0.6
@@ -82,7 +86,8 @@
       "defer_capex_per_decision": 1000.0,
       "backup_supplier_per_decision": 2500.0,
       "delay_expansion_per_decision": 5000.0,
-      "payroll_cut_per_dollar": 5.0
+      "payroll_cut_per_dollar": 5.0,
+      "stock_shortfall_per_dollar_week": 0.01
     }
   }
 }
