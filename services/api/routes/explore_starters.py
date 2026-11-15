@@ -14,8 +14,15 @@ Honesty:
   survivors is 503 STARTERS_UNAVAILABLE (the UI falls back to static questions). Never a placeholder starter.
 
 Caching: in process memory on ``app.state``; a good result is served for FAULTLINE_STARTERS_TTL_S (default 6 h).
-One refresh at a time (single-flight): visitors during a refresh get the stale result, or, with no result yet, all
-wait on the same refresh. A failed refresh keeps the last good result and is not retried for 15 minutes.
+One refresh at a time (single-flight): visitors during a refresh get the stale result. With no result yet, the visitor
+whose request starts a refresh waits for it; anyone who arrives while it runs gets 503 STARTERS_UNAVAILABLE at once
+with ``Retry-After: 15`` (the UI shows its standard questions and asks again). A failed refresh keeps the last good
+result and is not retried for 15 minutes.
+
+Warm-up (#234): at API startup a background task runs the same single-flight refresh, so the first visitor after a
+restart does not wait ~10 s for the web search. It never blocks startup or /api/health, needs ANTHROPIC_API_KEY, obeys
+the same daily cap and budget, and is on by default in public mode only. FAULTLINE_STARTERS_WARM=1 / 0 forces it on /
+off; it is always off under pytest.
 Cost: at most 4 refresh attempts per UTC day, and each refresh's estimated spend (tokens x Anthropic list price,
 plus searches) is added to the chat's daily budget; no refresh starts once that budget is spent.
 
@@ -31,12 +38,13 @@ import logging
 import os
 import re
 import time
-from collections.abc import Awaitable, Callable
+from collections.abc import AsyncIterator, Awaitable, Callable, Mapping
+from contextlib import asynccontextmanager
 from dataclasses import dataclass
 from datetime import UTC, date, datetime, timedelta
 from typing import Annotated, Any, Literal
 
-from fastapi import APIRouter, Depends, Request
+from fastapi import APIRouter, Depends, FastAPI, Request
 from pydantic import BaseModel, ConfigDict, Field, ValidationError, field_validator
 
 from agents import explore_chat as chat
@@ -59,11 +67,15 @@ QUESTION_MAX_CHARS = 90
 DEFAULT_TTL_S = 6 * 3600
 TTL_ENV = "FAULTLINE_STARTERS_TTL_S"
 FAILURE_RETRY_S = 15 * 60
+WARM_ENV = "FAULTLINE_STARTERS_WARM"
+WARMING_RETRY_AFTER_S = 15
 MAX_REFRESHES_PER_DAY = 4
 MAX_AGE_DAYS = 45  # a dated search result older than this is not "current" news
 WEB_SEARCH_USD = 0.01  # Anthropic web search list price: $10 per 1,000 searches
 
 LABEL = "Questions written by a model from current news; check the source"
+WARMING_MESSAGE = ("Current-news starter questions are being prepared. Nothing was made up; use the standard "
+                   "questions for now.")
 UNAVAILABLE_MESSAGE = ("Current-news starter questions are not available right now. Nothing was made up; use the "
                        "standard questions instead.")
 Tag = Literal["Leadership", "M&A", "Strategy", "Governance", "Workforce"]
@@ -317,6 +329,11 @@ class StartersState:
         self.refreshes_today = 0
         self.provider_calls = 0  # total, for tests and logs
 
+    @property
+    def warming(self) -> bool:
+        """True while a refresh runs and there is no result to serve yet."""
+        return self.good is None and self.task is not None and not self.task.done()
+
     def _fresh(self) -> bool:
         return self.good is not None and self.clock() - self.good.fetched_at < self.ttl_s
 
@@ -363,26 +380,96 @@ class StartersState:
         task = self.task
         if task is not None and (task.done() or task.get_loop() is not asyncio.get_running_loop()):
             task = self.task = None  # finished, or orphaned on a loop that is gone
+        started = False
         if task is None and self._may_start(budget_left):
             task = self.task = asyncio.create_task(self._refresh(fetch, on_cost))
+            started = True
         if self.good is not None:
             return self.good.response  # stale while the refresh runs (or while refreshes are capped)
-        if task is not None:
-            await asyncio.shield(task)
+        if task is not None and started:
+            await asyncio.shield(task)  # this request started it; later arrivals get None at once (self.warming)
         return self.good.response if self.good is not None else None
+
+    def warm(self, fetch: Fetcher, *, budget_left: bool = True,
+             on_cost: Callable[[float], None] = lambda _usd: None) -> asyncio.Task[None] | None:
+        """Start the single-flight refresh in the background (startup warm-up); never waits. None if not started."""
+        if self._fresh() or (self.task is not None and not self.task.done()):
+            return None
+        if not self._may_start(budget_left):
+            return None
+        self.task = asyncio.create_task(self._refresh(fetch, on_cost))
+        return self.task
+
+
+def _state_of(app: Any) -> StartersState:
+    state = getattr(app.state, "faultline_starters", None)
+    if state is None:
+        state = StartersState()
+        app.state.faultline_starters = state
+    return state
 
 
 def get_starters_state(request: Request) -> StartersState:
-    state = getattr(request.app.state, "faultline_starters", None)
-    if state is None:
-        state = StartersState()
-        request.app.state.faultline_starters = state
-    return state
+    return _state_of(request.app)
 
 
 def get_starters_clients() -> chat.ClientFactory:
     """Dependency hook: the real network. Tests override it with an httpx2.MockTransport for anthropic."""
     return chat.ClientFactory()
+
+
+def _chat_state_of(app: Any) -> chat_routes.ChatState:
+    state = getattr(app.state, "faultline_chat", None)
+    if state is None:
+        state = chat_routes.ChatState()
+        app.state.faultline_chat = state
+    return state
+
+
+def _budget(app: Any, settings: Settings) -> tuple[bool, Callable[[float], None]]:
+    """(budget left?, spend recorder): the chat's daily budget pays for starter refreshes too."""
+    chat_state = _chat_state_of(app)
+
+    def on_cost(usd: float) -> None:
+        chat_state.spent_today()
+        chat_state.spent_usd += usd
+
+    return chat_state.spent_today() < settings.chat_daily_budget_usd, on_cost
+
+
+def warm_enabled(mode: str, environ: Mapping[str, str]) -> bool:
+    """Startup warm-up switch: never under pytest; FAULTLINE_STARTERS_WARM=1/0 forces it; default on in public mode."""
+    if "PYTEST_CURRENT_TEST" in environ:
+        return False
+    flag = environ.get(WARM_ENV, "").strip()
+    if flag in ("0", "1"):
+        return flag == "1"
+    return mode == "public"
+
+
+def schedule_warm(app: FastAPI, settings: Settings) -> asyncio.Task[None] | None:
+    """Schedule the startup refresh as a background task (needs ANTHROPIC_API_KEY). Returns it, or None."""
+    if not chat.ClientFactory.key("anthropic"):
+        logger.info("starters: warm-up skipped (no ANTHROPIC_API_KEY)")
+        return None
+    factory = app.dependency_overrides.get(get_starters_clients, get_starters_clients)()
+    budget_left, on_cost = _budget(app, settings)
+    task = _state_of(app).warm(lambda today: fetch_news(factory, today), budget_left=budget_left, on_cost=on_cost)
+    if task is not None:
+        logger.info("starters: warm-up refresh scheduled")
+    return task
+
+
+@asynccontextmanager
+async def lifespan(app: FastAPI) -> AsyncIterator[None]:
+    """FastAPI lifespan: warm the starters cache in the background; cancel an unfinished refresh on shutdown."""
+    settings = get_settings()
+    if warm_enabled(settings.mode, os.environ):
+        schedule_warm(app, settings)
+    yield
+    task = getattr(getattr(app.state, "faultline_starters", None), "task", None)
+    if task is not None and not task.done():
+        task.cancel()
 
 
 router = APIRouter(route_class=CodedRoute, tags=["live-explore"])
@@ -400,18 +487,15 @@ async def chat_starters(
     if not chat.ClientFactory.key("anthropic"):
         raise RouteError(ErrorCode.STARTERS_UNAVAILABLE, "Current-news starter questions need ANTHROPIC_API_KEY on "
                          "this server. Nothing was made up; use the standard questions instead.", 503)
-    chat_state = chat_routes.get_chat_state(request)
-
-    def on_cost(usd: float) -> None:  # the chat's daily budget pays for the refresh too
-        chat_state.spent_today()
-        chat_state.spent_usd += usd
-
-    budget_left = chat_state.spent_today() < settings.chat_daily_budget_usd
+    budget_left, on_cost = _budget(request.app, settings)
     result = await state.get(lambda today: fetch_news(clients, today), budget_left=budget_left, on_cost=on_cost)
+    if result is None and state.warming:
+        raise RouteError(ErrorCode.STARTERS_UNAVAILABLE, WARMING_MESSAGE, 503,
+                         headers={"Retry-After": str(WARMING_RETRY_AFTER_S)})
     if result is None:
         raise RouteError(ErrorCode.STARTERS_UNAVAILABLE, UNAVAILABLE_MESSAGE, 503)
     return result
 
 
 __all__ = ["LABEL", "Starter", "StartersResponse", "StartersState", "build_prompt", "build_starters", "fetch_news",
-           "get_starters_clients", "get_starters_state", "router"]
+           "get_starters_clients", "get_starters_state", "lifespan", "router", "schedule_warm", "warm_enabled"]
