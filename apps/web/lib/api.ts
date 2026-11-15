@@ -30,7 +30,11 @@ export interface ApiFailure {
   code?: string;
 }
 
-export type ApiResult<T> = { ok: true; data: T } | ApiFailure;
+/**
+ * `mode` on success: the API's `X-Faultline-Mode` response header ("public" / "local"), when the server sends it and
+ * CORS exposes it (services/api/main.py exposes it). Absent or unreadable: null; nothing is assumed.
+ */
+export type ApiResult<T> = { ok: true; data: T; mode?: string | null } | ApiFailure;
 
 /**
  * Raw `/api/health` payload: `models.HealthResponse` (services/api/routes/health.py). Fields stay optional so an
@@ -57,6 +61,14 @@ export interface HealthResponse {
 
 export type ModelAvailability = "available" | "unavailable" | "unknown";
 
+/** Server mode from the `X-Faultline-Mode` header. `null` when the header was not sent or not readable. */
+export type ServerMode = "public" | "local" | null;
+
+export function readServerMode(header: string | null | undefined): ServerMode {
+  const v = typeof header === "string" ? header.trim().toLowerCase() : "";
+  return v === "public" || v === "local" ? v : null;
+}
+
 /** What the UI actually needs from `/api/health`. Derived only from fields the API returned. */
 export interface HealthSummary {
   status: string | null;
@@ -67,6 +79,11 @@ export interface HealthSummary {
   requiredModel: string | null;
   /** The Ollama probe's own error text, when it sent one. */
   modelError: string | null;
+  /**
+   * `public`: the public demo server, where inference is admin-only and usually no model runs by design, so the
+   * forecasts shown are committed RECORDED RUNs. `local`: `make demo` on the presenter's laptop. `null`: not sent.
+   */
+  serverMode: ServerMode;
   checkedAt: Date;
 }
 
@@ -79,7 +96,11 @@ function asStringArray(value: unknown): string[] {
  * top-level model list; `models.HealthResponse` nests the list under `ollama_status`, so with `ollama: true` the
  * list looked empty and a ready model was reported as "Local model unavailable".
  */
-export function summarizeHealth(raw: HealthResponse, checkedAt: Date = new Date()): HealthSummary {
+export function summarizeHealth(
+  raw: HealthResponse,
+  checkedAt: Date = new Date(),
+  modeHeader: string | null = null,
+): HealthSummary {
   let reachable: boolean | undefined;
   let tags: string[] = [];
   const st = raw.ollama_status && typeof raw.ollama_status === "object" ? raw.ollama_status : null;
@@ -107,7 +128,82 @@ export function summarizeHealth(raw: HealthResponse, checkedAt: Date = new Date(
     modelTags: tags,
     requiredModel: typeof st?.required_model === "string" && st.required_model ? st.required_model : null,
     modelError: typeof st?.error === "string" && st.error ? st.error : null,
+    serverMode: readServerMode(modeHeader),
     checkedAt,
+  };
+}
+
+export type ModelStatusTone = "viable" | "risk" | "info" | "muted";
+
+/** What the header chip, DECISION B.0 and the open-model badge say about the model, from one health summary. */
+export interface ModelStatusView {
+  /** `public_recorded`: public server, no model ready (by design). `public_server_model`: public, model_ready true. */
+  kind: "local_ready" | "local_unavailable" | "public_recorded" | "public_server_model" | "unknown";
+  tone: ModelStatusTone;
+  /** Header chip text. */
+  chip: string;
+  /** Tooltip / DECISION B.0 explanation. */
+  explain: string;
+  /** Short status for the open-model badge. */
+  badge: string;
+  /** Model name for display: served by the API (health, else the model card), never invented. */
+  modelLabel: string | null;
+}
+
+/**
+ * Display text for the model state. Pure; every name comes from the API (`ollama_status.required_model`, else the
+ * model card's model passed as `cardModel`). Public mode never claims a model is ready unless `model_ready` is true,
+ * and then only as an admin-only server model; without a served name the text says "local open model".
+ */
+export function describeModelStatus(h: HealthSummary, cardModel: string | null = null): ModelStatusView {
+  const name = h.requiredModel ?? cardModel ?? null;
+  if (h.serverMode === "public") {
+    if (h.model === "available") {
+      return {
+        kind: "public_server_model",
+        tone: "info",
+        chip: "PUBLIC DEMO · MODEL ON SERVER (admin-only runs)",
+        explain: `This public server reports model_ready true${name ? ` for ${name}` : ""}. Runs are admin-only in public mode; forecasts shown to visitors are committed RECORDED RUNs.`,
+        badge: "public demo: model on server, admin-only runs",
+        modelLabel: name,
+      };
+    }
+    return {
+      kind: "public_recorded",
+      tone: "info",
+      chip: "PUBLIC DEMO · RECORDED RUNS",
+      explain: `This public server runs no model. Forecasts shown are committed RECORDED RUNs; live forecasts run on the presenter's laptop with a local open model (${name ? `${name}, ` : ""}offline).`,
+      badge: "public demo: recorded runs; live runs on the presenter's laptop",
+      modelLabel: name,
+    };
+  }
+  if (h.model === "available") {
+    return {
+      kind: "local_ready",
+      tone: "viable",
+      chip: `Local model ready${name ? ` · ${name}` : ""}`,
+      explain: `GET /api/health: model_ready true for ${name ?? "the configured model"}.`,
+      badge: "runs locally, no cloud",
+      modelLabel: name,
+    };
+  }
+  if (h.model === "unavailable") {
+    return {
+      kind: "local_unavailable",
+      tone: "risk",
+      chip: `Local model unavailable${name ? ` · ${name}` : ""}`,
+      explain: h.modelError ?? `GET /api/health: model_ready false${name ? ` (${name} not installed)` : ""}.`,
+      badge: h.modelError ? "not ready: Ollama not reachable" : "not ready: model not installed in Ollama",
+      modelLabel: name,
+    };
+  }
+  return {
+    kind: "unknown",
+    tone: "muted",
+    chip: "Model status not reported",
+    explain: "GET /api/health did not report local model readiness.",
+    badge: "readiness not reported",
+    modelLabel: name,
   };
 }
 
@@ -191,7 +287,7 @@ export async function requestJson<T>(
       };
     }
     try {
-      return { ok: true, data: (await res.json()) as T };
+      return { ok: true, data: (await res.json()) as T, mode: res.headers.get("x-faultline-mode") };
     } catch {
       return { ok: false, kind: "malformed", status: res.status, error: "response was not JSON" };
     }
@@ -215,7 +311,7 @@ export async function getHealth(signal?: AbortSignal): Promise<ApiResult<HealthS
   const res = await requestJson<HealthResponse>("GET", "/api/health", 4000, signal);
   if (!res.ok) return res;
   if (!res.data || typeof res.data !== "object") return { ok: false, kind: "malformed", error: "malformed health payload" };
-  return { ok: true, data: summarizeHealth(res.data) };
+  return { ok: true, data: summarizeHealth(res.data, new Date(), res.mode ?? null) };
 }
 
 /**

@@ -1,12 +1,14 @@
 "use client";
 
+import { describeModelStatus } from "@/lib/api";
 import { settled, useHealth } from "./HealthProvider";
 
-function Dot({ tone }: { tone: "viable" | "risk" | "fail" | "muted" }) {
+function Dot({ tone }: { tone: "viable" | "risk" | "fail" | "info" | "muted" }) {
   const color = {
     viable: "bg-viable",
     risk: "bg-risk",
     fail: "bg-fail",
+    info: "bg-info",
     muted: "bg-muted",
   }[tone];
   return <span aria-hidden="true" className={`inline-block size-1.5 rounded-full ${color}`} />;
@@ -19,7 +21,7 @@ export function HealthChip() {
   const checking = state.kind === "checking";
 
   let api: { tone: "viable" | "fail" | "muted"; text: string };
-  let model: { tone: "viable" | "risk" | "muted"; text: string } | null = null;
+  let model: { tone: "viable" | "risk" | "info" | "muted"; text: string } | null = null;
   let detail: string;
 
   if (!last) {
@@ -31,15 +33,12 @@ export function HealthChip() {
   } else {
     api = { tone: "viable", text: "API online" };
     // Readiness is the API's own `model_ready` (lib/api.ts summarizeHealth, #163); the name is the configured model.
-    const name = last.health.requiredModel;
-    if (last.health.model === "available") {
-      model = { tone: "viable", text: `Local model ready${name ? ` · ${name}` : ""}` };
-    } else if (last.health.model === "unavailable") {
-      model = { tone: "risk", text: `Local model unavailable${name ? ` · ${name}` : ""}` };
-    } else {
-      model = { tone: "muted", text: "Model status not reported" };
-    }
-    detail = `${apiBase}/api/health${last.health.status ? `: status ${last.health.status}` : ""}`;
+    // On the public server (X-Faultline-Mode: public) no model runs by design, so the chip says so instead of
+    // reading as broken (#184).
+    const view = describeModelStatus(last.health);
+    model = { tone: view.tone, text: view.chip };
+    const base = `${apiBase}/api/health${last.health.status ? `: status ${last.health.status}` : ""}`;
+    detail = last.health.serverMode === "public" ? `${view.explain} (${base})` : base;
   }
 
   return (
@@ -57,7 +56,9 @@ export function HealthChip() {
       {model ? (
         <span className="hidden items-center gap-2 border-l border-line px-2.5 py-1.5 sm:flex" data-testid="health-chip-model">
           <Dot tone={model.tone} />
-          <span className={model.tone === "risk" ? "text-risk" : undefined}>{model.text}</span>
+          <span className={model.tone === "risk" ? "text-risk" : model.tone === "info" ? "text-info" : undefined}>
+            {model.text}
+          </span>
         </span>
       ) : null}
       <span

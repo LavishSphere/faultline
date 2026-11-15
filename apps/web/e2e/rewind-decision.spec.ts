@@ -148,6 +148,34 @@ test.describe("DECISION · local-model badge and integrity scan", () => {
     await expect(page.getByTestId("health-chip-model")).toContainText("Local model unavailable");
   });
 
+  test("public mode (#184, TEST FIXTURE: the public server's health body + X-Faultline-Mode: public) explains recorded runs", async ({
+    page,
+  }) => {
+    // The exact shape faultline.khayrul.com serves in FAULTLINE_MODE=public: no ollama_status, so no model name.
+    const body = { status: "ok", model_ready: false, ollama_reachable: false, tavily_configured: false };
+    await page.route(HEALTH_URL, (route) =>
+      route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        headers: { ...CORS, "x-faultline-mode": "public" },
+        body: JSON.stringify(body),
+      }),
+    );
+    await page.goto("/decision/");
+    const chip = page.getByTestId("health-chip-model");
+    await expect(chip).toHaveText("PUBLIC DEMO · RECORDED RUNS");
+    const chipButton = page.locator("button", { has: chip });
+    await expect(chipButton).toHaveAttribute("title", /This public server runs no model\. Forecasts shown are committed RECORDED RUNs/);
+    const badge = page.getByTestId("local-model-badge");
+    await expect(badge).toHaveAttribute("data-mode", "public");
+    await expect(badge.getByTestId("local-model-status")).toHaveText("public demo: recorded runs; live runs on the presenter's laptop");
+    await expect(page.getByText("PUBLIC DEMO · RECORDED RUNS", { exact: true })).toHaveCount(2); // chip + DECISION B.0
+    const text = (await page.locator("body").textContent()) ?? "";
+    expect(text).not.toMatch(/local model unavailable/i);
+    expect(text).not.toMatch(/local model ready/i);
+    expect(text).not.toMatch(/runs locally, no cloud/i);
+  });
+
   test("each check shows the API's own status, and none before the response lands", async ({ page }) => {
     const c = await realCase(page);
     let release: () => void = () => {};

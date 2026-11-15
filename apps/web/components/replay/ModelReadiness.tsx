@@ -1,7 +1,9 @@
 "use client";
 
+import { describeModelStatus } from "@/lib/api";
 import { settled, useHealth } from "../HealthProvider";
 import { LocalModelBadge } from "./LocalModelBadge";
+import { useModelCard } from "./useModelCard";
 
 /**
  * Local-model readiness for the run controls, from GET /api/health only. Advisory: the run route itself is the
@@ -10,6 +12,7 @@ import { LocalModelBadge } from "./LocalModelBadge";
 export function ModelReadiness() {
   const { state } = useHealth();
   const last = settled(state);
+  const card = useModelCard();
 
   let tone = "text-muted";
   let text = "Checking API status";
@@ -20,8 +23,15 @@ export function ModelReadiness() {
     text = "API unavailable";
     detail = "Model readiness cannot be determined while the API is unreachable.";
   } else if (last?.kind === "online") {
-    const { model, modelTags, requiredModel, modelError } = last.health;
-    if (model === "available") {
+    const { model, modelTags, requiredModel, modelError, serverMode } = last.health;
+    if (serverMode === "public") {
+      // #184: the public server runs no model by design (inference is admin-only there). Say that, not "unavailable".
+      // Run stays admin-gated by the API; the RECORDED RUN panel is the primary forecast.
+      const view = describeModelStatus(last.health, card.kind === "done" ? (card.card?.model ?? null) : null);
+      tone = "text-info";
+      text = view.chip;
+      detail = `${view.explain} Run is admin-only on this server; the RECORDED RUN panel is the forecast shown.`;
+    } else if (model === "available") {
       tone = "text-viable";
       text = "Local model ready";
       detail = `GET /api/health: model_ready true for ${requiredModel ?? "the configured model"}. Installed in Ollama: ${modelTags.join(", ") || "not listed"}.`;

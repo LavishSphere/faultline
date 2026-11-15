@@ -1,6 +1,7 @@
 "use client";
 
 import type { ReactNode } from "react";
+import { describeModelStatus } from "@/lib/api";
 import { settled, useHealth } from "../HealthProvider";
 import { useModelCard } from "./useModelCard";
 import m from "./motion.module.css";
@@ -16,16 +17,23 @@ export function LocalModelBadge({ size = "md" }: { size?: "md" | "lg" }) {
   const last = settled(state);
   const card = useModelCard();
 
-  let tone: "viable" | "risk" | "fail" | "muted" = "muted";
+  let tone: "viable" | "risk" | "fail" | "info" | "muted" = "muted";
   let status = "Checking GET /api/health";
   let model: string | null = null;
+  const isPublic = last?.kind === "online" && last.health.serverMode === "public";
   if (last?.kind === "unreachable") {
     tone = "fail";
     status = "API unavailable: model readiness unknown";
   } else if (last?.kind === "online") {
     const h = last.health;
     model = h.requiredModel ?? null;
-    if (h.model === "available") {
+    if (h.serverMode === "public") {
+      // #184: the public server runs no model by design. The name is the served one (health, else the model card).
+      const view = describeModelStatus(h, card.kind === "done" ? (card.card?.model ?? null) : null);
+      model = view.modelLabel;
+      tone = "info";
+      status = view.badge;
+    } else if (h.model === "available") {
       tone = "viable";
       status = "runs locally, no cloud";
     } else if (h.model === "unavailable") {
@@ -41,8 +49,14 @@ export function LocalModelBadge({ size = "md" }: { size?: "md" | "lg" }) {
   const cutoff = facts && model && facts.model === model ? facts.knowledgeCutoff : null;
   const cutoffText = card.kind === "loading" ? "knowledge cutoff …" : `knowledge cutoff ${cutoff ?? "NOT AVAILABLE"}`;
 
-  const dot = { viable: "bg-viable", risk: "bg-risk", fail: "bg-fail", muted: "bg-muted" }[tone];
-  const statusColor = { viable: "text-viable", risk: "text-risk", fail: "text-fail", muted: "text-muted" }[tone];
+  const dot = { viable: "bg-viable", risk: "bg-risk", fail: "bg-fail", info: "bg-info", muted: "bg-muted" }[tone];
+  const statusColor = {
+    viable: "text-viable",
+    risk: "text-risk",
+    fail: "text-fail",
+    info: "text-info",
+    muted: "text-muted",
+  }[tone];
   const text = size === "lg" ? "text-[12px]" : "text-[11px]";
 
   return (
@@ -50,6 +64,7 @@ export function LocalModelBadge({ size = "md" }: { size?: "md" | "lg" }) {
       className={`flex max-w-full flex-wrap items-center rounded-md border border-line bg-bg/50 font-mono uppercase tracking-[0.1em] text-text-2 ${text}`}
       data-testid="local-model-badge"
       data-ready={last?.kind === "online" ? last.health.model : "unknown"}
+      data-mode={last?.kind === "online" ? (last.health.serverMode ?? "unknown") : "unknown"}
       aria-live="polite"
     >
       <span className="flex items-center gap-2 px-3 py-2">
@@ -61,7 +76,7 @@ export function LocalModelBadge({ size = "md" }: { size?: "md" | "lg" }) {
       </span>
       <Seg>
         <span className="normal-case tracking-normal text-text" data-testid="local-model-name">
-          {model ?? (last?.kind === "online" ? "model NOT AVAILABLE" : "…")}
+          {model ?? (isPublic ? "the presenter's local model" : last?.kind === "online" ? "model NOT AVAILABLE" : "…")}
         </span>
       </Seg>
       <Seg>
