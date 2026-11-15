@@ -17,7 +17,12 @@ import {
   initialModel,
   messageProblem,
   priceLabel,
+  SseParser,
+  applyStreamEvent,
+  readStreamEvent,
+  streamChat,
 } from "./chat.ts";
+import { PRESENTER_KEY, clearPresenterToken, presenterHeaders, setPresenterToken } from "./presenter.ts";
 
 const model = (id, provider, available = true, note = null) => ({ id, label: `Label ${id}`, provider, available, note });
 
@@ -140,4 +145,175 @@ test("featured models: listed ids only, deduplicated, in provider order", () => 
   const ids = featuredModels({ models, default: null, featured: ["c", "missing", "g", "l", "c"] }).map((m) => m.id);
   assert.deepEqual(ids, ["l", "g", "c"]);
   assert.deepEqual(featuredModels({ models, default: null }), []);
+});
+
+// ---- streaming (#222) and presenter mode -------------------------------------------------------------------------
+// Bodies below are hand-built TEST FIXTURES shaped like the stream contract, never real model output.
+
+test("SSE parser: events split across chunks, CRLF, comments and multi-line data", () => {
+  const p = new SseParser();
+  assert.deepEqual(p.feed('data: {"type":"ro'), []);
+  assert.deepEqual(p.feed('und","n":1}\n\n: heartbeat\n\n'), ['{"type":"round","n":1}']);
+  assert.deepEqual(p.feed("data: a\r\ndata: b\r"), []);
+  assert.deepEqual(p.feed("\n\r\n"), ["a\nb"]);
+  assert.deepEqual(p.feed("event: x\nid: 3\ndata:no-space\n\n"), ["no-space"]);
+  assert.deepEqual(p.feed(": only a comment\n\n"), []);
+});
+
+test("stream events: shapes are checked, unknown or malformed ones are dropped", () => {
+  assert.deepEqual(readStreamEvent('{"type":"round","n":2}'), { type: "round", n: 2 });
+  assert.equal(readStreamEvent('{"type":"tool_call","id":"1.1"}'), null);
+  assert.equal(readStreamEvent('{"type":"reply_delta","text":"hi"}'), null); // no such event: never shown
+  assert.equal(readStreamEvent("not json"), null);
+  assert.equal(readStreamEvent(JSON.stringify({ type: "final", response: { status: "ok" } })), null);
+  assert.equal(readStreamEvent(JSON.stringify({ type: "final", response: reply() })).type, "final");
+});
+
+test("live steps: a call runs, then ticks to ok or error with the server's preview", () => {
+  let steps = applyStreamEvent([], { type: "tool_call", id: "1.1", name: "web_search", input_preview: "Searching the web: “x”" });
+  steps = applyStreamEvent(steps, { type: "tool_call", id: "1.2", name: "simulate", input_preview: "Simulating cash: bad-quarter" });
+  assert.deepEqual(steps.map((s) => s.status), ["running", "running"]);
+  steps = applyStreamEvent(steps, { type: "tool_result", id: "1.1", name: "web_search", result_status: "ok", preview: "8 sources: sec.gov", provenance: "LIVE EXPLORE" });
+  steps = applyStreamEvent(steps, { type: "tool_result", id: "1.2", name: "simulate", result_status: "error", preview: "error: bad", provenance: "SIMULATED" });
+  assert.deepEqual(steps.map((s) => [s.status, s.preview]), [["ok", "8 sources: sec.gov"], ["error", "error: bad"]]);
+});
+
+function sseResponse(lines, status = 200) {
+  const enc = new TextEncoder();
+  const body = new ReadableStream({
+    start(c) {
+      for (const l of lines) c.enqueue(enc.encode(l));
+      c.close();
+    },
+  });
+  return new Response(body, { status, headers: { "content-type": "text/event-stream" } });
+}
+
+async function withFetch(impl, fn) {
+  const real = globalThis.fetch;
+  globalThis.fetch = impl;
+  try {
+    return await fn();
+  } finally {
+    globalThis.fetch = real;
+  }
+}
+
+const ASK = { model_id: "m-a", messages: [{ role: "user", content: "q" }] };
+const jsonResponse = (body, status = 200) => new Response(JSON.stringify(body), { status, headers: { "content-type": "application/json" } });
+
+test("streamChat: steps reach onEvent before final; final is the checked response", async () => {
+  const seen = [];
+  const res = await withFetch(
+    async () =>
+      sseResponse([
+        'data: {"type":"start","model_id":"m-a","provider":"anthropic","started_at":"2026-11-15T00:00:00Z"}\n\n',
+        'data: {"type":"tool_call","id":"1.1","name":"simulate","input_preview":"Simulating cash"}\n\n',
+        ": heartbeat\n\n",
+        `data: ${JSON.stringify({ type: "final", response: reply() })}\n\n`,
+      ]),
+    () => streamChat(ASK, (e) => seen.push(e.type)),
+  );
+  assert.equal(res.ok, true);
+  assert.equal(res.data.reply, "fixture reply");
+  assert.deepEqual(seen, ["start", "tool_call"]);
+});
+
+test("streamChat: an error event is a failure with the server's code, never retried", async () => {
+  let calls = 0;
+  const res = await withFetch(
+    async () => {
+      calls += 1;
+      return sseResponse([
+        'data: {"type":"start","model_id":"m","provider":"openai","started_at":""}\n\n',
+        'data: {"type":"error","code":"UPSTREAM_ERROR","message":"No reply was made up.","status":502}\n\n',
+      ]);
+    },
+    () => streamChat(ASK, () => {}),
+  );
+  assert.equal(res.ok, false);
+  assert.equal(res.status, 502);
+  assert.equal(res.code, "UPSTREAM_ERROR");
+  assert.equal(calls, 1);
+});
+
+test("streamChat: 404 or a stream that ends before final falls back to POST /api/explore/chat", async () => {
+  for (const first of [() => new Response("{}", { status: 404 }), () => sseResponse(['data: {"type":"round","n":1}\n\n'])]) {
+    const urls = [];
+    const notices = [];
+    const res = await withFetch(
+      async (url) => {
+        urls.push(String(url));
+        return urls.length === 1 ? first() : jsonResponse(reply());
+      },
+      () => streamChat(ASK, (e) => notices.push(e.type)),
+    );
+    assert.equal(res.ok, true);
+    assert.match(urls[0], /\/api\/explore\/chat\/stream$/);
+    assert.match(urls[1], /\/api\/explore\/chat$/);
+    assert.equal(notices.at(-1), "fallback");
+  }
+});
+
+test("streamChat: a refusal (429) is returned as is, with no fallback", async () => {
+  const urls = [];
+  const res = await withFetch(
+    async (url) => {
+      urls.push(String(url));
+      return jsonResponse({ code: "RATE_LIMITED", message: "Chat limit reached" }, 429);
+    },
+    () => streamChat(ASK, () => {}),
+  );
+  assert.equal(res.ok, false);
+  assert.equal(res.status, 429);
+  assert.equal(res.code, "RATE_LIMITED");
+  assert.equal(urls.length, 1);
+});
+
+function fakeStorage() {
+  const m = new Map();
+  return { getItem: (k) => m.get(k) ?? null, setItem: (k, v) => m.set(k, String(v)), removeItem: (k) => m.delete(k) };
+}
+
+function withStorage(value, fn) {
+  const had = Object.getOwnPropertyDescriptor(globalThis, "localStorage");
+  Object.defineProperty(globalThis, "localStorage", { value, configurable: true, writable: true });
+  const restore = () => (had ? Object.defineProperty(globalThis, "localStorage", had) : delete globalThis.localStorage);
+  try {
+    const out = fn();
+    return out instanceof Promise ? out.finally(restore) : (restore(), out);
+  } catch (err) {
+    restore();
+    throw err;
+  }
+}
+
+test("presenter mode: Authorization is sent only when a token is stored", async () => {
+  await withStorage(fakeStorage(), async () => {
+    assert.deepEqual(presenterHeaders(), {});
+    const sent = [];
+    const capture = async (_url, init) => {
+      sent.push(new Headers(init.headers).get("authorization"));
+      return new Response("{}", { status: 404 });
+    };
+    await withFetch(capture, () => streamChat(ASK, () => {}));
+    assert.ok(setPresenterToken("  tok-fixture  "));
+    assert.equal(globalThis.localStorage.getItem(PRESENTER_KEY), "tok-fixture");
+    await withFetch(capture, () => streamChat(ASK, () => {}));
+    // The stream, then its 404 fallback, twice: no header without a token, Bearer with one.
+    assert.deepEqual(sent, [null, null, "Bearer tok-fixture", "Bearer tok-fixture"]);
+    clearPresenterToken();
+    assert.deepEqual(presenterHeaders(), {});
+  });
+});
+
+test("presenter mode: storage that throws means presenter mode is off, never a crash", () => {
+  const boom = () => {
+    throw new Error("blocked");
+  };
+  withStorage({ getItem: boom, setItem: boom, removeItem: boom }, () => {
+    assert.deepEqual(presenterHeaders(), {});
+    assert.equal(setPresenterToken("x"), false);
+    clearPresenterToken();
+  });
 });

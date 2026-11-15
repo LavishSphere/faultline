@@ -253,6 +253,8 @@ export async function requestJson<T>(
   timeoutMs: number,
   signal?: AbortSignal,
   body?: unknown,
+  /** Extra request headers (presenter mode adds Authorization on the chat paths only, lib/presenter.ts). */
+  extraHeaders?: Record<string, string>,
 ): Promise<ApiResult<T>> {
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(new DOMException("timeout", "TimeoutError")), timeoutMs);
@@ -262,10 +264,10 @@ export async function requestJson<T>(
   try {
     const res = await fetch(`${API_BASE}${path}`, {
       method,
-      headers:
-        body === undefined
-          ? { Accept: "application/json" }
-          : { Accept: "application/json", "Content-Type": "application/json" },
+      headers: {
+        ...(body === undefined ? { Accept: "application/json" } : { Accept: "application/json", "Content-Type": "application/json" }),
+        ...extraHeaders,
+      },
       body: body === undefined ? undefined : JSON.stringify(body),
       cache: "no-store",
       signal: controller.signal,

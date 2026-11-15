@@ -6,7 +6,6 @@ import {
   CHAT_MAX_CHARS,
   CHAT_MAX_MESSAGES,
   CHAT_MODELS_PATH,
-  CHAT_PATH,
   PROVIDER_LABEL,
   describeChatFailure,
   featuredModels,
@@ -14,8 +13,10 @@ import {
   getChatStatus,
   initialModel,
   messageProblem,
-  sendChat,
+  applyStreamEvent,
+  streamChat,
   type ChatFailureView,
+  type LiveStep,
   type ChatMessage,
   type ChatModel,
   type ChatModelsResponse,
@@ -34,6 +35,8 @@ import { EngineAgreement, Universe, type UniverseSource } from "./Universe";
 import { EvidenceCards } from "./EvidenceCards";
 import { MonteCarloCards } from "./MonteCarlo";
 import { VoiceButton } from "./VoiceButton";
+import { LiveSteps } from "./LiveSteps";
+import { PresenterChip } from "./PresenterChip";
 import "./chat.css";
 
 /**
@@ -43,8 +46,9 @@ import "./chat.css";
  * number in its reply comes from those tools. Right: the business universe, which re-runs the exact simulate /
  * optimize inputs of the selected answer on the engine and draws the engine's responses (Universe.tsx).
  *
- * The chat API is not streaming. While a request is in flight the panel says so with the real elapsed time; it never
- * types out text or plays invented steps. The steps the model took are revealed after the reply lands. A race sends
+ * While a request is in flight the panel shows the real elapsed time and the tool steps the server streams as they
+ * happen (POST /api/explore/chat/stream, #222: server-written previews, never reply text). It never types out text or
+ * plays invented steps; the reply appears only when the checked final response lands. A race sends
  * the same question to two models as two parallel requests and shows facts side by side; it names no winner.
  * The conversation lives in React state only and is never persisted.
  */
@@ -52,7 +56,7 @@ import "./chat.css";
 type ModelsState = { kind: "loading" } | { kind: "done"; result: ApiResult<ChatModelsResponse> };
 
 type Outcome =
-  | { kind: "waiting"; startedAt: number }
+  | { kind: "waiting"; startedAt: number; steps: LiveStep[]; fallback: string | null }
   | { kind: "done"; response: ChatResponse; ms: number }
   | { kind: "failed"; failure: ChatFailureView; ms: number };
 
@@ -197,14 +201,29 @@ export function ChatPanel() {
     seq.current += 1;
     const id = seq.current;
     const startedAt = Date.now();
-    setTurns([...base, { id, question, lanes: ms.map((model) => ({ model, outcome: { kind: "waiting", startedAt } })) }]);
+    setTurns([...base, { id, question, lanes: ms.map((model) => ({ model, outcome: { kind: "waiting", startedAt, steps: [], fallback: null } })) }]);
     setShown(null);
     setText("");
-    // One request per lane, in parallel: a race is exactly two POST /api/explore/chat calls.
+    // One request per lane, in parallel: a race is exactly two streamed chat calls, each with its own live steps.
     ms.forEach((model, lane) => {
       const ctrl = new AbortController();
       aborts.current.add(ctrl);
-      void sendChat({ model_id: model.id, messages: [...hists[lane]!, { role: "user", content: question }] }, ctrl.signal).then((res) => {
+      const onEvent = (ev: Parameters<Parameters<typeof streamChat>[1]>[0]) =>
+        setTurns((ts) =>
+          ts.map((t) =>
+            t.id !== id
+              ? t
+              : {
+                  ...t,
+                  lanes: t.lanes.map((l, i) => {
+                    if (i !== lane || l.outcome.kind !== "waiting") return l;
+                    const o = l.outcome;
+                    return { ...l, outcome: ev.type === "fallback" ? { ...o, fallback: ev.reason } : { ...o, steps: applyStreamEvent(o.steps, ev) } };
+                  }),
+                },
+          ),
+        );
+      void streamChat({ model_id: model.id, messages: [...hists[lane]!, { role: "user", content: question }] }, onEvent, ctrl.signal).then((res) => {
         aborts.current.delete(ctrl);
         const ms2 = Date.now() - startedAt;
         const outcome: Outcome = res.ok
@@ -281,7 +300,10 @@ export function ChatPanel() {
             Any business decision. Cited sources. Monte Carlo odds.
           </p>
         </div>
-        <ProvenanceKey />
+        <span className="flex flex-col items-end gap-1.5">
+          <ProvenanceKey />
+          <PresenterChip onChange={() => setModelsRetry((n) => n + 1)} />
+        </span>
       </header>
 
       {paused ? (
@@ -615,9 +637,7 @@ function LaneView({
           </p>
         </div>
         {racing ? <LaneFacts lane={lane} response={null} ms={null} catalogue={catalogue} /> : null}
-        <p className="font-mono text-[10.5px] text-muted" title={`POST ${CHAT_PATH} is not streaming`}>
-          Arrives in one piece, not streamed.
-        </p>
+        <LiveSteps steps={o.steps} fallback={o.fallback} reduce={reduce} />
         <button type="button" onClick={onStop} className="w-fit rounded-md border border-line-strong px-3 py-1.5 font-mono text-[10.5px] uppercase tracking-[0.12em] text-text-2 hover:bg-hover hover:text-text">
           Stop waiting
         </button>
