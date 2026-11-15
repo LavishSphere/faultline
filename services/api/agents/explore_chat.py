@@ -642,6 +642,36 @@ class OpenAICompatibleAdapter:
 ANTHROPIC_BETAS = ["server-side-fallback-2026-07-01"]
 
 
+
+# Anthropic compiles strict tool schemas and refuses a request whose strict tools hold more than 16 union-typed
+# (type array or anyOf) parameters in total (400: "too many parameters with union types"). Tools are marked strict
+# in order while the running total stays within the limit; the rest are sent non-strict. Every tool input is still
+# validated by the engine's own Pydantic models before it runs, so non-strict changes no result, only who rejects
+# a malformed call first.
+ANTHROPIC_STRICT_UNION_LIMIT = 16
+
+
+def union_param_count(schema: Any) -> int:
+    """Number of (nested) schema nodes with a type array or anyOf, as Anthropic counts them for strict tools."""
+    if isinstance(schema, list):
+        return sum(union_param_count(s) for s in schema)
+    if not isinstance(schema, dict):
+        return 0
+    own = 1 if isinstance(schema.get("type"), list) or "anyOf" in schema else 0
+    return own + sum(union_param_count(v) for k, v in schema.items() if k != "enum")
+
+
+def anthropic_tools(tools: list[ToolSpec]) -> list[dict[str, Any]]:
+    out, used = [], 0
+    for t in tools:
+        n = union_param_count(t.parameters)
+        strict = used + n <= ANTHROPIC_STRICT_UNION_LIMIT
+        used += n if strict else 0
+        out.append({"name": t.name, "description": t.description, "input_schema": t.parameters,
+                    **({"strict": True} if strict else {})})
+    return out
+
+
 class AnthropicAdapter:
     """Claude through the ``anthropic`` SDK: adaptive thinking, strict tools, server-side ``fallbacks: "default"``
     (on a safety decline the API re-runs the request on Anthropic's recommended fallback), and ``refusal`` handled
@@ -659,8 +689,7 @@ class AnthropicAdapter:
     def start(self, history: list[dict[str, str]], tools: list[ToolSpec], system: str) -> None:
         self.system = system
         self.messages = [dict(m) for m in history]
-        self.tools = [{"name": t.name, "description": t.description, "input_schema": t.parameters, "strict": True}
-                      for t in tools]
+        self.tools = anthropic_tools(tools)
 
     async def step(self) -> Step:
         try:
