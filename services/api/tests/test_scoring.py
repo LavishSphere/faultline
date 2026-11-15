@@ -467,9 +467,7 @@ def test_exclusions_are_reported_by_reason(tmp_path):
     rows = rows_for(7)
     e0, t0, y0, a0, _m = rows[0]
     rows[0] = (e0, t0, y0, a0, None)  # no market quote at that as_of
-    vault, gate = scored_world(
-        tmp_path, rows, likely_events={rows[1][0]}, extra_cases=("synthetic_no_prediction",)
-    )
+    vault, gate = scored_world(tmp_path, rows, likely_events={rows[1][0]}, extra_cases=("synthetic_no_prediction",))
     card = build_scorecard(vault, cases=gate)
     assert card.exclusions_by_reason == {
         "market_not_available": 1,
@@ -502,6 +500,33 @@ def test_multiple_horizons_are_averaged_within_event(tmp_path):
     assert first.n_snapshots == 2
     assert first.brier["agent_only"] == pytest.approx((0.01 + 0.09) / 2)
     assert first.brier["market"] == pytest.approx((0.16 + 0.16) / 2)
+
+
+def test_per_event_p_yes_are_the_scored_inputs(tmp_path):
+    """#180: agent_p_yes / market_p_yes are the persisted p and the gate's frozen baseline behind the row's scores."""
+    rows = rows_for(6)
+    vault, _ = scored_world(tmp_path, rows)
+    card = build_scorecard(vault)
+    store = vault.store
+    assert len(card.per_event) == 6
+    for e in card.per_event:
+        (pid,) = e.prediction_ids
+        rec = store.get_record(pid)
+        assert e.agent_p_yes == rec.prediction.p_yes
+        assert e.market_p_yes == rec.context.market_baseline_p_yes
+        row = next(r for r in rows if r[0] == e.event_id)
+        assert (e.agent_p_yes, e.market_p_yes) == (row[3], row[4])
+        for f, q in (("agent_only", e.agent_p_yes), ("market", e.market_p_yes)):
+            assert e.brier[f] == brier(q, e.y) and e.log_loss[f] == log_loss(q, e.y)
+
+
+def test_multi_snapshot_row_carries_no_single_p_yes(tmp_path):
+    rows = rows_for(5)
+    rows.append((rows[0][0], AS_OF + timedelta(days=-3), 0, 0.3, 0.4))
+    card = card_for(tmp_path, rows)
+    first = next(e for e in card.per_event if e.n_snapshots == 2)
+    assert (first.agent_p_yes, first.market_p_yes) == (None, None)  # a mean p would not reproduce a mean Brier
+    assert all(e.agent_p_yes is not None for e in card.per_event if e.n_snapshots == 1)
 
 
 def test_duplicate_predictions_for_one_snapshot_are_excluded_not_chosen(tmp_path):

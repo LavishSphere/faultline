@@ -65,7 +65,7 @@ from core.store import HashMismatch, PredictionExists, PredictionStore
 from core.temporal_gate import MarketNotAvailable, ModelInput
 from errors import FaultlineError
 from markets.base import MarketLabel
-from models import ApiError, ErrorCode, Identifier, Prediction, Provenance
+from models import ApiError, ErrorCode, Identifier, Prediction, Provenance, Sha256Hex
 from routes import CodedRoute, FieldIssue, RouteError
 from routes.cases import MarketAtCutoff, coded_responses, market_at_cutoff, require_case_store
 
@@ -399,6 +399,10 @@ class RevealResponse(BaseModel):
     )
     scores: PredictionScores
     baselines: Baselines
+    case_sha256: Sha256Hex = Field(
+        description="Content hash of the case record this forecast was made from, frozen with the prediction "
+        "(its scoring context) before any reveal (#180)."
+    )
 
 
 def _reveal_responses() -> dict[int | str, dict[str, Any]]:
@@ -456,4 +460,5 @@ def reveal_prediction(prediction_id: str) -> RevealResponse:
             ),
             naive=NaiveBaselineScores(brier=brier(NAIVE_P_YES, y), log_loss=log_loss(NAIVE_P_YES, y)),
         ),
+        case_sha256=rec.context.case_sha256,
     )

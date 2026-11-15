@@ -1,0 +1,123 @@
+# FAULTLINE API stack for the lead's Debian/Ubuntu server (CPU only). See docs/DEPLOY.md.
+#
+#   cp deploy/.env.example deploy/.env    # on the server; fill in, chmod 600
+#   docker compose -f deploy/docker-compose.yml up -d --build
+#   COMPOSE_PROFILES=ollama ...           # also start the optional internal Ollama
+#
+# Network layout (only Caddy is reachable from outside, and only on 80/443):
+#   internet --80/443--> caddy --edge (internal)--> api --models (internal)--> ollama (optional)
+# `edge` and `models` are internal networks: api and ollama have no route to the internet at runtime,
+# so replay inference runs with outbound network disabled (replay-integrity rule).
+#
+# Client IPs: Caddy overwrites X-Forwarded-For with the TCP peer; uvicorn trusts that header ONLY from the `edge`
+# subnet below (FORWARDED_ALLOW_IPS), so no other container (e.g. ollama on `models`) can spoof a client address.
+# The subnet is pinned once here (&edge_subnet) and used twice. If `up` fails with "Pool overlaps", pick another
+# private /28 for this one value (docs/DEPLOY.md).
+name: faultline
+
+x-edge-subnet: &edge_subnet 10.231.80.0/28
+
+services:
+  api:
+    build:
+      context: ../services/api
+      dockerfile: ../../deploy/api.Dockerfile
+    image: faultline-api:local
+    restart: unless-stopped
+    environment:
+      FAULTLINE_MODE: public
+      FAULTLINE_PUBLIC_ORIGIN: ${FAULTLINE_PUBLIC_ORIGIN:?set FAULTLINE_PUBLIC_ORIGIN in deploy/.env}
+      FAULTLINE_CORS_ORIGINS: ${FAULTLINE_CORS_ORIGINS:-}
+      FAULTLINE_ADMIN_TOKEN: ${FAULTLINE_ADMIN_TOKEN:-}
+      FAULTLINE_RATE_LIMIT_PER_MIN: ${FAULTLINE_RATE_LIMIT_PER_MIN:-600}
+      FAULTLINE_MAX_BODY_BYTES: ${FAULTLINE_MAX_BODY_BYTES:-65536}
+      # The server never writes the OFFICIAL store (lead policy, #57/#130): admin runs and reveals go to a server
+      # scratch store in the api-var volume, and FAULTLINE_DEMO_STORE marks it so no computed scorecard served
+      # from it is OFFICIAL (#155). The official RECORDED RUN is the committed one (docs/DEPLOY.md).
+      FAULTLINE_PREDICTIONS_DB: /app/var/server/predictions.sqlite3
+      FAULTLINE_DEMO_STORE: /app/var/server/predictions.sqlite3
+      OLLAMA_BASE_URL: http://ollama:11434
+      # uvicorn --proxy-headers trusts X-Forwarded-For only from Caddy's network (never "*").
+      FORWARDED_ALLOW_IPS: *edge_subnet
+      FAULTLINE_OLLAMA_MODEL: ${FAULTLINE_OLLAMA_MODEL:-llama3.1:8b}
+    user: "10001:10001"
+    read_only: true
+    tmpfs:
+      - /tmp:size=64m,mode=1777
+    volumes:
+      - api-var:/app/var
+    cap_drop: [ALL]
+    security_opt: ["no-new-privileges:true"]
+    deploy:
+      resources:
+        limits:
+          memory: 2g
+          pids: 256
+    networks: [edge, models]
+    # no `ports:`: the API is reachable only through Caddy.
+
+  caddy:
+    image: caddy:2.11.9-alpine
+    restart: unless-stopped
+    depends_on:
+      api:
+        condition: service_healthy
+    environment:
+      FAULTLINE_API_HOST: ${FAULTLINE_API_HOST:?set FAULTLINE_API_HOST in deploy/.env}
+    ports:
+      - "80:80"
+      - "443:443"
+      - "443:443/udp"
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy-data:/data
+      - caddy-config:/config
+    read_only: true
+    tmpfs:
+      - /tmp:size=16m
+    cap_drop: [ALL]
+    cap_add: [NET_BIND_SERVICE]
+    security_opt: ["no-new-privileges:true"]
+    deploy:
+      resources:
+        limits:
+          memory: 256m
+    networks: [public, edge]
+
+  # Optional, CPU only. Never published: no `ports:`, internal network only.
+  # Models are pulled out of band (docs/DEPLOY.md, "Optional: Ollama on the server").
+  ollama:
+    image: ollama/ollama:0.40.16
+    profiles: ["ollama"]
+    restart: unless-stopped
+    environment:
+      OLLAMA_NUM_PARALLEL: "1"
+      OLLAMA_KEEP_ALIVE: 30m
+    volumes:
+      - ollama-models:/root/.ollama
+    # The image has no non-root user and keeps state under /root/.ollama, so it stays uid 0 but without
+    # capabilities or privilege escalation.
+    cap_drop: [ALL]
+    security_opt: ["no-new-privileges:true"]
+    deploy:
+      resources:
+        limits:
+          memory: 32g
+          pids: 512
+    networks: [models]
+
+networks:
+  public: {}
+  edge:
+    internal: true
+    ipam:
+      config:
+        - subnet: *edge_subnet
+  models:
+    internal: true
+
+volumes:
+  api-var: {}
+  caddy-data: {}
+  caddy-config: {}
+  ollama-models: {}

@@ -61,7 +61,10 @@ ALLOWED_SCRIPTS = {"tavily_curate.py"}  # relative to the repo scripts/ director
 # Exact references other files may contain. main.py mounts the router (and nothing else). The CI secret
 # scanner names the Tavily key pattern so it can block committed keys.
 ALLOWED_REFS = {
-    "main.py": {"import:routes.explore", "name:explore"},
+    # main.py mounts the router and, in its edge block, names the explore paths so the public-mode admin gate and
+    # route table can refuse them (#13). Path strings only: no import of Tavily or explore internals.
+    "main.py": {"import:routes.explore", "name:explore", "const:/api/explore", "const:/api/explore/analyze",
+                "const:/api/explore/search"},
     "ci/content_scan.py": {"const:Tavily API key"},
 }
 
@@ -79,6 +82,7 @@ REPLAY_MODULES = (
     "routes.cases",
     "routes.replay",
     "routes.benchmark",
+    "routes.recorded",
     "routes.evidence",
 )
 REQUIRED_ON_MAIN = {"core.temporal_gate", "core.store", "core.evaluator", "core.provenance", "routes.cases",
@@ -92,8 +96,9 @@ _LIVE_EXPLORE = re.compile(
     re.IGNORECASE,
 )
 _EXACT_EXPLORE = {"explore"}  # e.g. getattr(routes, "explore"), import_module("routes." + "explore")
-# Key-presence plumbing (config.py boolean, /api/health notice, OptionalKeys field) may appear anywhere.
-_KEY_PRESENCE = re.compile(r"TAVILY_API_KEY|tavily_api_key(?:_set)?")
+# Key-presence plumbing (config.py boolean, /api/health notice, OptionalKeys field, the public /api/health boolean
+# `tavily_configured` in routes/health.py, #172) may appear anywhere.
+_KEY_PRESENCE = re.compile(r"TAVILY_API_KEY|tavily_api_key(?:_set)?|tavily_configured")
 
 
 def _module_path(dotted: str) -> Path:

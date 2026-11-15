@@ -27,7 +27,7 @@ export function MinCashSublabel({ data }: { data: SimulateResponse }) {
         ) : floor.firstBelow === null ? (
           <>stays above the {usd(floor.floor)} floor</>
         ) : (
-          <span className="text-risk">
+          <span className="font-medium text-fail">
             floor {usd(floor.floor)} · below it in week{floor.weeksBelow.length === 1 ? "" : "s"}{" "}
             {weekRanges(floor.weeksBelow)}
           </span>

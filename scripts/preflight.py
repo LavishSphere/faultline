@@ -251,7 +251,7 @@ def check_recorded_runs() -> None:
         report(
             "WARN",
             "recorded runs",
-            "none committed yet (official RECORDED RUN is PENDING #67)",
+            "none committed yet (official RECORDED RUN is PENDING #57)",
         )
     for run_dir in run_dirs:
         problems = benchmark.verify_run(run_dir)
@@ -277,7 +277,7 @@ def check_recorded_runs() -> None:
         report(
             "WARN",
             "recorded scorecards",
-            "none committed yet; GET /api/benchmark shows INSUFFICIENT DATA",
+            "none committed yet; GET /api/benchmark shows NOT AVAILABLE",
         )
     for path in cards:
         try:

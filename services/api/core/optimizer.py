@@ -633,6 +633,10 @@ def optimize(
     # snapped to the floor, so the objective below is unchanged. Only the week is tolerance-based (_min_cash_week).
     min_cash = min(cash)
     disruption_cost = float(prob.c_disruption @ sol)
+    # A no-action plan prices the stock-out term c_u u_t on solver round-off (u_t ~ -1e-13), so the sum came out near
+    # -1e-12 and CASCADE showed "-0.00" (PR #161 review). Any real action costs far more than 1e-6.
+    if abs(disruption_cost) < 1e-6:
+        disruption_cost = 0.0
     return OptimizationResult(
         status=OPTIMAL,
         solver_message=message,

@@ -23,7 +23,7 @@ from core.store import PredictionStore
 from core.temporal_gate import EvidenceStore
 from main import create_app
 
-TOKEN = "t" * 40  # test-only admin token (>= 32 chars)
+TOKEN = "c3" * 32  # test-only admin token, `openssl rand -hex 32` shape (public mode requires it)
 
 
 class _Recorder:
@@ -274,21 +274,37 @@ def test_public_mode_gate_runs_before_body_validation(world, public):
 @pytest.mark.parametrize("configured", [None, "", "short-token", " " * 40])
 def test_public_mode_with_no_usable_token_configured_fails_closed(world, monkeypatch, configured):
     tmp_path = world[0]
+    db = db_path()
     monkeypatch.setenv("FAULTLINE_MODE", "public")
     if configured is None:
         monkeypatch.delenv("FAULTLINE_ADMIN_TOKEN", raising=False)
     else:
         monkeypatch.setenv("FAULTLINE_ADMIN_TOKEN", configured)
+    if configured and configured.strip():
+        # A set-but-short token in public mode stops the app at startup (config.ConfigError, PR #28): closed.
+        from config import ConfigError
+
+        with pytest.raises(ConfigError):
+            client()
+        assert reveal_count(db) == 0 and scorecard_files(tmp_path) == []
+        return
     _assert_refused(compute(client(), Authorization=f"Bearer {TOKEN}"), 403, tmp_path)
-    if configured and configured.strip():  # presenting the (too short) configured token itself is still refused
-        _assert_refused(compute(client(), Authorization=f"Bearer {configured}"), 403, tmp_path)
 
 
 @pytest.mark.parametrize("mode", ["PUBLIC", "pubic", "prod", " public "])
 def test_any_mode_other_than_local_is_gated(world, monkeypatch, mode):
     tmp_path = world[0]
+    db = db_path()
     monkeypatch.setenv("FAULTLINE_MODE", mode)
     monkeypatch.setenv("FAULTLINE_ADMIN_TOKEN", TOKEN)
+    if mode.strip().lower() != "public":
+        # config.get_settings refuses an unknown mode at startup (PR #28): fail closed, nothing computed.
+        from config import ConfigError
+
+        with pytest.raises(ConfigError):
+            client()
+        assert reveal_count(db) == 0 and scorecard_files(tmp_path) == []
+        return
     _assert_refused(compute(client()), 401, tmp_path)
 
 

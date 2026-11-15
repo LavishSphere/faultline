@@ -123,12 +123,25 @@ def test_fomc_break_even_is_available(client):
     assert below["recommendation"] == "WAIT" and body["recommendation"] == "ACT"
 
 
-@pytest.mark.parametrize("frame_id", [f for f, v in FRAMES.items() if not v["forecast_sensitive"]])
-def test_forecast_insensitive_frames_have_no_break_even(client, frame_id):
-    body = client.post("/api/decision", json={"frame_id": frame_id, "p_yes": 0.5}).json()
+@pytest.mark.parametrize("frame_id", list(FRAMES))
+def test_every_frame_is_forecast_sensitive(client, frame_id):
+    """Issue #103: with the stock-out cost every frame's recommendation depends on P(YES). E[V] is linear in p, so the
+    recommendation changes somewhere in [0, 1] exactly when it differs at p = 0 and p = 1."""
+    frame = FRAMES[frame_id]
+    assert frame["forecast_sensitive"] is True and frame.get("caveat") is None
+    at = {p: client.post("/api/decision", json={"frame_id": frame_id, "p_yes": p}).json() for p in (0.0, 0.5, 1.0)}
+    assert at[0.5]["forecast_sensitive"] is True and at[0.5]["caveat"] is None
+    assert at[0.0]["recommendation"] != at[1.0]["recommendation"]
+    assert at[0.5]["break_even"]["status"] == "AVAILABLE" and 0.0 < at[0.5]["break_even"]["p_star"] < 1.0
+
+
+def test_parallel_top_two_have_no_break_even(client):
+    """Supply frame below its p* = 0.1225: the top two, WAIT and HEDGE, differ by the same amount in both states, so
+    p* reads NOT AVAILABLE, never a made-up number."""
+    body = client.post("/api/decision", json={"frame_id": "supply-disruption", "p_yes": 0.05}).json()
+    assert body["recommendation"] == "WAIT" and body["break_even"]["policies"] == ["WAIT", "HEDGE"]
     assert body["break_even"]["status"] == "NOT AVAILABLE" and body["break_even"]["p_star"] is None
     assert body["break_even"]["note"].startswith("NOT AVAILABLE")
-    assert body["caveat"] == FRAMES[frame_id]["caveat"]
 
 
 def test_no_safe_policy_when_nothing_is_feasible_in_both(client, data_dir):

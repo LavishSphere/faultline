@@ -14,7 +14,7 @@ import {
 
 export type RunState =
   | { kind: "idle" }
-  | { kind: "running"; request: string }
+  | { kind: "running"; request: string; /** Epoch ms of the click (this browser's clock), for the elapsed-time readout. */ startedAt: number }
   /** `waitedSeconds`: how long the browser waited before giving up (timeout or cancel); null for other failures. */
   | { kind: "failed"; failure: ReplayFailure; waitedSeconds: number | null }
   | { kind: "done"; run: ReplayRun };
@@ -126,7 +126,7 @@ export function useReplayRun(c: ReplayCasePublic | null, variant: ForecastVarian
   let state: RunState = { kind: "idle" };
   const stored = caseId ? runStore.get(caseId, variant) : undefined;
   const failed = key ? failures.get(key) : undefined;
-  if (flight && flight.key === key) state = { kind: "running", request: RUN_REQUEST };
+  if (flight && flight.key === key) state = { kind: "running", request: RUN_REQUEST, startedAt: flight.startedAt };
   else if (failed) state = { kind: "failed", ...failed };
   else if (stored) state = { kind: "done", run: stored };
 

@@ -79,15 +79,16 @@ ollama pull llama3.1:8b         # local replay model; without it replay shows MO
 make web-build                  # production build of apps/web (optional; demo falls back to `next dev`)
 make preflight                  # one PASS/WARN/FAIL line per check; exits 1 on any FAIL
 make preflight ARGS=--tests     # same, plus the backend pytest suite
-make demo-scratch               # API on :8000 + web on :3000, on a SCRATCH prediction store (use this on stage)
+make demo-scratch               # API on :8000 + web on :3000, on a NEW empty SCRATCH store per launch (use this on stage)
 ```
 
 Open http://localhost:3000. The prediction store (forecasts + reveal ledger; computed scorecards sit in
 `scorecards/` next to it) is the `FAULTLINE_PREDICTIONS_DB` setting. Unset, it is the **official** store
 `services/api/var/predictions.sqlite3`: `make demo` uses it and prints a warning. Lead policy: the official RECORDED
 RUN is made with `scripts/record_runs.py` (which uses the official store unless `FAULTLINE_PREDICTIONS_DB` is set)
-before any stage demo, and every stage run or reveal uses a scratch store: `make demo-scratch`
-(`services/api/var/scratch/predictions.sqlite3`), `FAULTLINE_DEMO_STORE=<path> make demo` (refused if it names the
+before any stage demo, and every stage run or reveal uses a scratch store: `make demo-scratch` (a new
+`services/api/var/scratch/<UTC stamp>/predictions.sqlite3` per launch, path printed at start; reuse one on purpose
+with `make demo-scratch SCRATCH_STORE=<path>`), `FAULTLINE_DEMO_STORE=<path> make demo` (refused if it names the
 official store) or `FAULTLINE_PREDICTIONS_DB=<path> make demo`. `make preflight` prints the store the setting names
 (PASS for a scratch store, WARN for the official one); prefix it with the same variable you demo with. Release
 status and evidence: [`docs/RELEASE_CHECKLIST.md`](docs/RELEASE_CHECKLIST.md).

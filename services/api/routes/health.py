@@ -1,18 +1,43 @@
-"""GET /api/health: runtime status and model readiness. Must answer 200 even when Ollama is down."""
+"""GET /api/health: runtime status and model readiness. Must answer 200 even when Ollama is down.
+
+Two shapes (docs/DEPLOY.md "Health"):
+- local mode: ``HealthResponse`` (installed model tags, required model, notices, manifest hash), unchanged;
+- public mode: ``PublicHealthResponse``, booleans only (``model_ready``, ``ollama_reachable``,
+  ``tavily_configured``): no model list, no model tag, no error text, no key details.
+``model_ready`` means the same in both, so the web app can read it whatever the mode.
+"""
 
 from __future__ import annotations
 
 import hashlib
 from dataclasses import dataclass, field
-from typing import Annotated
+from typing import Annotated, Literal
 
 import httpx
 from fastapi import APIRouter, Depends
+from pydantic import BaseModel, ConfigDict, Field
 
 from config import Settings, get_settings
 from models import HealthResponse, OllamaStatus, OptionalKeys
 
 router = APIRouter(tags=["health"])
+
+
+class PublicHealthResponse(BaseModel):
+    """`/api/health` in public mode (docs/DEPLOY.md): readiness booleans only.
+
+    No model list, model tag, error text, key details, data paths or notices: the public server does not tell
+    anonymous callers what it runs. `model_ready` has the same meaning as in HealthResponse (the web app reads it in
+    both modes).
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    status: Literal["ok"] = Field(description="The API process is up. Model readiness is reported separately.")
+    model_ready: bool = Field(description="Ollama reachable AND the configured replay model is installed.")
+    ollama_reachable: bool = Field(description="Ollama reachable at OLLAMA_BASE_URL.")
+    tavily_configured: bool = Field(description="TAVILY_API_KEY is set (Live Explore still needs the admin token).")
+
 
 OLLAMA_PROBE_TIMEOUT_S = 1.5
 
@@ -61,13 +86,20 @@ def manifest_sha256(settings: Settings) -> str | None:
         return None
 
 
-@router.get("/health", response_model=HealthResponse)
+@router.get("/health", response_model=HealthResponse | PublicHealthResponse)
 async def health(
     settings: Annotated[Settings, Depends(get_settings)],
     transport: Annotated[httpx.AsyncBaseTransport | None, Depends(get_ollama_transport)],
-) -> HealthResponse:
+) -> HealthResponse | PublicHealthResponse:
     probe = await probe_ollama(settings.ollama_base_url, transport)
     present = probe.reachable and model_present(settings.ollama_model, probe.models)
+    if settings.mode == "public":
+        return PublicHealthResponse(
+            status="ok",
+            model_ready=present,
+            ollama_reachable=probe.reachable,
+            tavily_configured=settings.tavily_api_key_set,
+        )
     manifest = manifest_sha256(settings)
 
     notices: list[str] = []

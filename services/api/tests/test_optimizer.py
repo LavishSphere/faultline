@@ -9,6 +9,7 @@ with core.financials.simulate() and requires the same cash, revolver and invento
 from __future__ import annotations
 
 import json
+import math
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -591,6 +592,25 @@ def test_reported_paths_have_no_round_off_around_zero(label):
         assert all(b >= 0.0 for b in res.revolver_balance), label
         for path in (res.cash, res.revolver_balance, res.inventory):
             assert all(x == 0.0 or abs(x) >= optimizer_module.ZERO_TOL for x in path), label
+
+
+def test_no_action_plans_report_a_disruption_cost_of_exactly_zero():
+    # PR #161 review: with no action the stock-out term c_u u_t was priced on solver round-off, so disruption_cost came
+    # out near -1e-12 (baseline: -1.09e-12) and CASCADE showed "-0.00". It is now exactly 0.0, and never negative: it is
+    # a weighted sum of actions and shortfalls that are all >= 0.
+    no_action = []
+    for label, shock in {"baseline": BASELINE, **ALL_NAMED}.items():
+        res = run(DEMO, shock, protect=True)
+        if res.status != OPTIMAL:
+            continue  # plant closure with payroll protected: NO FEASIBLE PLAN, no cost is reported
+        assert res.disruption_cost >= 0.0, label
+        if not res.actions:
+            # copysign: -0.0 == 0.0 is True in Python, but a screen prints -0.0 as "-0".
+            assert res.disruption_cost == 0.0 and math.copysign(1.0, res.disruption_cost) == 1.0, label
+            no_action.append(label)
+    # The baseline and the three named scenarios that stay above the floor (test above) take no action.
+    assert {"baseline", "scenario rate-plus-200bp", "scenario demand-drop-20pct-6wk",
+            "scenario supplier-outage-3wk"} <= set(no_action)
 
 
 def test_plant_closure_with_payroll_cuts_reports_zero_revolver_balance():

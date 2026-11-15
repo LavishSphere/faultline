@@ -267,6 +267,47 @@ file, is refused at load. Case files must not be hard links.
   (4) publish the scorecard with its exclusions and `official_blockers`.
 - Recorded demo runs are labeled `RECORDED RUN` and carry model id, digest, temperature, seed and both hashes.
 
+### Pre-registered analysis for the first official run (2026-11-14)
+
+Written on 2026-11-14, before the first official run. At this commit `services/api/data/recorded_runs/` holds only
+its README: no forecast row, manifest or scorecard has been recorded, so no official result exists yet. Nothing
+below may be changed after any official reveal; a change needs a new dated subsection written before a fresh run.
+
+- **Population (primary).** One pooled card per variant over **all** committed `REAL_HISTORICAL` cases, scored as
+  in §6: at this commit 28 cases, 15 FOMC (`docs/CASES.md` Part 3) and 13 CPI (Part 4), the set `GET /api/cases`
+  serves (29 cases including the synthetic one). The run follows the official run procedure above
+  (`scripts/record_runs.py`; the real set is scored as `case_set: "real"`). The synthetic case is scored as its own
+  set and is never pooled (§6). The card is labelled `OFFICIAL` only if every OFFICIAL condition (§3) holds;
+  otherwise it carries the label §6 gives it.
+- **Primary statistic.** $\Delta = \overline{\text{Brier}}_{agent} - \overline{\text{Brier}}_{market}$ over events,
+  with the paired bootstrap of §6: $B = 10{,}000$, seed `20261115`, 95% percentile CI. The verdict and caveats are
+  exactly the §6 display rules (n = 28 < 30, so the small-sample caveat is shown; "agent better than market" only if
+  the CI upper bound is below 0). Brier is the only verdict metric; log loss and accuracy at 0.5 are secondary.
+- **Primary variant: `agent_only`.** Its card is the headline result. `agent_plus_market` is reported alongside it,
+  with its own card and CI, as the secondary comparison. This follows MATH_MODEL §6 review finding 5 (name one primary
+  variant before the reveal) and the finance owner's recommendation on #115. The choice is not revisited after the
+  reveal, whichever variant scores better.
+- **Model.** `ollama/llama3.1:8b` only, run locally through `LocalOllamaProvider`: temperature 0 and the provider's
+  fixed seed (`DEFAULT_SEED = 20261115` in `agents/local_ollama.py`), with the Ollama digest recorded in every row.
+  No other model and no hosted comparator is part of this analysis. A run with any other model is a different
+  analysis and is not reported under this subsection.
+- **Exploratory, descriptive only (label: `EXPLORATORY`).** For each variant, per family (FOMC: `event_id` starting
+  `fomc-`; CPI: starting `cpi-`): the number of scored events and the mean Brier of the agent, the market and the
+  naive forecaster ($p = 0.5$), computed in Python from the committed card's `per_event` rows (`brier[...]`). No CI, no
+  bootstrap, no verdict, no significance claim and no "better" or "worse" wording; it is shown only next to the primary
+  card, never on its own. It cannot change the primary population, variant or verdict.
+- **Known limits.**
+  - The two families have different base rates. The CPI questions are mostly tail buckets the market priced well
+    below 0.5 (`docs/CASES.md` Part 4), so a pooled mean mixes two kinds of question, and a family mean of 13 or 15
+    events is noisier still.
+  - Events share evidence across cases and families (`docs/CASES.md`, "Cross-case visibility"), and consecutive
+    decisions and prints share shocks. The bootstrap resamples events as if they were independent, so that assumption
+    is only approximate, and the CI is likely too narrow (see also MATH_MODEL §6 review finding 4).
+  - #115 also recommends no "better" verdict unless both outcomes occur among the scored events. **Lead decision
+    (2026-11-14, before any official forecast): this rule is NOT applied to the first official run.** Changing the
+    scoring code just before the one-time run is riskier than the rule is worth here. Every scored event's outcome is in the
+    card's per-event rows, so a reader can count YES and NO outcomes and apply the rule themselves. The rule is a candidate for the next run.
+
 ---
 
 ## 9. HTTP routes (#44 part A)
@@ -276,13 +317,15 @@ file, is refused at load. Case files must not be hard links.
 | `GET /api/cases` | pre-reveal | `EvidenceStore.public_case` per case file: `evidence_ids` lists only items the gate admits at the cutoff |
 | `GET /api/cases/{case_id}/evidence?as_of=` | pre-reveal | `EvidenceStore.get_as_of`: the prompt projection of admitted evidence, the selected as-of quote per market, the market baseline at the cutoff (or NOT AVAILABLE), exclusion counts by reason (no ids). `as_of` defaults to, and may not be later than, the case cutoff (422) |
 | `POST /api/replay/run` `{case_id, variant}` | pre-reveal; admin-only in public mode | gate, provider, skeptic, then `PredictionStore.save(..., final_prompt=...)`; nothing is saved on any provider error or skeptic rejection. A run saved after a reveal is not refused but flagged from `audit_log`: `event_first_reveal_seq` / `persisted_after_event_reveal` (this event) and `store_first_reveal_seq` / `persisted_after_any_reveal` (anywhere), plus an `audit_note` |
-| `POST /api/replay/{prediction_id}/reveal` | post-reveal; admin-only in public mode | `OutcomeVault.reveal`, per-prediction Brier / log loss / accuracy at 0.5, naive and market baselines from the stored pre-reveal context |
+| `POST /api/replay/{prediction_id}/reveal` | post-reveal; admin-only in public mode | `OutcomeVault.reveal`, per-prediction Brier / log loss / accuracy at 0.5, naive and market baselines from the stored pre-reveal context, and `case_sha256`: the case content hash frozen in that prediction's stored scoring context (#180; not recomputed at reveal time). Pre-reveal responses are unchanged |
+| `GET /api/replay/recorded?case_id=&agent_variant=` (#116) | pre-reveal; read-only, public | `routes/recorded.py`: the committed RECORDED RUN forecast rows for one case from `data/recorded_runs/runs/<run_id>/`, newest run first. Only manifests with `dry_run: false` (not a mocked provider) and provenance `RECORDED_RUN`; every row is checked by `routes.benchmark.load_run` (`verify_row` + manifest index), a failing row is skipped with a note, a run whose `rows_sha256` does not recompute is skipped whole. Served fields are named one by one (prediction, model, hashes, `recorded_at`, `run_id`, cited evidence from the row's own snapshot); the response model has no outcome field. Never opens `sealed_outcomes/`, the prediction store or the case files. Nothing committed for the case: `NOT AVAILABLE` with a note (`tests/test_routes_replay_recorded.py`) |
 
 **Public mode:** run and reveal both change state, so with `FAULTLINE_MODE` anything but unset/`local` they need
 `Authorization: Bearer <FAULTLINE_ADMIN_TOKEN>` (at least 32 characters), checked by a route dependency so it holds
 with or without the edge middleware of #28. No bearer token: 401; wrong or unconfigured token: 403; body
 `{code: "ADMIN_TOKEN_REQUIRED", message}`. An early public reveal would otherwise mark the event revealed and
-disqualify every later admin run on it (`tests/test_routes_replay_admin.py`). The case routes stay public.
+disqualify every later admin run on it (`tests/test_routes_replay_admin.py`). The case routes and
+`GET /api/replay/recorded` stay public.
 
 Both pre-reveal case routes run a strict pre-scan before the gate loads anything: a case file with an
 outcome-like key anywhere (except `case.resolution_rule` and a quote's `outcome: "YES"`) is refused, not
@@ -315,6 +358,15 @@ Scoring reveals outcomes, so computing a scorecard and reading one are separate 
   recorded_at, agent_variant, agent_models, cases_sha256, scorecard, scorecard_sha256, snapshot_sha256}`.
   `scorecard_sha256` = SHA-256 of the canonical JSON (§5) of `scorecard`; `snapshot_sha256` = SHA-256 of the canonical JSON
   of the whole file without `snapshot_sha256`.
+- **Scorecard fields** (`core.evaluator.Scorecard`): `label, verdict, caveat, provenance, agent_variant, forecasters,
+  market_label, case_set, n_events, n_excluded, exclusions_by_reason, exclusions, ignored_predictions, per_event,
+  summary, comparison, official_blockers`. Each **`per_event` row** (`EventScore`): `event_id, n_snapshots, y,
+  prediction_ids, market_refs, brier, log_loss, accuracy_at_0_5` (each keyed by `naive`, `market` and the agent variant;
+  means over the event's snapshots), and `agent_p_yes`, `market_p_yes` (#180): the persisted prediction's `p_yes` and
+  the `market_baseline_p_yes` the gate froze with it, i.e. the exact inputs of that row's agent and market scores. They
+  add no data source and change no formula. Both are set only when `n_snapshots == 1` (one p determines the row's
+  scores) and are null on a multi-snapshot row (a mean p would not reproduce a mean Brier); null = NOT AVAILABLE. Both
+  hashes cover them (they hash the whole stored JSON).
 - **What GET serves (`verify_snapshot`).** A file that fails any of these checks is not served, and a note names it.
   - **Both hashes** recompute from the stored JSON.
   - **Display rules** (§6), re-applied to the card's own `per_event` rows:
@@ -325,6 +377,9 @@ Scoring reveals outcomes, so computing a scorecard and reading one are separate 
     - the caveat, the summary and the bootstrap CI recompute exactly;
     - the verdict is `agent better than market` iff the CI upper bound < 0;
     - naive scores are those of p = 0.5;
+    - a row's `agent_p_yes` / `market_p_yes`, when present, are the inputs of its own agent / market scores:
+      `brier == (p - y)^2`, and log loss and accuracy at 0.5 likewise, to 1e-12; present only on a single-snapshot row
+      (`p_yes_problems`, #180), so a forged p cannot sit beside a real Brier;
     - the counts and `exclusions_by_reason` match the exclusions.
   - **No dry-run model:** `ollama/dry-run-mock` is never in `agent_models`.
   - **Committed snapshots** also need all of the following:
@@ -333,6 +388,8 @@ Scoring reveals outcomes, so computing a scorecard and reading one are separate 
     - every row of that run verifies (`verify_run`);
     - every `per_event[].prediction_ids` entry is one of that run's rows for this variant and event;
     - each event's agent and market Brier, log loss and accuracy recompute from those rows' `p_yes` and market baseline;
+    - on a single-snapshot row, `agent_p_yes` and `market_p_yes` equal that run row's `prediction.p_yes` and
+      `context.market_baseline_p_yes` (required, never null); on a multi-snapshot row both are null (#180);
     - `agent_models` and `provenance` agree with the rows.
   - **Case set agreement (#118, both origins):** a REAL_HISTORICAL or `case_set: "real"` card has no per-event
     market ref starting `synthetic:` and its `market_label` is the real one; every `cases_sha256` key is an event

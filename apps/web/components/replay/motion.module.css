@@ -1,0 +1,170 @@
+/*
+ * Motion for REWIND / DECISION / INTEGRITY (#163). Every animation here only presents data the API already
+ * returned; none of them stands in for a result. Every keyframe uses fill-mode `both`, so the global
+ * prefers-reduced-motion rule in app/globals.css (animation-duration ~0) lands on the final frame at once.
+ */
+
+.flyIn {
+  animation: fly-in 560ms cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+@keyframes fly-in {
+  from {
+    opacity: 0;
+    transform: translate3d(-28px, 10px, 0) scale(0.97);
+    filter: blur(3px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+    filter: none;
+  }
+}
+
+.popIn {
+  animation: pop-in 420ms cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+@keyframes pop-in {
+  from {
+    opacity: 0;
+    transform: scale(0.4);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+.fadeUp {
+  animation: fade-up 420ms cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+@keyframes fade-up {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+/* A citation the run used: a brief accent wash, then a steady accent rule on the left. */
+.cited {
+  animation: cited 1400ms cubic-bezier(0.22, 1, 0.36, 1) both;
+  box-shadow: inset 2px 0 0 var(--accent);
+}
+@keyframes cited {
+  0% {
+    background-color: transparent;
+    box-shadow: inset 0 0 0 var(--accent);
+  }
+  30% {
+    background-color: var(--accent-soft);
+    box-shadow: inset 2px 0 0 var(--accent);
+  }
+  100% {
+    background-color: transparent;
+    box-shadow: inset 2px 0 0 var(--accent);
+  }
+}
+
+/* Indeterminate scan line over the document stack: movement, never a progress amount. */
+.scan {
+  animation: scan 2.4s cubic-bezier(0.45, 0, 0.55, 1) infinite;
+}
+@keyframes scan {
+  0% {
+    transform: translateY(-100%);
+    opacity: 0;
+  }
+  15% {
+    opacity: 1;
+  }
+  85% {
+    opacity: 1;
+  }
+  100% {
+    transform: translateY(var(--scan-travel, 120px));
+    opacity: 0;
+  }
+}
+
+/* Horizontal indeterminate sweep (integrity scan bar). */
+.sweep {
+  animation: sweep 1.3s cubic-bezier(0.45, 0, 0.55, 1) infinite;
+}
+@keyframes sweep {
+  from {
+    transform: translateX(-100%);
+  }
+  to {
+    transform: translateX(300%);
+  }
+}
+
+.breathe {
+  animation: breathe 2.4s ease-in-out infinite;
+}
+@keyframes breathe {
+  0%,
+  100% {
+    opacity: 0.45;
+  }
+  50% {
+    opacity: 1;
+  }
+}
+
+/* A check whose status has not been returned yet. */
+.pending {
+  animation: pending 1.2s ease-in-out infinite;
+}
+@keyframes pending {
+  0%,
+  100% {
+    opacity: 0.35;
+  }
+  50% {
+    opacity: 0.9;
+  }
+}
+
+/* The vault bolt turns once into the locked position. */
+.vaultLock {
+  animation: vault-lock 900ms cubic-bezier(0.22, 1, 0.36, 1) 300ms both;
+  transform-box: fill-box;
+  transform-origin: center;
+}
+@keyframes vault-lock {
+  from {
+    transform: rotate(-120deg);
+  }
+  to {
+    transform: rotate(0deg);
+  }
+}
+
+/* The sealed region's hatch drifts slowly, like a security shutter. */
+.shutter {
+  background-image: repeating-linear-gradient(
+    -45deg,
+    color-mix(in srgb, var(--risk) 16%, transparent) 0,
+    color-mix(in srgb, var(--risk) 16%, transparent) 1px,
+    transparent 1px,
+    transparent 9px
+  );
+  background-size: 26px 26px;
+  animation: shutter 14s linear infinite;
+}
+@keyframes shutter {
+  from {
+    background-position: 0 0;
+  }
+  to {
+    background-position: 260px 0;
+  }
+}
+
+.glow {
+  filter: drop-shadow(0 0 10px color-mix(in srgb, var(--accent) 55%, transparent));
+}

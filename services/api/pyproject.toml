@@ -9,7 +9,7 @@ description = "FAULTLINE backend: FastAPI service, replay pipeline, deterministi
 requires-python = ">=3.11"
 dependencies = [
     "fastapi>=0.115",
-    "uvicorn[standard]>=0.30",
+    "uvicorn[standard]>=0.31",  # 0.31+: FORWARDED_ALLOW_IPS accepts a CIDR subnet (deploy/docker-compose.yml)
     "pydantic>=2.7",
     "numpy>=1.26",
     "scipy>=1.13",

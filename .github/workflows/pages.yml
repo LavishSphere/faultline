@@ -1,0 +1,88 @@
+name: pages
+# Production deploy of the static web app (apps/web) to GitHub Pages. Runs ONLY on push to main
+# (i.e. after a lead merges a reviewed PR). PRs get the static-export build check in ci.yml instead.
+#
+# Repo variables (Settings > Secrets and variables > Actions > Variables), the one place the names live:
+#   FAULTLINE_PUBLIC_ORIGIN  e.g. https://faultline.khayrul.com  -> CNAME file + documented custom domain
+#   FAULTLINE_API_HOST       e.g. api.faultline.khayrul.com      -> NEXT_PUBLIC_API_BASE=https://<host>
+#
+# Every action is pinned to a full commit SHA (the `# vX.Y.Z` comment names the tag it was resolved from, via
+# `gh api repos/<owner>/<action>/git/ref/tags/<tag>`, annotated tags dereferenced). Bump SHA and comment together.
+on:
+  push:
+    branches: [main]
+permissions:
+  contents: read
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pages: read   # actions/configure-pages reads the Pages site settings
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          persist-credentials: false  # the build never pushes; keep the token out of .git/config
+      - name: Read and validate repo variables
+        id: names
+        env:
+          PUBLIC_ORIGIN: ${{ vars.FAULTLINE_PUBLIC_ORIGIN }}
+          API_HOST: ${{ vars.FAULTLINE_API_HOST }}
+        run: |
+          python3 - <<'EOF'
+          import os, re, sys
+          origin = os.environ.get("PUBLIC_ORIGIN", "").strip().rstrip("/").lower()
+          api_host = os.environ.get("API_HOST", "").strip().lower()
+          host_re = r"[a-z0-9](?:[a-z0-9-]*[a-z0-9])?(?:\.[a-z0-9](?:[a-z0-9-]*[a-z0-9])?)+"
+          m = re.fullmatch(rf"https://({host_re})", origin)
+          if not m:
+              sys.exit("::error::Repo variable FAULTLINE_PUBLIC_ORIGIN must be set to https://<host> (no path).")
+          if not re.fullmatch(host_re, api_host):
+              sys.exit("::error::Repo variable FAULTLINE_API_HOST must be set to a bare hostname (no scheme/path).")
+          with open(os.environ["GITHUB_OUTPUT"], "a") as out:
+              out.write(f"site_host={m.group(1)}\napi_base=https://{api_host}\n")
+          print(f"site: {origin}  api: https://{api_host}")
+          EOF
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version-file: apps/web/.nvmrc
+          cache: npm
+          cache-dependency-path: apps/web/package-lock.json
+      - name: Install
+        working-directory: apps/web
+        run: npm ci
+      - name: Static export
+        working-directory: apps/web
+        env:
+          FAULTLINE_STATIC_EXPORT: "1"
+          NEXT_PUBLIC_API_BASE: ${{ steps.names.outputs.api_base }}
+          NEXT_TELEMETRY_DISABLED: "1"
+        run: npm run build
+      - name: Add .nojekyll and CNAME
+        env:
+          SITE_HOST: ${{ steps.names.outputs.site_host }}
+        run: |
+          touch apps/web/out/.nojekyll
+          printf '%s\n' "$SITE_HOST" > apps/web/out/CNAME
+      - uses: actions/configure-pages@983d7736d9b0ae728b81ab479565c72886d7745b # v5.0.0
+      - uses: actions/upload-pages-artifact@56afc609e74202658d3ffba0e8f6dda462b719fa # v3.0.1
+        with:
+          path: apps/web/out
+
+  deploy:
+    needs: build
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    permissions:
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@d6db90164ac5ed86f2b6aed7e0febac5b3c0c03e # v4.0.5

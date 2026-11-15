@@ -4,7 +4,8 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import { KNOWN_VERDICTS, checkRevealResponse, isSyntheticRef, notesForVariant, readBenchmark } from "./benchmark.ts";
-import { checkCaseEvidence, isSyntheticQuote } from "./replay.ts";
+import { checkCaseEvidence, checkRecordedResponse, isSyntheticQuote, outcomeKeyPaths } from "./replay.ts";
+import { summarizeHealth } from "./api.ts";
 
 const SHA = "a".repeat(64);
 
@@ -209,6 +210,27 @@ test("the reveal's market baseline must carry the API's label and ref (#117 item
   assert.match(checkRevealResponse({ ...p, prediction: { ...p.prediction, decision: "buy" } }, "pid") ?? "", /decision/);
 });
 
+test("the reveal's case_sha256 (#180) is optional, and a 64-hex hash when present", () => {
+  const r = reveal(null);
+  assert.equal(checkRevealResponse(r, "pid"), null);
+  assert.equal(checkRevealResponse({ ...r, case_sha256: SHA }, "pid"), null);
+  assert.match(checkRevealResponse({ ...r, case_sha256: "abc" }, "pid") ?? "", /case_sha256/);
+  assert.match(checkRevealResponse({ ...r, case_sha256: null }, "pid") ?? "", /case_sha256/);
+});
+
+test("per_event agent_p_yes / market_p_yes (#180): absent, null or a probability in [0, 1]", () => {
+  const withP = (agent, market) => {
+    const c = card(5);
+    c.per_event = c.per_event.map((e) => ({ ...e, agent_p_yes: agent, market_p_yes: market }));
+    return body([c]);
+  };
+  accepted(withP(0.9, 0.4));
+  accepted(withP(null, null));
+  accepted(body([card(5)]));
+  refused(withP(1.5, 0.4), /agent_p_yes/);
+  refused(withP(0.9, "0.4"), /market_p_yes/);
+});
+
 test("isSyntheticRef reads only the served ref", () => {
   assert.equal(isSyntheticRef("synthetic:FIXTURE"), true);
   assert.equal(isSyntheticRef("kalshi:FIXTURE"), false);
@@ -308,4 +330,94 @@ test("notesForVariant selects the API's notes that name the variant, verbatim (#
   assert.deepEqual(notesForVariant(notes, "agent_plus_market"), [notes[0]]);
   assert.deepEqual(notesForVariant(notes, "agent_only"), [notes[1]]);
   assert.deepEqual(notesForVariant([], "agent_only"), []);
+});
+
+// ---------------------------------------------------------------- GET /api/replay/recorded (#116)
+
+function recordedItem(overrides = {}) {
+  return {
+    provenance: "RECORDED_RUN", run_id: "fixture-run", prediction_id: "pred_fixture", case_id: "fixture_case",
+    agent_variant: "agent_only", as_of: "2025-01-20T00:00:00Z", p_yes: 0.42, decision: "hedge",
+    rationale: "TEST FIXTURE", evidence_ids: ["e1"],
+    cited_evidence: [{ evidence_id: "e1", title: "t", available_at: null, source_url: null, provenance: null }],
+    agent_model: "ollama/fixture", model_tag: null, model_digest: null, temperature: 0, seed: 1, attempts: 1,
+    prompt_sha256: SHA, gated_prompt_sha256: null, snapshot_sha256: SHA, record_sha256: SHA, row_sha256: SHA,
+    recorded_at: "2026-11-13T12:00:00Z", persisted_at: "2026-11-13T12:00:01Z", case_synthetic: true,
+    contamination_flag: "unlikely", model_card_contamination_flag: "unlikely", ...overrides,
+  };
+}
+
+function recordedBody(items = [recordedItem()]) {
+  return { status: items.length ? "AVAILABLE" : "NOT AVAILABLE", provenance: "RECORDED_RUN", case_id: "fixture_case",
+    items, notes: [] };
+}
+
+test("checkRecordedResponse accepts the route's shape and NOT AVAILABLE with no items", () => {
+  assert.equal(checkRecordedResponse(recordedBody(), "fixture_case", "agent_only"), null);
+  assert.equal(checkRecordedResponse(recordedBody([]), "fixture_case", "agent_only"), null);
+  assert.deepEqual(outcomeKeyPaths(recordedBody()), []);
+});
+
+test("checkRecordedResponse refuses another case or variant, a non-RECORDED_RUN row, and an empty AVAILABLE", () => {
+  assert.match(checkRecordedResponse(recordedBody(), "other_case", "agent_only"), /different case/);
+  assert.match(checkRecordedResponse(recordedBody(), "fixture_case", "agent_plus_market"), /different variant/);
+  const simulated = recordedBody([recordedItem({ provenance: "SIMULATED" })]);
+  assert.match(checkRecordedResponse(simulated, "fixture_case", "agent_only"), /not RECORDED_RUN/);
+  assert.match(checkRecordedResponse({ ...recordedBody([]), status: "AVAILABLE" }, "fixture_case", "agent_only"), /no items/);
+  assert.match(checkRecordedResponse(recordedBody([recordedItem({ p_yes: 1.5 })]), "fixture_case", "agent_only"), /p_yes/);
+});
+
+// GET /api/health, #163: the shape models.HealthResponse serves (copied from a local API response on 2026-11-14,
+// with Ollama up). Before the fix `ollama: true` plus a nested model list read as "Local model unavailable".
+const HEALTH_READY = {
+  status: "ok",
+  ollama: true,
+  model_ready: true,
+  ollama_status: {
+    reachable: true,
+    models: ["gemma4:e2b", "gemma4:e4b", "llama3.1:8b"],
+    required_model: "llama3.1:8b",
+    required_model_present: true,
+    error: null,
+  },
+  optional_keys: { anthropic_api_key: false, tavily_api_key: false },
+  data_dir_present: true,
+  data_manifest_sha256: null,
+  notices: ["TAVILY_API_KEY not set: Live Explore web search is disabled."],
+};
+
+test("summarizeHealth: model_ready true with ollama: true is available, named by required_model", () => {
+  const s = summarizeHealth(HEALTH_READY);
+  assert.equal(s.model, "available");
+  assert.equal(s.requiredModel, "llama3.1:8b");
+  assert.deepEqual(s.modelTags, ["gemma4:e2b", "gemma4:e4b", "llama3.1:8b"]);
+  assert.equal(s.modelError, null);
+});
+
+test("summarizeHealth: model_ready false is unavailable even when Ollama is reachable", () => {
+  const s = summarizeHealth({
+    ...HEALTH_READY,
+    model_ready: false,
+    ollama_status: { ...HEALTH_READY.ollama_status, models: ["gemma4:e2b"], required_model_present: false },
+  });
+  assert.equal(s.model, "unavailable");
+  assert.equal(s.requiredModel, "llama3.1:8b");
+});
+
+test("summarizeHealth: Ollama down keeps the probe's error; no readiness field at all is unknown", () => {
+  const down = summarizeHealth({
+    ...HEALTH_READY,
+    ollama: false,
+    model_ready: false,
+    ollama_status: {
+      reachable: false,
+      models: [],
+      required_model: "llama3.1:8b",
+      required_model_present: false,
+      error: "Ollama not reachable at OLLAMA_BASE_URL (ConnectError).",
+    },
+  });
+  assert.equal(down.model, "unavailable");
+  assert.match(down.modelError ?? "", /not reachable/);
+  assert.equal(summarizeHealth({ status: "ok" }).model, "unknown");
 });

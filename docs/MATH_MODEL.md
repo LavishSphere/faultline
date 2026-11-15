@@ -85,7 +85,7 @@ $$I_t = I_{t-1} + P_t - (1-g)S_t - \pi(1-g)S^{core}_t\lambda_t x_b = I_{t-1} - v
 (the premium is a cost, not extra stock).
 
 **Stock-out cost** (issue #103; replaces the issue #16 simplification "purchase cuts do not cause stock-outs").
-*Proposal for finance-owner review (issue #103).* The business aims to hold the share $\sigma$ of its opening stock
+*Signed off by the finance owner, 2026-11-14 (#141).* The business aims to hold the share $\sigma$ of its opening stock
 $I_0$ at planned demand, scaled with the demand shock $m_t$ (§1). Inventory below that level loses sales:
 $$
 I^{svc}_t = \sigma\,I_0\,m_t, \qquad u_t = \max\bigl(0,\; I^{svc}_t - I_t\bigr), \qquad \ell_t = \theta\,u_t ,
@@ -559,8 +559,8 @@ modelling rationale, not a citation.
 | Starting inventory $I_0$ | 65,000 | 2 weeks of cost of goods ($2 \times 0.65 \times 50{,}000$), typical for a fresh-heavy grocer. |
 | Inventory floor $I_{min}$ | 40,000 | About 1.2 weeks of cost of goods: below this, shelves look empty. Together with $I_0$ this caps total purchase cuts at $\sum_t v_t \le 25{,}000$. |
 | Pre-horizon values $S_0$; $P_{-1}$, $P_0$ | 50,000; 32,500 each | Steady state before week 1: purchases $= (1-g) \times 50{,}000$. |
-| Service level $\sigma$ | 1.0 of $I_0$ ($I^{svc}_t = 65{,}000\,m_t$, i.e. 2 weeks of cost of goods of base-store demand) | *Proposal for finance-owner review (issue #103).* The service level is the starting stock: §10 already calls 2 weeks of cost of goods typical for a fresh-heavy grocer, so any cut below it thins the shelves. See the justification below. |
-| Stock-out lost sales $\theta$ | 0.20 of sales per \$ of shortfall per week | *Proposal for finance-owner review (issue #103).* A cut of 10% of the service level (6,500 at cost) loses $0.20 \times 6{,}500 = 1{,}300$ of sales a week, 2.6% of sales; at the floor (25,000 short) it loses 5,000 a week, 10% of sales. |
+| Service level $\sigma$ | 1.0 of $I_0$ ($I^{svc}_t = 65{,}000\,m_t$, i.e. 2 weeks of cost of goods of base-store demand) | *Signed off by the finance owner, 2026-11-14 (#141).* The service level is the starting stock: §10 already calls 2 weeks of cost of goods typical for a fresh-heavy grocer, so any cut below it thins the shelves. See the justification below. |
+| Stock-out lost sales $\theta$ | 0.20 of sales per \$ of shortfall per week | *Signed off by the finance owner, 2026-11-14 (#141).* A cut of 10% of the service level (6,500 at cost) loses $0.20 \times 6{,}500 = 1{,}300$ of sales a week, 2.6% of sales; at the floor (25,000 short) it loses 5,000 a week, 10% of sales. |
 | Purchase-cut cap $\bar v$ | 10,000/wk | About 30% of a normal week's purchases. Deeper one-week cuts are not realistic for perishables. |
 | Payroll-cut cap $\bar z$ | 0.10 | Up to 10% through reduced hours and no overtime, without layoffs. Forced to 0 in protect-payroll mode (§4). |
 | Outage share $\phi$ | 0.40 | 40% of sales rely on product lines from the primary distributor. |
@@ -605,7 +605,7 @@ save about 10,000. For a yes/no action, that is simply its fixed weight.
 | $c_c$ | Defer non-critical capex | 1,000 per decision | 1,000 | Non-critical by definition, but maintenance risk builds up while it is deferred. |
 | $c_b$ | Use backup supplier | 2,500 per decision | 2,500 | Quality, consistency and supplier-relationship risk beyond the fee and premium. |
 | $c_e$ | Delay expansion | 5,000 per decision | 5,000 | Strategic cost: lost momentum and lease or landlord risk. |
-| $c_u$ | Stock below the service level | 0.01 per \$ of shortfall per week | 100 a week (1,000 for 10 weeks) | *Proposal for finance-owner review (issue #103).* Goodwill: shoppers who find gaps may shop elsewhere next time. The lost margin itself is already in the cash path ($g\,\theta = 0.07$ per \$ a week). It must be above 0 so the optimizer's shortfall $u_t$ equals the simulator's (§4.9). |
+| $c_u$ | Stock below the service level | 0.01 per \$ of shortfall per week | 100 a week (1,000 for 10 weeks) | *Signed off by the finance owner, 2026-11-14 (#141).* Goodwill: shoppers who find gaps may shop elsewhere next time. The lost margin itself is already in the cash path ($g\,\theta = 0.07$ per \$ a week). It must be above 0 so the optimizer's shortfall $u_t$ equals the simulator's (§4.9). |
 | $c_z$ | Payroll cut | 5.00 per \$ of payroll cut | 50,000 | Worst lever: morale, turnover and service quality, and it hurts people. A 1,000 payroll cut counts as much harm as delaying the expansion, so cutting payroll beats delaying the expansion only for shortfalls under 1,000. |
 
 Ranking, least to most harmful: revolver draw < purchase cut < defer capex < backup supplier < delay expansion < payroll cut.
@@ -682,8 +682,8 @@ consistent median restaurant, so the opex value below is calibrated, not copied.
 | $C_{min}$ | `business.min_cash` | 15,000 | \$ | About 2 weeks of payroll ($2 \times 7{,}300 = 14{,}600$), the same rule as the grocer. | assumption: §10 rule applied |
 | $I_0$ | `business.inventory_0` | 6,800 | \$ at cost | One week (7 days) of food cost, $0.34 \times 20{,}000$, the top of the 5–7 days range. | [MarketMan]: "5-7 days worth of product on hand" |
 | $I_{min}$ | `business.min_inventory` | 4,000 | \$ at cost | About 4 days of food cost; below this the full menu cannot be served. It caps total purchase cuts at $I_0 - I_{min} = 2{,}800$. | assumption |
-| $\sigma$ | `business.service_level_share` | 0.5 | fraction of $I_0$ | *Proposal for finance-owner review (issue #103).* $I^{svc} = 0.5 \times 6{,}800 = 3{,}400$ at planned demand (3.5 days of food cost), below the hard floor $I_{min} = 4{,}000$. For this restaurant $I_{min}$ already marks where the menu breaks, so the floor binds before any stock-out cost: no feasible plan has $u_t > 0$ and every #109 number below is unchanged. Open question: a restaurant on one week of stock may lose covers before it reaches 4 days. | assumption: chosen to keep #109 unchanged |
-| $\theta$ | `business.stockout_lost_sales_rate` | 0.2 | 1/week | *Proposal for finance-owner review (issue #103).* Same as the grocer (§10); inactive here because of $\sigma$. | assumption: reused from §10 |
+| $\sigma$ | `business.service_level_share` | 0.5 | fraction of $I_0$ | *Signed off by the finance owner, 2026-11-14 (#141).* $I^{svc} = 0.5 \times 6{,}800 = 3{,}400$ at planned demand (3.5 days of food cost), below the hard floor $I_{min} = 4{,}000$. For this restaurant $I_{min}$ already marks where the menu breaks, so the floor binds before any stock-out cost: no feasible plan has $u_t > 0$ and every #109 number below is unchanged. Open question: a restaurant on one week of stock may lose covers before it reaches 4 days. | assumption: chosen to keep #109 unchanged |
+| $\theta$ | `business.stockout_lost_sales_rate` | 0.2 | 1/week | *Signed off by the finance owner, 2026-11-14 (#141).* Same as the grocer (§10); inactive here because of $\sigma$. | assumption: reused from §10 |
 | $\pi$ | `business.backup_premium` | 0.15 | fraction | Buying from a cash-and-carry or specialty supplier costs about 15% more than contract prices. | assumption |
 | $F_b$ | `business.backup_switch_fee` | 500 | \$ | Account set-up and delivery changes for a small single site. | assumption |
 | $\phi$ | `scenario_parameters.supplier_outage_dependent_share` | 0.60 | fraction | 60% of menu sales need proteins and produce that only the main broadline distributor delivers. | assumption |
@@ -696,7 +696,7 @@ consistent median restaurant, so the opex value below is calibrated, not copied.
 | $c_b$ | `optimizer_parameters.disruption_costs.backup_supplier_per_decision` | 2,500 | \$ | Reused from §10 unchanged. | assumption: reused from §10 |
 | $c_e$ | `optimizer_parameters.disruption_costs.delay_expansion_per_decision` | 5,000 | \$ | Reused from §10 unchanged (no expansion here). | assumption: reused from §10 |
 | $c_z$ | `optimizer_parameters.disruption_costs.payroll_cut_per_dollar` | 5.00 | per \$ | Reused from §10 unchanged: payroll is still the worst lever. | assumption: reused from §10 |
-| $c_u$ | `optimizer_parameters.disruption_costs.stock_shortfall_per_dollar_week` | 0.01 | per \$ per week | *Proposal for finance-owner review (issue #103).* Reused from §10. | assumption: reused from §10 |
+| $c_u$ | `optimizer_parameters.disruption_costs.stock_shortfall_per_dollar_week` | 0.01 | per \$ per week | *Signed off by the finance owner, 2026-11-14 (#141).* Reused from §10. | assumption: reused from §10 |
 
 `tests/test_restaurant_business.py` parses this table and checks every value against the fixture, so the document and the
 data cannot drift apart.

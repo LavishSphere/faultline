@@ -30,11 +30,12 @@ export function HealthChip() {
     detail = `${apiBase}/api/health: ${last.error}`;
   } else {
     api = { tone: "viable", text: "API online" };
-    const tags = last.health.modelTags;
+    // Readiness is the API's own `model_ready` (lib/api.ts summarizeHealth, #163); the name is the configured model.
+    const name = last.health.requiredModel;
     if (last.health.model === "available") {
-      model = { tone: "viable", text: `Local model ready${tags[0] ? ` · ${tags[0]}` : ""}` };
+      model = { tone: "viable", text: `Local model ready${name ? ` · ${name}` : ""}` };
     } else if (last.health.model === "unavailable") {
-      model = { tone: "risk", text: "Local model unavailable" };
+      model = { tone: "risk", text: `Local model unavailable${name ? ` · ${name}` : ""}` };
     } else {
       model = { tone: "muted", text: "Model status not reported" };
     }
@@ -54,7 +55,7 @@ export function HealthChip() {
         <span className={api.tone === "fail" ? "text-fail" : undefined}>{api.text}</span>
       </span>
       {model ? (
-        <span className="hidden items-center gap-2 border-l border-line px-2.5 py-1.5 sm:flex">
+        <span className="hidden items-center gap-2 border-l border-line px-2.5 py-1.5 sm:flex" data-testid="health-chip-model">
           <Dot tone={model.tone} />
           <span className={model.tone === "risk" ? "text-risk" : undefined}>{model.text}</span>
         </span>

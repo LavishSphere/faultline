@@ -15,20 +15,28 @@ The three statuses are all answers, so all are 200:
 
 Bad input uses the /api/simulate coded 422 body (``RouteErrorBody``): VALIDATION_ERROR for shape / series length /
 numeric overflow, INFEASIBLE_INPUT for a ValueError the engine raises on a well-shaped shock.
+
+Concurrency cap: at most MAX_CONCURRENT_SOLVES solves run at once (per process; the deploy image runs one worker).
+A request that finds every slot taken waits up to SOLVE_QUEUE_WAIT_S, then gets 503 ``BUSY`` with ``Retry-After``.
+That is an honest "try again", never a cached or partial plan. Waiting requests hold no worker thread.
 """
 
 from __future__ import annotations
 
+import asyncio
+import threading
+import time
 from typing import Annotated, Literal
 
 from fastapi import APIRouter, Depends
+from fastapi.concurrency import run_in_threadpool
 from pydantic import BaseModel, ConfigDict, Field, ValidationError
 
 from config import Settings, get_settings
 from core.financials import ActionPlan, ScenarioShock
 from core.optimizer import OptimizationResult, OptimizerSettings, optimize
 from models import ErrorCode, Identifier
-from routes import CodedRoute, RouteError, error_responses, issues_from, read_json
+from routes import CodedRoute, RouteError, RouteErrorBody, error_responses, issues_from, read_json
 from routes.simulate import (
     _OVERFLOW_MESSAGE,
     BASELINE_NAME,
@@ -41,6 +49,55 @@ from routes.simulate import (
 router = APIRouter(tags=["optimize"], route_class=CodedRoute)
 
 SETTINGS_SECTION = "optimizer_parameters"
+
+MAX_CONCURRENT_SOLVES = 2
+SOLVE_QUEUE_WAIT_S = 2.0
+BUSY_RETRY_AFTER_S = 2
+_POLL_S = 0.02
+BUSY_MESSAGE = (
+    "The optimizer is busy with other requests. No plan was computed for this request; try again in a moment."
+)
+
+
+class SolveSlots:
+    """A counting semaphore that does not bind to an event loop (module-level, shared by every request).
+
+    ``acquire`` polls with ``asyncio.sleep`` instead of parking a worker thread, so queued requests cost no thread.
+    """
+
+    def __init__(self, limit: int) -> None:
+        self.limit = limit
+        self._free = limit
+        self._lock = threading.Lock()
+
+    @property
+    def in_use(self) -> int:
+        with self._lock:
+            return self.limit - self._free
+
+    def try_acquire(self) -> bool:
+        with self._lock:
+            if self._free <= 0:
+                return False
+            self._free -= 1
+            return True
+
+    def release(self) -> None:
+        with self._lock:
+            if self._free >= self.limit:
+                raise RuntimeError("SolveSlots released more often than acquired")
+            self._free += 1
+
+    async def acquire(self, wait_s: float) -> bool:
+        deadline = time.monotonic() + wait_s
+        while not self.try_acquire():
+            if time.monotonic() >= deadline:
+                return False
+            await asyncio.sleep(_POLL_S)
+        return True
+
+
+SOLVE_SLOTS = SolveSlots(MAX_CONCURRENT_SOLVES)
 
 
 class OptimizeRequest(BaseModel):
@@ -99,13 +156,33 @@ def _result_name(body: OptimizeRequest) -> str:
 @router.post(
     "/optimize",
     response_model=OptimizeResponse,
-    responses=error_responses(422, 500, 503),
+    responses={
+        **error_responses(422, 500, 503),
+        503: {
+            "model": RouteErrorBody,
+            "description": "DATA_UNAVAILABLE: a required data file is missing; BUSY: every solver slot is taken "
+            "(Retry-After says when to try again)",
+        },
+    },
     summary="Least-harmful recovery plan (MILP) on the SYNTHETIC demo business",
 )
-def optimize_route(
+async def optimize_route(
     body: OptimizeRequest,
     settings: Annotated[Settings, Depends(get_settings)],
 ) -> OptimizeResponse:
+    if not await SOLVE_SLOTS.acquire(SOLVE_QUEUE_WAIT_S):
+        raise RouteError(
+            ErrorCode.BUSY, BUSY_MESSAGE, status_code=503, headers={"Retry-After": str(BUSY_RETRY_AFTER_S)}
+        )
+    try:
+        # Once the worker thread starts, anyio shields this await until the solve returns, so the slot is released
+        # only after the solve really finished (a client disconnect cannot free it early).
+        return await run_in_threadpool(_solve, body, settings)
+    finally:
+        SOLVE_SLOTS.release()
+
+
+def _solve(body: OptimizeRequest, settings: Settings) -> OptimizeResponse:
     business = load_business(settings)
     opt_settings = load_optimizer_settings(settings)
     if business.min_cash is None or business.min_inventory is None:

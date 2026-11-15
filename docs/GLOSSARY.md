@@ -101,7 +101,7 @@ that are not on `main` yet.
 | SYNTHETIC | `SYNTHETIC` | Fictional demo data, not a real company. | CASCADE |  |
 | ILLUSTRATIVE | `ILLUSTRATIVE` | Structure or example only, not data. | CASCADE |  |
 | REAL HISTORICAL | `REAL HISTORICAL` | A genuine, dated historical record. | RESEARCH |  |
-| RECORDED RUN | `RECORDED RUN` | A saved, reproducible model run, shown instead of a live one. | DECISION, REVEAL |  |
+| RECORDED RUN | `RECORDED RUN` | A saved run with its model id and prompt/snapshot hashes. | DECISION, REVEAL |  |
 | FORECAST | `FORECAST` | A probability or projection, not an observed fact. | DECISION |  |
 | AS-OF | `AS-OF` | A value as it was known at the stated knowledge cutoff. | REWIND, DECISION, RESEARCH |  |
 | NOT AVAILABLE | `NOT AVAILABLE`, `Not available` | No data is served for this yet, so nothing is shown. | REWIND, DECISION, CASCADE, REVEAL, RESEARCH, EXPLORE |  |
@@ -137,7 +137,7 @@ that are not on `main` yet.
 - **On screen:** `Horizon`
 - **Short:** How many days after the knowledge cutoff the question is decided.
 - **Long:** The forecast window: the question asks what happens within this many days after as_of, and the model's prompt states it ('Horizon: N days after the cutoff'). Forecasters are compared on the same event and cutoff; several horizons of one event are averaged first (MATH_MODEL §6).
-- **Example:** 16 committed cases: the 15 real FOMC cases at 8 days (the window covers the statement release) and the synthetic case at 21.
+- **Example:** 29 committed cases: the 28 real cases (15 FOMC, 13 CPI) at 8 days (the window covers the statement or CPI release) and the synthetic case at 21.
 - **Source:** services/api/data/demo_cases (horizon_days); core/temporal_gate.py prompt line.
 - **Screens:** REWIND
 - **MATH_MODEL:** §6
@@ -341,8 +341,8 @@ that are not on `main` yet.
 ### RECORDED RUN
 
 - **On screen:** `RECORDED RUN`
-- **Short:** A saved, reproducible model run, shown instead of a live one.
-- **Long:** A cached genuine run with its model id, prompt hash and snapshot hash, so anyone can check it was produced as stated. It is never a canned or hand-written response, and it is labelled as recorded, not live.
+- **Short:** A saved run with its model id and prompt/snapshot hashes.
+- **Long:** A saved run with its model id and prompt/snapshot hashes; a fresh run is saved the same way. Anyone can check it was produced as stated. It is never a canned or hand-written response.
 - **Example:** Each recorded run carries 2 SHA-256 hashes: one of the prompt, one of the evidence snapshot.
 - **Source:** SPEC §5; docs/EVALUATION_PROTOCOL.md §3.
 - **Screens:** DECISION, REVEAL
@@ -742,7 +742,7 @@ that are not on `main` yet.
 - **On screen:** `Binding constraints`
 - **Short:** A limit the chosen plan is pressed right up against.
 - **Long:** A constraint with slack of about zero at the optimum (MATH_MODEL §4), for example cash exactly at the floor in some week. Loosening it would allow a better plan, so it is the limit that matters most.
-- **Example:** Bad quarter plan, payroll protected: 'liquidity floor, week 20' and five later weeks are binding.
+- **Example:** Bad quarter plan, payroll protected: 'liquidity floor, week 20' and six later weeks are binding.
 - **Source:** Engine run computed for this glossary: POST /api/optimize on scenarios.json bad-quarter, protect payroll on, SYNTHETIC demo business.
 - **Screens:** CASCADE, EXPLORE
 - **MATH_MODEL:** §4
@@ -752,7 +752,7 @@ that are not on `main` yet.
 - **On screen:** `NO FEASIBLE PLAN`
 - **Short:** No allowed mix of actions keeps all the hard limits.
 - **Long:** The optimizer's honest failure result (MATH_MODEL §4). It is shown as it is, with the API's diagnostic, and no LLM may override it. The screen also shows the highest floor a plan can hold, found by re-solving with the cash floor relaxed.
-- **Example:** Judge's Challenge 'Local plant closes' with payroll protected: no plan keeps 25,000; the highest floor any plan can hold is 20,187.50.
+- **Example:** Judge's Challenge 'Local plant closes' with payroll protected: no plan keeps 25,000; the highest floor any plan can hold is 7,922.88.
 - **Source:** Engine run computed for this glossary: POST /api/optimize on judge_challenges.json judge-plant-closure, protect payroll on, SYNTHETIC demo business.
 - **Screens:** CASCADE, EXPLORE
 - **MATH_MODEL:** §4
@@ -762,7 +762,7 @@ that are not on `main` yet.
 - **On screen:** `Highest floor a plan can hold`
 - **Short:** The highest cash floor any plan could hold, shown when none holds 25,000.
 - **Long:** A MATH_MODEL §4 diagnostic. When there is NO FEASIBLE PLAN, the optimizer re-solves with the cash floor C_min relaxed and reports the highest minimum cash any allowed plan can reach. The floor would have to be lowered to that value for a plan to exist.
-- **Example:** 20,187.50 for the Judge's Challenge 'Local plant closes' with payroll protected, against the 25,000 floor.
+- **Example:** 7,922.88 for the Judge's Challenge 'Local plant closes' with payroll protected, against the 25,000 floor.
 - **Source:** Engine run computed for this glossary: POST /api/optimize on judge_challenges.json judge-plant-closure, protect payroll on, SYNTHETIC demo business.
 - **Screens:** CASCADE, EXPLORE
 - **MATH_MODEL:** §4
