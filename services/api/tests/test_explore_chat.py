@@ -30,6 +30,7 @@ OPENAI_KEY = "test-openai-" + "i" * 24
 ADMIN = "c3" * 32  # 64 lower-case hex: the public-mode admin token shape
 LLAMA = "openrouter:meta-llama/llama-4-maverick"
 OPUS = "anthropic:claude-opus-5-5"
+SONNET = "anthropic:claude-sonnet-5-5"
 
 
 # --------------------------------------------------------------------------- fake providers
@@ -357,7 +358,8 @@ def test_catalogue_never_offers_openrouter_copies_of_native_models(env):
     assert "openai:gpt-5.1" in ids and OPUS in ids
     providers = [m["provider"] for m in body["models"]]
     assert providers == sorted(providers, key=["openrouter", "openai", "anthropic"].index)
-    assert body["default"] == LLAMA and body["featured"][0] == LLAMA
+    assert body["featured"][0] == LLAMA  # picker order: OpenRouter first
+    assert body["default"] == SONNET  # preselected: the model that handled the live bad-quarter test (#198)
     llama = next(m for m in body["models"] if m["id"] == LLAMA)
     assert llama["note"] == "open-weight model, hosted via OpenRouter" and llama["context_length"] == 131072
     assert llama["pricing"] == {"input_per_mtok": 0.2, "output_per_mtok": 1.0}
@@ -729,3 +731,70 @@ def test_web_search_is_capped_per_turn(env):
     assert [r.status for r in results] == ["ok", "ok", "ok", "error"]
     assert "limit reached" in results[3].summary["error"]
     assert results[0].provenance == "LIVE EXPLORE" and results[0].summary["results"][0]["url"].startswith("https://")
+
+
+# --------------------------------------------------------------------------- named scenario ids (#198)
+
+
+def _named_ids() -> list[str]:
+    from routes.judge_challenges import load_challenges
+    return ([s.id for s in load_scenarios(get_settings())]
+            + [c.id for c in load_challenges(get_settings()).challenges])
+
+
+def test_scenario_ids_and_names_are_in_the_simulate_and_optimize_schemas(env):
+    h = Harness(openrouter=FakeProvider(models=OPENROUTER_MODELS, replies=[oa_text("Hello.")]))
+    h.turn("hi")
+    tools = {t["function"]["name"]: t["function"] for t in h.openrouter.chat_requests[0]["json"]["tools"]}
+    ids = _named_ids()
+    assert "bad-quarter" in ids and "judge-supplier-insolvency" in ids
+    for name in ("simulate", "optimize"):
+        sid = tools[name]["parameters"]["properties"]["scenario_id"]
+        # anyOf (string enum | null): Anthropic strict tools reject a type list with null inside the enum
+        assert sid["anyOf"] == [{"type": "string", "enum": ids}, {"type": "null"}] and "type" not in sid
+        assert "bad-quarter (Bad quarter: rate shock + demand drop + supplier outage)" in sid["description"]
+        assert "judge-supplier-insolvency (Primary supplier goes bust)" in sid["description"]
+        assert "scenario_id" in tools[name]["description"]
+        assert tools[name]["parameters"]["required"] == list(tools[name]["parameters"]["properties"])
+    assert "enum" not in json.dumps(tools["decision"]["parameters"])  # other tools unchanged
+
+
+@pytest.mark.parametrize(("typed", "canonical"), [
+    ("bad-quarter", "bad-quarter"), ("bad_quarter", "bad-quarter"), ("Bad quarter", "bad-quarter"),
+    ("BAD QUARTER", "bad-quarter"), (" 'bad--quarter' ", "bad-quarter"),
+    ("supplier_insolvency", "judge-supplier-insolvency"), ("Primary supplier goes bust", "judge-supplier-insolvency"),
+    ("Rate shock +150bp", "judge-rate-150bp"),
+])
+def test_scenario_id_is_matched_leniently_and_runs_the_canonical_id(typed, canonical):
+    import asyncio
+
+    box = chat_routes.EngineToolBox(get_settings(), None)
+    out = asyncio.run(box.run("simulate", {"scenario_id": typed, "shock": None}))
+    assert out.status == "ok", out.summary
+    assert out.input["scenario_id"] == canonical  # what tool_calls[].input shows and /api/simulate accepts
+    assert out.summary["min_cash"] == round(_direct_simulate(out.input).result.min_cash, 2)
+    opt = asyncio.run(box.run("optimize", {"scenario_id": typed, "shock": None, "protect_payroll": True}))
+    assert opt.status == "ok" and opt.input["scenario_id"] == canonical
+
+
+def test_unknown_scenario_id_is_a_tool_error_listing_the_valid_ids(env):
+    h = Harness(openrouter=FakeProvider(models=OPENROUTER_MODELS, replies=[
+        oa_tool_calls(("simulate", {"scenario_id": "worst_case_ever", "shock": None})),
+        oa_text("I could not run that scenario."),
+    ]))
+    out = h.turn().json()
+    call = out["tool_calls"][0]
+    assert call["result_status"] == "error"
+    assert "Unknown scenario_id 'worst_case_ever'" in call["result_summary"]["error"]
+    for sid in _named_ids():
+        assert sid in call["result_summary"]["error"]
+    sent = tool_results_in(h.openrouter.chat_requests[1]["json"])  # the model is shown the list, too
+    assert "Valid ids: rate-plus-200bp" in sent[0]["error"]
+
+
+def test_default_model_is_sonnet_when_available_else_the_first_featured(env):
+    body = Harness().client.get("/api/explore/chat/models").json()
+    assert body["default"] == SONNET and body["featured"][0] == LLAMA
+    env.delenv("ANTHROPIC_API_KEY")
+    body = Harness().client.get("/api/explore/chat/models").json()
+    assert body["default"] == LLAMA == body["featured"][0]

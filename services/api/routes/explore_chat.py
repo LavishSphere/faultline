@@ -37,9 +37,11 @@ from __future__ import annotations
 import asyncio
 import logging
 import os
+import re
 import time
 from collections import OrderedDict, deque
 from collections.abc import Callable
+from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from typing import Annotated, Any, Literal
 from urllib.parse import urlsplit
@@ -324,6 +326,67 @@ ENGINE_TOOLS: tuple[chat.ToolSpec, ...] = (
                   "(ISO-8601 instant) keeps only lenses provably public by then; null = all.",
                   _schema({"as_of": {"type": ["string", "null"]}})),
 )
+
+
+@dataclass(frozen=True)
+class NamedShock:
+    id: str
+    name: str
+    kind: Literal["scenario", "challenge"]
+    shock: ScenarioShock
+
+
+def normalize_scenario_key(text: str) -> str:
+    """Lenient key for a model-typed id or name: case-folded, quotes dropped, runs of spaces/underscores/dashes
+    -> one dash. "Bad_Quarter", "bad quarter" and "BAD-QUARTER" all give "bad-quarter"."""
+    key = text.strip().strip("'\"`").casefold()
+    return re.sub(r"[\s_\-]+", "-", key).strip("-")
+
+
+def match_named(text: str, named: list[NamedShock]) -> list[NamedShock]:
+    """Every named shock whose id, full name, or name before a colon ("Bad quarter: ...") matches `text`
+    leniently; a challenge also matches without its "judge-" prefix. More than one hit = ambiguous."""
+    key = normalize_scenario_key(text)
+    if not key:
+        return []
+    hits = []
+    for n in named:
+        keys = {normalize_scenario_key(n.id), normalize_scenario_key(n.name),
+                normalize_scenario_key(n.name.split(":", 1)[0])}
+        if n.id.startswith("judge-"):
+            keys.add(normalize_scenario_key(n.id.removeprefix("judge-")))
+        if key in keys:
+            hits.append(n)
+    return hits
+
+
+def _scenario_id_schema(named: list[NamedShock]) -> dict[str, Any]:
+    scenarios = "; ".join(f"{n.id} ({n.name})" for n in named if n.kind == "scenario")
+    challenges = "; ".join(f"{n.id} ({n.name})" for n in named if n.kind == "challenge")
+    # anyOf, not {"type": ["string", "null"], "enum": [..., null]}: Anthropic's strict tool schemas reject the
+    # latter with a 400 (seen live 2026-11-14), while every provider here accepts this form.
+    return {
+        "anyOf": [{"type": "string", "enum": [n.id for n in named]}, {"type": "null"}],
+        "description":("A named shock: its exact engine shock is used, so there is no need to call list_scenarios "
+                        "or list_judge_challenges first. null = use `shock` instead. Named scenarios (SYNTHETIC): "
+                        f"{scenarios or 'none'}. Judge's Challenges (ILLUSTRATIVE): {challenges or 'none'}."),
+    }
+
+
+def _engine_tools(named: list[NamedShock]) -> tuple[chat.ToolSpec, ...]:
+    """ENGINE_TOOLS with scenario_id an enum of the loaded ids, each listed with its name in the description."""
+    sid = _scenario_id_schema(named)
+    hint = (" For a named scenario or Judge's Challenge (e.g. 'the bad quarter'), pass its scenario_id from the "
+            "list in that parameter and shock=null.")
+    out = []
+    for spec in ENGINE_TOOLS:
+        if spec.name in ("simulate", "optimize"):
+            props = {**spec.parameters["properties"], "scenario_id": sid}
+            spec = chat.ToolSpec(spec.name, spec.description + hint, {**spec.parameters, "properties": props})
+        out.append(spec)
+    return tuple(out)
+
+
 WEB_SEARCH_TOOL = chat.ToolSpec(
     "web_search", "Search the current public web (Tavily) for facts about real companies, people, markets and "
     "events. Results are REAL web pages retrieved now (current, not point-in-time). Cite each fact with its source "
@@ -373,28 +436,42 @@ class EngineToolBox:
         self.web_quota = web_quota
 
     def specs(self) -> list[chat.ToolSpec]:
-        return [*ENGINE_TOOLS, *([WEB_SEARCH_TOOL] if self.web else [])]
+        try:
+            named = self._named()
+        except RouteError:  # a fixture that fails its schema: plain string ids, the lookup reports the error
+            named = None
+        return [*(_engine_tools(named) if named else ENGINE_TOOLS), *([WEB_SEARCH_TOOL] if self.web else [])]
 
     # ---- shock resolution: the canonical, validated ScenarioShock JSON the engine runs
 
-    def _catalog_shock(self, scenario_id: str) -> ScenarioShock:
-        for item in scenario_routes.load_scenarios(self.settings) or []:
-            if item.id == scenario_id:
-                return item.shock
+    def _named(self) -> list[NamedShock]:
+        """Named scenarios, then Judge's Challenges, from the same fixtures /api/scenarios and
+        /api/judge-challenges serve."""
+        scenarios = [NamedShock(s.id, s.name, "scenario", s.shock)
+                     for s in scenario_routes.load_scenarios(self.settings) or []]
         challenges = challenge_routes.load_challenges(self.settings)
-        for item in (challenges.challenges if challenges else []):
-            if item.id == scenario_id:
-                return item.shock
-        raise _ToolInputError(f"Unknown scenario_id {scenario_id[:80]!r}; call list_scenarios or "
-                              "list_judge_challenges for valid ids.")
+        return scenarios + [NamedShock(c.id, c.name, "challenge", c.shock)
+                            for c in (challenges.challenges if challenges else [])]
+
+    def _resolve(self, scenario_id: str) -> NamedShock:
+        named = self._named()
+        hits = [n for n in named if n.id == scenario_id] or match_named(scenario_id, named)
+        if len(hits) == 1:
+            return hits[0]
+        valid = ", ".join(n.id for n in named) or "none loaded"
+        if hits:
+            raise _ToolInputError(f"scenario_id {scenario_id[:80]!r} is ambiguous ("
+                                  f"{', '.join(n.id for n in hits)}); pass one exact id. Valid ids: {valid}.")
+        raise _ToolInputError(f"Unknown scenario_id {scenario_id[:80]!r}. Valid ids: {valid}.")
 
     def _shock_body(self, args: dict[str, Any]) -> dict[str, Any]:
         sid, raw = args.get("scenario_id"), args.get("shock")
         if sid:
             if not isinstance(sid, str):
                 raise _ToolInputError("scenario_id must be a string")
-            shock = self._catalog_shock(sid)
-            body: dict[str, Any] = {"scenario_id": sid}
+            hit = self._resolve(sid)
+            shock = hit.shock
+            body: dict[str, Any] = {"scenario_id": hit.id}  # the canonical id, so the input re-POSTs as is
         elif isinstance(raw, dict):
             try:
                 shock = ScenarioShock.model_validate(_drop_nulls(raw))
@@ -666,7 +743,8 @@ class ChatModelsResponse(BaseModel):
     model_config = ConfigDict(extra="forbid", json_schema_serialization_defaults_required=True)
 
     models: list[ChatModelOut]
-    default: str | None = Field(description="First available featured model (OpenRouter first); null if none.")
+    default: str | None = Field(description="The preselected model: the first of DEFAULT_MODEL_PREFERENCE that is "
+                                "featured, else the first featured model, else the first available; null if none.")
     featured: list[str] = Field(description="5-8 suggested ids, OpenRouter first, then OpenAI, then Claude.")
     max_output_price_per_mtok: float | None = Field(
         description="Public catalogue price cap (USD per million output tokens); null for an admin caller.")
@@ -741,7 +819,8 @@ async def chat_models(
                          f"${settings.chat_max_price_per_mtok:g} per million tokens, or no price published.")
     return ChatModelsResponse(
         models=[_model_out(m, catalog, settings) for m in visible],
-        default=featured[0] if featured else next((m.id for m in visible if catalog.available(m, settings)), None),
+        default=chat.default_model_id(featured)
+        or next((m.id for m in visible if catalog.available(m, settings)), None),
         featured=featured,
         max_output_price_per_mtok=None if admin else settings.chat_max_price_per_mtok,
         notes=notes,

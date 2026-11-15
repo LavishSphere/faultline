@@ -147,6 +147,16 @@ def featured_ids(models: Iterable[CatalogModel], catalog: Catalog, settings: Set
     return [i for i in FEATURED_PREFERENCE if i in by_id][:MAX_FEATURED]
 
 
+# The preselected model. Featured order (the picker) stays OpenRouter first; the default is the model that handled
+# the live "bad quarter" test correctly on the public server (2026-11-14) until the chat QA bank (#195) picks again.
+DEFAULT_MODEL_PREFERENCE: tuple[str, ...] = ("anthropic:claude-sonnet-5-5",)
+
+
+def default_model_id(featured: list[str]) -> str | None:
+    """First of DEFAULT_MODEL_PREFERENCE that is featured (so available and visible), else the first featured."""
+    return next((i for i in DEFAULT_MODEL_PREFERENCE if i in featured), featured[0] if featured else None)
+
+
 def _per_mtok(raw: Any) -> float | None:
     try:
         value = float(raw)
@@ -861,5 +871,6 @@ async def run_chat(adapter: Adapter, toolbox: ToolBox, history: list[dict[str, s
 __all__ = [
     "CHAT_LABEL", "CHAT_PROVENANCE", "CHAT_PROVIDERS", "MAX_OUTPUT_TOKENS", "MAX_TOOL_ROUNDS", "Catalog",
     "CatalogModel", "ChatOutcome", "ChatUpstreamError", "ClientFactory", "ToolBox", "ToolCallRecord", "ToolOutcome",
-    "ToolSpec", "adapter_for", "affordable", "build_catalog", "featured_ids", "run_chat", "system_prompt",
+    "ToolSpec", "adapter_for", "affordable", "build_catalog", "default_model_id", "featured_ids", "run_chat",
+    "system_prompt",
 ]
