@@ -179,6 +179,18 @@ export interface EventScore {
   accuracy_at_0_5: Record<string, number>;
 }
 
+/**
+ * NOT AVAILABLE stub (#164): the market baseline's p for each scored event. `EventScore` carries Brier, log loss and
+ * accuracy per forecaster but no `p_yes`; the agent's p comes from GET /api/replay/recorded, but no route serves the
+ * per-event market price, so the results chart shows it as NOT AVAILABLE instead of back-solving it from a Brier
+ * score in the browser. Needed from the backend: `p_yes: dict[str, float]` on `evaluator.EventScore` (mean p per
+ * forecaster over the event's snapshots), served by GET /api/benchmark and covered by the committed-snapshot checks.
+ */
+export const PER_EVENT_P_YES: { readonly status: "NOT AVAILABLE"; readonly needs: string } = {
+  status: "NOT AVAILABLE",
+  needs: "EventScore.p_yes (p per forecaster for each scored event) in GET /api/benchmark",
+};
+
 /** evaluator.ForecasterSummary. */
 export interface ForecasterSummary {
   mean_brier: number;
