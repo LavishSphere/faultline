@@ -354,6 +354,50 @@ export async function getChatStatus(signal?: AbortSignal): Promise<ApiResult<Cha
   return res;
 }
 
+// ---- header chip on Explore (#236) -----------------------------------------------------------------------------------
+
+export interface ChatChipView {
+  tone: "viable" | "risk" | "info" | "muted";
+  /** Header chip text, e.g. "CHAT LIVE · 12 models · PAUSED". */
+  chip: string;
+  /** Tooltip: which route said what. */
+  explain: string;
+}
+
+/**
+ * What the header chip says on the Explore page, from the chat's own GET /api/explore/chat/models (and /status) results.
+ * Pure. "LIVE" only when the models route answered with a valid body listing at least one available model; any failure
+ * (unreachable, HTTP error, malformed body) or zero available models reads CHAT NOT AVAILABLE. `models` null = not yet
+ * answered. `paused` is true only when GET /api/explore/chat/status said so.
+ */
+export function describeChatChip(models: ApiResult<ChatModelsResponse> | null, paused: boolean): ChatChipView {
+  if (!models) return { tone: "muted", chip: "CHAT checking", explain: `Requesting ${CHAT_MODELS_PATH}` };
+  if (!models.ok) {
+    return {
+      tone: "risk",
+      chip: "CHAT NOT AVAILABLE",
+      explain: `${CHAT_MODELS_PATH}: ${describeChatFailure(models).heading}${models.error ? ` (${models.error})` : ""}`,
+    };
+  }
+  const listed = models.data.models.length;
+  const n = models.data.models.filter((m) => m.available).length;
+  if (n === 0) {
+    return {
+      tone: "risk",
+      chip: "CHAT NOT AVAILABLE",
+      explain: `${CHAT_MODELS_PATH}: no available model (${listed} listed)`,
+    };
+  }
+  const count = `${n.toLocaleString("en-US")} model${n === 1 ? "" : "s"}`;
+  return {
+    tone: paused ? "info" : "viable",
+    chip: `CHAT LIVE · ${count}${paused ? " · PAUSED" : ""}`,
+    explain: `${CHAT_MODELS_PATH}: ${count} available of ${listed} listed${
+      paused ? `; ${CHAT_STATUS_PATH}: public chat paused by the presenter` : ""
+    }`,
+  };
+}
+
 // ---- streaming (#222) ------------------------------------------------------------------------------------------------
 
 /** Tool-calling turns can take a while; the same budget for the JSON route and the stream. */

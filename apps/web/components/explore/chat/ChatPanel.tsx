@@ -22,6 +22,7 @@ import {
   type ChatModelsResponse,
   type ChatResponse,
 } from "@/lib/chat";
+import { clearChatPresence, publishChatPresence } from "@/lib/chatPresence";
 import { MC_CASH_TOOL, MC_DECISION_TOOL, monteCarloCalls } from "@/lib/montecarlo";
 import { costLabel, drivesUniverse, replyCostUsd } from "@/lib/universe";
 import { usePrefersReducedMotion } from "../../CascadeGraph";
@@ -169,7 +170,19 @@ export function ChatPanel() {
       ctrl.abort();
       if (t) clearInterval(t);
     };
+  }, [isPaused, modelsRetry]);
+
+  // The header chip (#236) reads these same results instead of fetching them again; the chip's ↻ re-requests them.
+  useEffect(() => {
+    publishChatPresence({ models: models.kind === "done" ? models.result : null });
+  }, [models]);
+  useEffect(() => {
+    publishChatPresence({ paused: isPaused });
   }, [isPaused]);
+  useEffect(() => {
+    publishChatPresence({ recheck: () => setModelsRetry((n) => n + 1) });
+    return () => clearChatPresence();
+  }, []);
 
   useEffect(() => {
     const set = aborts.current;
